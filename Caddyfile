@@ -43,3 +43,15 @@
 		reverse_proxy app:3000
 	}
 }
+
+# Sites locais DESTA instalação — outro app na mesma VPS, um WAHA compartilhado,
+# o que for. O diretório `caddy-sites.d/` não é versionado (ver .gitignore):
+# cada VPS põe os seus domínios ali e eles sobrevivem ao `update.sh`, sem
+# viajar para as instalações de terceiros. Vazio é inofensivo — o padrão é
+# vazio, e o Caddy só emite um aviso no log.
+import /etc/caddy/sites.d/*.caddy
+
+waha.vgasistemas.app {
+    encode gzip
+    reverse_proxy allma-waha:3000
+}

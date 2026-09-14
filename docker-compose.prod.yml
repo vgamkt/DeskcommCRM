@@ -235,6 +235,10 @@ services:
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Sites locais desta instalação, importados pelo Caddyfile. O diretório é
+      # gitignorado (só o .gitkeep viaja): domínios de uma VPS nunca chegam à
+      # instalação de outra. Vazio, o `import` só emite um aviso.
+      - ./caddy-sites.d:/etc/caddy/sites.d:ro
       - caddy-data:/data           # certificados Let's Encrypt (persistir!)
       - caddy-config:/config
     depends_on:
