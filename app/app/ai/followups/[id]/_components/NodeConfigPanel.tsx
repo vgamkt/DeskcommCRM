@@ -2,18 +2,22 @@
 
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { FlowNode } from "@/lib/followup/graph-schema";
+import type { FlowGraph, FlowNode } from "@/lib/followup/graph-schema";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
+import { Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
 import { ActionForm } from "./forms/ActionForm";
 import { ClassifyForm } from "./forms/ClassifyForm";
+import { CollectForm } from "./forms/CollectForm";
 import { ConditionForm } from "./forms/ConditionForm";
 import { EndForm } from "./forms/EndForm";
 import { MatchReplyForm } from "./forms/MatchReplyForm";
 import { RepeatForm } from "./forms/RepeatForm";
+import { SkillForm } from "./forms/SkillForm";
 import { WaitForm } from "./forms/WaitForm";
 import type { ConfigOf } from "./forms/shared";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
@@ -21,8 +25,12 @@ import { NODE_VISUALS } from "./nodes/nodeVisuals";
 interface Props {
   node: RFNode;
   onChange: (patch: Partial<RFNodeData>) => void;
+  onDelete: () => void;
   /** Ramos deste nó que já têm aresta — quem sabe isso é o canvas, que é dono do grafo. */
   ramosLigados?: string[];
+  /** Configurações do FLUXO (nível do grafo). Mostradas no nó de início. */
+  settings?: FlowGraph["settings"];
+  onSettingsChange?: (settings: FlowGraph["settings"]) => void;
 }
 
 /**
@@ -34,7 +42,14 @@ interface Props {
  * quando o candidato passa no schema — senão mostra erro inline e o canvas
  * mantém a última config válida (nunca um valor pela metade rio acima).
  */
-export function NodeConfigPanel({ node, onChange, ramosLigados }: Props) {
+export function NodeConfigPanel({
+  node,
+  onChange,
+  onDelete,
+  ramosLigados,
+  settings,
+  onSettingsChange,
+}: Props) {
   const t = useT();
   const type = node.type as FlowNode["type"];
   const visual = NODE_VISUALS[type];
@@ -79,11 +94,61 @@ export function NodeConfigPanel({ node, onChange, ramosLigados }: Props) {
 
       <div className="space-y-4 border-t border-border pt-4">
         {type === "trigger" && (
-          <p className="text-sm text-text-muted">
-            {t(
-              "Início do fluxo — sem configuração adicional. O disparo (manual, mudança de etapa, silêncio ou fim de conversa) é definido nas configurações do fluxo.",
+          <div className="space-y-3">
+            <p className="text-sm text-text-muted">
+              {t(
+                "Início do fluxo — sem configuração adicional. O disparo (manual, mudança de etapa, silêncio ou fim de conversa) é definido nas configurações do fluxo.",
+              )}
+            </p>
+            {onSettingsChange && (
+              <div className="space-y-3 border-t border-border pt-3">
+                <div className="space-y-2">
+                  <Label htmlFor="flow-max-tentativas">{t("Máximo de tentativas por pergunta")}</Label>
+                  <Input
+                    id="flow-max-tentativas"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={settings?.max_tentativas_pergunta ?? 3}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 1 && n <= 10) {
+                        onSettingsChange({
+                          max_tentativas_pergunta: Math.round(n),
+                          ...(settings?.gatilhos ? { gatilhos: settings.gatilhos } : {}),
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-text-muted">
+                    {t(
+                      "Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.",
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="flow-gatilhos">{t("Palavras-gatilho (separe por vírgula)")}</Label>
+                  <Input
+                    id="flow-gatilhos"
+                    value={(settings?.gatilhos ?? []).join(", ")}
+                    onChange={(e) => {
+                      const lista = e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter((s) => s.length > 0);
+                      onSettingsChange({
+                        max_tentativas_pergunta: settings?.max_tentativas_pergunta ?? 3,
+                        ...(lista.length > 0 ? { gatilhos: lista } : {}),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-text-muted">
+                    {t("Quando a mensagem do cliente contiver uma delas, o fluxo começa sozinho.")}
+                  </p>
+                </div>
+              </div>
             )}
-          </p>
+          </div>
         )}
         {type === "wait" && (
           <WaitForm config={node.data.config as ConfigOf<"wait">} onChange={(config) => onChange({ config })} />
@@ -113,12 +178,38 @@ export function NodeConfigPanel({ node, onChange, ramosLigados }: Props) {
             onChange={(config) => onChange({ config })}
           />
         )}
+        {type === "collect" && (
+          <CollectForm
+            config={node.data.config as ConfigOf<"collect">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "skill" && (
+          <SkillForm
+            config={node.data.config as ConfigOf<"skill">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
         {type === "action" && (
           <ActionForm config={node.data.config as ConfigOf<"action">} onChange={(config) => onChange({ config })} />
         )}
         {type === "end" && (
           <EndForm config={node.data.config as ConfigOf<"end">} onChange={(config) => onChange({ config })} />
         )}
+      </div>
+
+      <div className="mt-auto border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full text-destructive"
+          data-testid="delete-node"
+          onClick={onDelete}
+        >
+          <Trash size={14} aria-hidden className="mr-1" />
+          {t("Excluir nó")}
+        </Button>
       </div>
     </div>
   );

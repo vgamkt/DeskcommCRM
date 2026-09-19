@@ -296,6 +296,16 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/ai/atendimento",
+    label: "Fluxos de atendimento",
+    description: "Perguntas que a IA conduz durante a conversa, com os dados guardados por cliente.",
+    icon: "ListChecks",
+    group: "ia",
+    section: "Montar o agente",
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
     href: "/app/ai/routers",
     label: "Roteadores",
     description: "Qual agente pega qual conversa, e quando o humano assume.",

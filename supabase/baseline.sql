@@ -7737,7 +7737,8 @@ alter table job_queue add constraint job_queue_kind_check
   -- antigos rodam antes e falham em cadeia. Vigiado por
   -- tests/unit/baseline-constraint-reconstruida.test.ts.
   -- 'transactional_delivery' (0226) segue a mesma consolidação de vocabulário.
-  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply'));
+  -- 'flow_summary' (0241) também: síntese do fluxo de atendimento por modelo.
+  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply','flow_summary'));
 alter table job_queue drop constraint if exists job_queue_turn_needs_contact;
 do $$
 declare c text;
@@ -7748,7 +7749,7 @@ begin
   if c is not null then execute format('alter table job_queue drop constraint %I', c); end if;
 end $$;
 alter table job_queue add constraint job_queue_turn_needs_contact
-  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply')) = (contact_id is not null));
+  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply','flow_summary')) = (contact_id is not null));
 
 alter table cron_jobs drop constraint if exists cron_jobs_job_kind_check;
 alter table cron_jobs add constraint cron_jobs_job_kind_check
@@ -11874,12 +11875,16 @@ security definer
 set search_path = public
 as $$
   with orgs as (
-    -- Sem a condição de claim aqui de propósito: o lateral abaixo a aplica, e uma
-    -- organização cujos vencidos estão todos com lease apenas devolve zero linhas.
-    select distinct organization_id
-      from followup_enrollments
-     where status in ('active','waiting_reply')
-       and next_eval_at <= now()
+    -- Sem a condição de claim aqui de propósito: o lateral abaixo a aplica.
+    -- `surface <> ''atendimento''` (0242): o enrollment do fluxo de ATENDIMENTO é
+    -- conduzido pelo TURNO; o motor de RELÓGIO não pode pegá-lo (cancelava o fluxo
+    -- vivo em nome do follow-up).
+    select distinct e.organization_id
+      from followup_enrollments e
+      join followup_flow_pointers p on p.id = e.pointer_id
+     where e.status in ('active','waiting_reply')
+       and e.next_eval_at <= now()
+       and p.surface <> ''atendimento''
   ),
   fila as (
     select f.id, f.next_eval_at, f.posicao_na_org
@@ -11889,10 +11894,12 @@ as $$
                d.next_eval_at,
                row_number() over (order by d.next_eval_at) as posicao_na_org
           from followup_enrollments d
+          join followup_flow_pointers p on p.id = d.pointer_id
          where d.organization_id = orgs.organization_id
            and d.status in ('active','waiting_reply')
            and d.next_eval_at <= now()
            and (d.claimed_until is null or d.claimed_until < now())
+           and p.surface <> ''atendimento''
          order by d.next_eval_at
          limit p_limit
       ) f
@@ -14857,12 +14864,15 @@ alter table public.followup_flow_pointers
 alter table public.followup_flow_pointers
   drop constraint if exists followup_flow_pointers_surface_check;
 
+-- Bloco ÚNICO da constraint (regra de baseline-constraint-reconstruida): o valor
+-- 'atendimento' (migration 0236) entra AQUI, não num apêndice próprio.
 alter table public.followup_flow_pointers
   add constraint followup_flow_pointers_surface_check
-  check (surface in ('followup', 'crm_automation'));
+  check (surface in ('followup', 'crm_automation', 'atendimento'));
 
 comment on column public.followup_flow_pointers.surface is
-  'Onde o fluxo aparece: followup = /app/ai/followups; crm_automation = CRM Automação. '
+  'Onde o fluxo aparece: followup = /app/ai/followups; crm_automation = CRM Automação; '
+  'atendimento = fluxo de perguntas em tempo real. '
   'Vocabulário cobrado por tests/invariants/vocabulario-banco-x-typescript.test.ts.';
 
 -- ---- inscrição Web Push (migrations 0197 e 0199) ----
@@ -23285,6 +23295,522 @@ update public.channel_sessions
 
 notify pgrst,'reload schema';
 
+-- ---- LGPD do fluxo robusto: a cascata zera completion_note + a trilha (migration 0240) ----
+
+CREATE OR REPLACE FUNCTION "public"."fn_lgpd_cascade_redact_contact"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_already bool;
+  v_counts jsonb := '{}'::jsonb;
+  v_media_paths text[] := '{}';
+  v_anon_label text;
+  v_count int;
+begin
+  perform public.fn_service_lock(p_organization_id,p_contact_id);
+  select is_anonymized into v_already
+    from contacts
+    where id = p_contact_id and organization_id = p_organization_id;
+
+  if not found then
+    raise exception 'contact not found' using errcode = 'P0002';
+  end if;
+
+  if v_already then
+    return jsonb_build_object('already_anonymized', true, 'counts', v_counts, 'media_paths', v_media_paths);
+  end if;
+
+  v_anon_label := 'Cliente Anonimizado #' || substring(p_contact_id::text from 1 for 8);
+
+  -- Collect media storage paths (we only delete what we own — media_storage_path)
+  select coalesce(array_agg(distinct media_storage_path) filter (where media_storage_path is not null), '{}')
+    into v_media_paths
+    from messages
+    where organization_id = p_organization_id
+      and conversation_id in (
+        select id from conversations
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      );
+
+  -- 1. contacts (irreversible)
+  update contacts set
+    name = v_anon_label,
+    display_name = v_anon_label,
+    email = null,
+    phone_number = null,
+    cpf_encrypted = null,
+    cpf_hash = null,
+    birthdate = null,
+    is_anonymized = true,
+    anonymized_at = now(),
+    consent = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contacts', v_count);
+
+  -- 2. conversations metadata + preview strip
+  update conversations set
+    metadata = '{}'::jsonb,
+    last_message_preview = null,
+    updated_at = now()
+  where contact_id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('conversations', v_count);
+
+  -- 3. messages: redact body + null media + strip metadata
+  update messages set
+    body = '[mensagem anonimizada]',
+    media_url = null,
+    media_mime = null,
+    media_size_bytes = null,
+    media_storage_path = null,
+    metadata = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('messages', v_count);
+
+  -- 4. crm_lead_activities — strip payload, metadata E reason (migration 0071).
+  update crm_lead_activities set
+    payload = '{}'::jsonb,
+    metadata = '{}'::jsonb,
+    reason = null
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('activities', v_count);
+
+  -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags
+  update crm_leads set
+    title = v_anon_label,
+    description = null,
+    custom_fields = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('leads', v_count);
+
+  -- 6. orders — PRESERVE values + status + timestamps. Strip personal fields from payload jsonb
+  update orders set
+    payload = (coalesce(payload, '{}'::jsonb))
+      - 'customer'
+      - 'customer_name'
+      - 'customer_email'
+      - 'customer_phone'
+      - 'shipping_address'
+      - 'billing_address'
+      - 'contact_identification',
+    customer_external_id = null,
+    contact_id = null,
+    is_anonymized = true,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('orders', v_count);
+
+  -- 6b. Fluxo de atendimento — a SÍNTESE (`completion_note`) e a TRILHA
+  --     (`contact_flow_events.payload/field_key/message_id`) guardam o que o
+  --     cliente respondeu/fez. Zera o conteúdo pessoal PRESERVANDO a linha: o
+  --     vínculo com o fluxo é dado operacional, não da pessoa.
+  --     (O `contact_flow_data` passou a ser zerado na migration 0243 — o texto
+  --     cru da resposta sobrevivia ao esquecimento.)
+  update followup_enrollments set
+    completion_note = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('followup_enrollments', v_count);
+
+  update contact_flow_events set
+    payload = '{}'::jsonb,
+    field_key = null,
+    message_id = null
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contact_flow_events', v_count);
+
+  -- 7. enqueue media for async deletion (idempotent via unique (bucket, object_path))
+  if array_length(v_media_paths, 1) > 0 then
+    insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+    select p_organization_id, p_request_id, 'whatsapp-media', path
+      from unnest(v_media_paths) as path
+      where path is not null and length(path) > 0
+    on conflict (bucket, object_path) do nothing;
+  end if;
+
+  -- 8. dense audit row
+  insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
+  values (
+    p_organization_id,
+    'lgpd.redact_executed',
+    null,
+    'contact',
+    p_contact_id,
+    jsonb_build_object(
+      'cascaded_to', v_counts,
+      'media_queued', coalesce(array_length(v_media_paths, 1), 0),
+      'request_id', p_request_id
+    ),
+    true
+  );
+
+  return jsonb_build_object(
+    'already_anonymized', false,
+    'counts', v_counts,
+    'media_paths', v_media_paths
+  );
+end;
+$$;
+
+revoke all on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- fluxo de atendimento: o motor de follow-up nao pega enrollment de atendimento (migration 0242) ----
+
+-- 0242 · O motor de FOLLOW-UP nunca pega o enrollment de ATENDIMENTO.
+--
+-- ─── O defeito (medido ao vivo, 2026-09-18) ─────────────────────────────────
+-- `followup_enrollments` é compartilhada pelos dois fluxos: o de follow-up
+-- (surface='followup'/'crm_automation', conduzido pelo RELÓGIO) e o de
+-- atendimento (surface='atendimento', conduzido pelo TURNO). O claim do relógio
+-- e o `aplicar-inbound` NÃO filtravam `surface`, então pegavam também o
+-- enrollment de atendimento. Ao processá-lo pelo motor de follow-up, o
+-- `service_boundary` estava vencido (aquele enrollment é de OUTRO fluxo) e o
+-- enrollment era CANCELADO — "Atendimento encerrado ou substituído".
+--
+-- Efeito ao vivo: o fluxo de atendimento iniciava (evento `iniciado`, primeira
+-- resposta capturada) e morria no turno seguinte, sem fazer as perguntas.
+--
+-- ─── O que esta migration faz ───────────────────────────────────────────────
+-- O claim passa a exigir que o POINTER do enrollment seja de superfície de
+-- follow-up. `surface='atendimento'` fica de fora por construção.
+--
+-- (O filtro equivalente no lado do cliente, `lib/followup/aplicar-inbound.ts`,
+-- entra no mesmo commit — o claim SQL e a consulta do inbound são duas portas.)
+--
+-- `create or replace` de função EXISTENTE; sem função nova em `public` e sem
+-- GRANT novo ⇒ itens 8/9 da doutrina de migrations não são acionados. O
+-- `revoke`/`grant` originais permanecem (a assinatura não muda).
+
+create or replace function fn_claim_due_followup_enrollments(p_limit int, p_lease_seconds int)
+returns setof followup_enrollments
+language sql
+security definer
+set search_path = public
+as $$
+  with orgs as (
+    select distinct e.organization_id
+      from followup_enrollments e
+      join followup_flow_pointers p on p.id = e.pointer_id
+     where e.status in ('active','waiting_reply')
+       and e.next_eval_at <= now()
+       and p.surface <> 'atendimento'
+  ),
+  fila as (
+    select f.id, f.next_eval_at, f.posicao_na_org
+      from orgs
+      cross join lateral (
+        select d.id,
+               d.next_eval_at,
+               row_number() over (order by d.next_eval_at) as posicao_na_org
+          from followup_enrollments d
+          join followup_flow_pointers p on p.id = d.pointer_id
+         where d.organization_id = orgs.organization_id
+           and d.status in ('active','waiting_reply')
+           and d.next_eval_at <= now()
+           and (d.claimed_until is null or d.claimed_until < now())
+           and p.surface <> 'atendimento'
+         order by d.next_eval_at
+         limit p_limit
+      ) f
+  ),
+  escolhidos as (
+    select id from fila order by posicao_na_org, next_eval_at limit p_limit
+  ),
+  travados as (
+    select e.id from followup_enrollments e
+     where e.id in (select id from escolhidos)
+     for update skip locked
+  )
+  update followup_enrollments e
+     set claimed_until = now() + make_interval(secs => p_lease_seconds),
+         updated_at = now()
+   where e.id in (select id from travados)
+     and (e.claimed_until is null or e.claimed_until < now())
+  returning e.*;
+$$;
+
+revoke execute on function fn_claim_due_followup_enrollments(int, int) from public, anon, authenticated;
+grant execute on function fn_claim_due_followup_enrollments(int, int) to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- LGPD: a cascata alcanca as respostas do fluxo (migration 0243) ----
+
+-- 0243 · LGPD: a cascata alcança as RESPOSTAS do fluxo (contact_flow_data).
+--
+-- ─── O defeito (achado na auditoria de 2026-09-19) ──────────────────────────
+-- A migration 0240 fez a cascata zerar `followup_enrollments.completion_note` e
+-- `contact_flow_events.payload/field_key/message_id`, mas NÃO tocou em
+-- `contact_flow_data.value`/`value_json` — e o comentário de lá afirmava que
+-- esses valores "passam por anonimização do contato", o que é FALSO: a cascata
+-- reescreve a linha de `contacts`, não a tabela de respostas (a FK só age em
+-- DELETE). Resultado: o texto cru que o cliente digitou (campos `text` livres,
+-- cidade, nome, CPF em campo de fluxo) sobrevive ao direito ao esquecimento.
+--
+-- Aqui a cascata passa a zerar o CONTEÚDO da resposta, PRESERVANDO a linha (a
+-- chave do campo e o vínculo com o fluxo são operacionais, não da pessoa). O
+-- `value` (texto cru) e o `value_json` (normalizado) são anulados.
+--
+-- `create or replace` de função EXISTENTE; sem função nova em `public` e sem
+-- GRANT novo ⇒ itens 8/9 da doutrina de migrations não são acionados.
+
+CREATE OR REPLACE FUNCTION "public"."fn_lgpd_cascade_redact_contact"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_already bool;
+  v_counts jsonb := '{}'::jsonb;
+  v_media_paths text[] := '{}';
+  v_anon_label text;
+  v_count int;
+begin
+  perform public.fn_service_lock(p_organization_id,p_contact_id);
+  select is_anonymized into v_already
+    from contacts
+    where id = p_contact_id and organization_id = p_organization_id;
+
+  if not found then
+    raise exception 'contact not found' using errcode = 'P0002';
+  end if;
+
+  if v_already then
+    return jsonb_build_object('already_anonymized', true, 'counts', v_counts, 'media_paths', v_media_paths);
+  end if;
+
+  v_anon_label := 'Cliente Anonimizado #' || substring(p_contact_id::text from 1 for 8);
+
+  select coalesce(array_agg(distinct media_storage_path) filter (where media_storage_path is not null), '{}')
+    into v_media_paths
+    from messages
+    where organization_id = p_organization_id
+      and conversation_id in (
+        select id from conversations
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      );
+
+  -- 1. contacts (irreversible)
+  update contacts set
+    name = v_anon_label,
+    display_name = v_anon_label,
+    email = null,
+    phone_number = null,
+    cpf_encrypted = null,
+    cpf_hash = null,
+    birthdate = null,
+    is_anonymized = true,
+    anonymized_at = now(),
+    consent = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contacts', v_count);
+
+  -- 2. conversations metadata + preview strip
+  update conversations set
+    metadata = '{}'::jsonb,
+    last_message_preview = null,
+    updated_at = now()
+  where contact_id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('conversations', v_count);
+
+  -- 3. messages: redact body + null media + strip metadata
+  update messages set
+    body = '[mensagem anonimizada]',
+    media_url = null,
+    media_mime = null,
+    media_size_bytes = null,
+    media_storage_path = null,
+    metadata = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('messages', v_count);
+
+  -- 4. crm_lead_activities — strip payload, metadata E reason (migration 0071).
+  update crm_lead_activities set
+    payload = '{}'::jsonb,
+    metadata = '{}'::jsonb,
+    reason = null
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('activities', v_count);
+
+  -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags
+  update crm_leads set
+    title = v_anon_label,
+    description = null,
+    custom_fields = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('leads', v_count);
+
+  -- 6. orders — PRESERVE values + status + timestamps. Strip personal fields from payload jsonb
+  update orders set
+    payload = (coalesce(payload, '{}'::jsonb))
+      - 'customer'
+      - 'customer_name'
+      - 'customer_email'
+      - 'customer_phone'
+      - 'shipping_address'
+      - 'billing_address'
+      - 'contact_identification',
+    customer_external_id = null,
+    contact_id = null,
+    is_anonymized = true,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('orders', v_count);
+
+  -- 6b. Fluxo de atendimento — SÍNTESE, TRILHA e RESPOSTAS.
+  update followup_enrollments set
+    completion_note = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('followup_enrollments', v_count);
+
+  update contact_flow_events set
+    payload = '{}'::jsonb,
+    field_key = null,
+    message_id = null
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contact_flow_events', v_count);
+
+  -- 6c. RESPOSTAS do fluxo (`contact_flow_data`): `value` é o texto CRU do
+  --     cliente e `value_json` o normalizado — ambos são dado pessoal. Zera o
+  --     conteúdo preservando a linha (chave/vínculo são operacionais).
+  update contact_flow_data set
+    value = null,
+    value_json = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contact_flow_data', v_count);
+
+  -- 7. enqueue media for async deletion (idempotent via unique (bucket, object_path))
+  if array_length(v_media_paths, 1) > 0 then
+    insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+    select p_organization_id, p_request_id, 'whatsapp-media', path
+      from unnest(v_media_paths) as path
+      where path is not null and length(path) > 0
+    on conflict (bucket, object_path) do nothing;
+  end if;
+
+  -- 8. dense audit row
+  insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
+  values (
+    p_organization_id,
+    'lgpd.redact_executed',
+    null,
+    'contact',
+    p_contact_id,
+    jsonb_build_object(
+      'cascaded_to', v_counts,
+      'media_queued', coalesce(array_length(v_media_paths, 1), 0),
+      'request_id', p_request_id
+    ),
+    true
+  );
+
+  return jsonb_build_object(
+    'already_anonymized', false,
+    'counts', v_counts,
+    'media_paths', v_media_paths
+  );
+end;
+$$;
+
+revoke all on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
@@ -23520,3 +24046,203 @@ create unique index if not exists channel_sessions_datafy_phone_number_id_ativo_
   where archived_at is null and datafy_phone_number_id is not null;
 
 -- ---- fim canal de WhatsApp Datafy (migration 0235) ----
+
+-- ---- fluxos de atendimento (migration 0236) ----
+-- Chão de dados da superfície `atendimento`: as respostas coletadas por um fluxo
+-- durante a conversa, por contato+fluxo+campo. O valor novo do CHECK de
+-- `followup_flow_pointers.surface` ('atendimento') NÃO é reconstruído aqui — ele
+-- mora no bloco único da migration 0196 acima (regra do
+-- baseline-constraint-reconstruida). Este bloco cuida só da tabela nova.
+create table if not exists public.contact_flow_data (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  flow_pointer_id uuid not null references public.followup_flow_pointers(id) on delete cascade,
+  enrollment_id uuid references public.followup_enrollments(id) on delete set null,
+  field_key text not null,
+  value text,
+  value_json jsonb,
+  source text not null default 'client',
+  collected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint contact_flow_data_unico
+    unique (organization_id, contact_id, flow_pointer_id, field_key),
+  constraint contact_flow_data_field_key_valido
+    check (field_key ~ '^[a-z][a-z0-9_]{0,59}$'),
+  constraint contact_flow_data_source_conhecido
+    check (source in ('client', 'agent', 'deterministic'))
+);
+
+comment on table public.contact_flow_data is
+  'Respostas coletadas por um fluxo de atendimento (surface=atendimento), por contato+fluxo+campo. '
+  'Fonte do bloco PENDENTES do agente: campo sem linha aqui é pergunta em aberto. '
+  'Origem do valor em `source`; par de vocabulário em lib/followup/contact-flow-data.ts.';
+comment on column public.contact_flow_data.enrollment_id is
+  'Corrida corrente do fluxo para este contato. ON DELETE SET NULL: limpar a execução não apaga o dado já coletado do cliente.';
+comment on column public.contact_flow_data.value_json is
+  'Valor normalizado (number/date/bool/seleção). `value` guarda o texto cru informado.';
+
+create index if not exists contact_flow_data_contato_idx
+  on public.contact_flow_data (organization_id, contact_id, flow_pointer_id);
+
+create index if not exists contact_flow_data_enrollment_idx
+  on public.contact_flow_data (organization_id, enrollment_id);
+
+alter table public.contact_flow_data enable row level security;
+
+drop policy if exists tenant_isolation_contact_flow_data_all on public.contact_flow_data;
+create policy tenant_isolation_contact_flow_data_all on public.contact_flow_data
+  for all
+  using (organization_id in (select * from public.fn_user_org_ids()))
+  with check (organization_id in (select * from public.fn_user_org_ids()));
+
+revoke all on public.contact_flow_data from anon;
+
+drop trigger if exists trg_contact_flow_data_updated_at on public.contact_flow_data;
+create trigger trg_contact_flow_data_updated_at
+  before update on public.contact_flow_data
+  for each row execute function public.fn_set_updated_at();
+
+-- ---- fim fluxos de atendimento (migration 0236) ----
+
+-- ---- roteador aponta fluxo de atendimento (migration 0237) ----
+-- O membro do roteador continua roteando para o agente; `flow_pointer_id` faz
+-- um fluxo de atendimento começar junto quando a intenção casa.
+alter table public.ai_router_members
+  add column if not exists flow_pointer_id uuid
+    references public.followup_flow_pointers(id) on delete set null;
+
+comment on column public.ai_router_members.flow_pointer_id is
+  'Fluxo de atendimento (surface=atendimento) que começa quando esta intenção casa. NULL = só roteia agente.';
+
+create index if not exists idx_ai_router_members_flow
+  on public.ai_router_members (flow_pointer_id)
+  where flow_pointer_id is not null;
+
+-- ---- fim roteador aponta fluxo (migration 0237) ----
+
+-- ---- tentativas por pergunta (migration 0238) ----
+alter table public.contact_flow_data
+  add column if not exists attempts smallint not null default 0;
+
+comment on column public.contact_flow_data.attempts is
+  'Quantas vezes a pergunta foi feita sem resposta. Ao atingir max_tentativas_pergunta (settings do grafo), a pergunta é encerrada como não respondida e deixa de ser feita.';
+
+comment on column public.contact_flow_data.value is
+  'Valor CRU informado pelo cliente (como ele escreveu). O normalizado fica em value_json e é o que o sistema usa.';
+
+-- ---- fim tentativas por pergunta (migration 0238) ----
+
+-- ---- fluxo robusto: eventos + síntese (migration 0239) ----
+create table if not exists public.contact_flow_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  enrollment_id uuid not null references public.followup_enrollments(id) on delete cascade,
+  flow_pointer_id uuid not null references public.followup_flow_pointers(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  kind text not null,
+  message_id uuid,
+  field_key text,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint contact_flow_events_kind_conhecido
+    check (kind in ('iniciado', 'resposta', 'fora_do_fluxo', 'pergunta_feita', 'concluido', 'esgotado', 'encadeou')),
+  constraint contact_flow_events_field_key_valido
+    check (field_key is null or field_key ~ '^[a-z][a-z0-9_]{0,59}$')
+);
+
+comment on table public.contact_flow_events is
+  'Trilha append-only de uma execução de fluxo de atendimento (surface=atendimento). '
+  'Guarda o SIGNIFICADO do turno (respondeu/desviou/perguntou/concluiu); o conteúdo da '
+  'mensagem fica em messages. Base da síntese/continuação da venda.';
+comment on column public.contact_flow_events.kind is
+  'O que aconteceu no turno. Vocabulário fechado; par em lib/followup/contact-flow-data.ts.';
+
+create index if not exists contact_flow_events_enrollment_idx
+  on public.contact_flow_events (organization_id, enrollment_id, created_at);
+
+alter table public.contact_flow_events enable row level security;
+
+drop policy if exists tenant_isolation_contact_flow_events_all on public.contact_flow_events;
+create policy tenant_isolation_contact_flow_events_all on public.contact_flow_events
+  for all
+  using (organization_id in (select * from public.fn_user_org_ids()))
+  with check (organization_id in (select * from public.fn_user_org_ids()));
+
+revoke all on public.contact_flow_events from anon;
+
+alter table public.followup_enrollments
+  add column if not exists completion_note text;
+
+comment on column public.followup_enrollments.completion_note is
+  'Síntese do fluxo ao concluir/esgotar; alimenta a continuação da conversa/venda.';
+
+-- ---- fim fluxo robusto: eventos + síntese (migration 0239) ----
+
+-- ---- fluxo robusto: RBAC das tabelas novas (migration 0240) ----
+-- 0240 · Fluxo de atendimento robusto: RBAC de `contact_flow_data`/`contact_flow_events`.
+--
+-- `contact_flow_data` (0236) e `contact_flow_events` (0239) nasceram com policy `ALL`
+-- só-tenancy (`organization_id in fn_user_org_ids()`), sem `fn_role_at_least`. O
+-- invariante `tests/invariants/rbac-config-ia-canais.test.ts` ("nenhuma tabela NOVA
+-- entra com policy ALL só-tenancy") reprova as duas. Aqui elas seguem o padrão das
+-- tabelas já corrigidas: SELECT por tenancy e escrita para `manager`+ (é o papel que
+-- edita fluxo; o motor escreve com `service_role`, que bypassa RLS — logo o aperto
+-- não toca o runtime).
+--
+-- A parte de LGPD da 0240 (a cascata passa a zerar `followup_enrollments.completion_note`
+-- e `contact_flow_events`) está ACIMA do bloco da varredura anon, porque cria função.
+--
+-- Aditiva e idempotente (drop if exists + create policy). Nenhuma função NOVA em
+-- `public` ⇒ o item 9 da doutrina de migrations não é acionado.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 1. RBAC: contact_flow_data
+-- ─────────────────────────────────────────────────────────────────────────────
+drop policy if exists tenant_isolation_contact_flow_data_all on public.contact_flow_data;
+
+drop policy if exists tenant_isolation_contact_flow_data_select on public.contact_flow_data;
+create policy tenant_isolation_contact_flow_data_select on public.contact_flow_data
+  for select using (
+    organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_contact_flow_data_write on public.contact_flow_data;
+create policy tenant_isolation_contact_flow_data_write on public.contact_flow_data
+  for all using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2. RBAC: contact_flow_events
+-- ─────────────────────────────────────────────────────────────────────────────
+drop policy if exists tenant_isolation_contact_flow_events_all on public.contact_flow_events;
+
+drop policy if exists tenant_isolation_contact_flow_events_select on public.contact_flow_events;
+create policy tenant_isolation_contact_flow_events_select on public.contact_flow_events
+  for select using (
+    organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_contact_flow_events_write on public.contact_flow_events;
+create policy tenant_isolation_contact_flow_events_write on public.contact_flow_events
+  for all using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. LGPD: a cascata alcança a síntese e a trilha do fluxo de atendimento.
+--    Mesma função da 0229, com o passo 6b acrescentado.
+-- ─────────────────────────────────────────────────────────────────────────────

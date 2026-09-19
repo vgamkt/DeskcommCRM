@@ -170,6 +170,28 @@ import {
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import { gravarDadosDeterministicos } from './dados-do-lead';
+import {
+  campoPorChave,
+  carregarEstadoDeAtendimento,
+  escolherFluxoPeloGatilho,
+  finalizarFluxoDeAtendimento,
+  iniciarFluxoDeAtendimento,
+  listarFluxosDeAtendimentoAtivos,
+  processarInboundDoFluxo,
+  registrarDadoDoFluxo,
+  registrarEventoDoFluxo,
+  renderBlocoDeAtendimento,
+  situacaoDoChecklist,
+} from '@/lib/followup/atendimento';
+import type { EndFinish } from '@/lib/followup/graph-schema';
+import {
+  ehAcenoOuSilencio,
+  perguntaSaiuNosTextos,
+  textoDaPergunta,
+  valorBateComTipo,
+} from '@/lib/followup/captura-do-fluxo';
+import { validarRespostaDoFluxo } from './flow-validate';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -185,11 +207,75 @@ export const AGENT_TOOL_DEFS = {
       'Relê o contexto curado do lead nesta organização: dados do contato e as últimas mensagens da conversa.',
     inputSchema: z.object({}),
   },
+  read_skill: {
+    description:
+      'Carrega o procedimento completo de uma skill instalada, pelo nome (ex.: "catalogo-apresentacao"). ' +
+      'Use sempre que a conversa tocar o assunto de uma skill listada no bloco de procedimentos do sistema.',
+    inputSchema: z.object({
+      name: z.string().min(1).describe('nome exato da skill, como aparece no bloco de procedimentos'),
+    }),
+  },
+  flow_collect: {
+    description:
+      'Registra a resposta do cliente a um campo do FLUXO DE ATENDIMENTO ativo. Use assim que ele informar o dado — ' +
+      'mesmo que você ainda não tenha perguntado — para ficar guardado e não ser perguntado de novo. ' +
+      'Passe em `valor` o dado NORMALIZADO (o sentido) e em `bruto` o texto cru do cliente. Não invente valor.',
+    inputSchema: z.object({
+      campo: z.string().min(1).max(60).describe('a chave do campo, como aparece no bloco do fluxo'),
+      valor: z
+        .string()
+        .min(1)
+        .max(500)
+        .describe('valor NORMALIZADO (ex.: true/false, número, AAAA-MM-DD, uma das opções)'),
+      bruto: z.string().min(1).max(500).optional().describe('o texto cru que o cliente escreveu (opcional)'),
+    }),
+  },
+  flow_start: {
+    description:
+      'Inicia um FLUXO DE ATENDIMENTO para este cliente — o roteiro de perguntas cadastrado (ex.: "Qualificação", ' +
+      '"Financiamento", "Troca"). Use quando o assunto do cliente pedir esse roteiro; depois de iniciar, siga as ' +
+      'perguntas que vierem no bloco do fluxo, uma por vez. Não use se já houver um fluxo ativo.',
+    inputSchema: z.object({
+      fluxo: z
+        .string()
+        .min(1)
+        .max(80)
+        .optional()
+        .describe('nome do fluxo; se houver só um ativo, pode omitir'),
+    }),
+  },
+  save_client_data: {
+    description:
+      'Registra no contato os dados que o CLIENTE informou (nome, cidade, cnh, cpf, data_nascimento). ' +
+      'Use assim que ele informar um desses dados, para não perguntar de novo. NUNCA grave o que ele não disse.',
+    inputSchema: z.object({
+      nome: z.string().min(1).max(120).optional(),
+      cidade: z.string().min(1).max(120).optional(),
+      cnh: z.boolean().optional(),
+      cpf: z.string().min(1).max(20).optional(),
+      data_nascimento: z.string().min(1).max(20).optional(),
+    }),
+  },
   send_message: {
     description:
-      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado.',
+      'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
+      'Para FOTO(S), preencha media_urls com uma ou mais URLs e use body como LEGENDA — a legenda vai SÓ na primeira foto; as demais saem sem legenda.',
     inputSchema: z.object({
-      body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
+      body: z
+        .string()
+        .min(1)
+        .describe('texto da mensagem (ou a legenda da 1ª foto), em pt-br, pronto para envio'),
+      media_urls: z
+        .array(z.string().min(1))
+        .max(10)
+        .optional()
+        .describe(
+          'URLs das imagens a enviar EM SEQUÊNCIA (ex.: as 5 fotos de uma moto). A legenda (body) vai só na 1ª.',
+        ),
+      media_url: z
+        .string()
+        .optional()
+        .describe('URL de UMA imagem (compatibilidade). Prefira media_urls para várias.'),
     }),
   },
   update_lead_state: {
@@ -380,6 +466,13 @@ export const AGENT_TOOL_DEFS = {
  * que o modelo não fez não vale um cliente sem resposta.
  */
 export const MAX_VETOS_DE_VOCABULARIO_INTERNO = 2;
+
+/**
+ * O mesmo degrau para o veto de `muleta_mecanica` (costura de retomada com fluxo
+ * ativo): 1ª vez ensina o modelo a reescrever sem a muleta; a 2ª solta o envio.
+ * Mesma assimetria do vazamento interno — estilo não vale um cliente mudo.
+ */
+export const MAX_VETOS_DE_MULETA = 2;
 
 /**
  * O mesmo degrau para o veto de `false_empty_inbound`, e pela mesma assimetria.
@@ -1102,6 +1195,13 @@ export function ritualBlocks(
    * o inbound decidiu.
    */
   compromissosBlock = '',
+  /**
+   * Há um FLUXO DE ATENDIMENTO ativo guiando este turno. Quando `true`, o bloco
+   * fixo "Dados essenciais / PENDENTES" (C-012) CEDE LUGAR ao fluxo — decisão do
+   * dono: a coleta passa a ser do fluxo, não do bloco. Sem fluxo, o bloco continua
+   * exatamente como era (aditivo, retrocompatível).
+   */
+  fluxoAtivo = false,
 ): string[] {
   const checkpointBlock = previous
     ? JSON.stringify({
@@ -1146,6 +1246,43 @@ export function ritualBlocks(
     '## Estado do funil',
     stateBlock,
     '',
+    // DADOS ESSENCIAIS DO CLIENTE + o que ainda falta perguntar (C-012). Sem este
+    // bloco, o agente não sabe que já tem/não tem nome/cidade/CNH e simplesmente
+    // não pergunta. Ele é o "estado de qualificação" por contato.
+    //
+    // QUANDO HÁ FLUXO DE ATENDIMENTO ATIVO, o bloco CEDE — o fluxo é a fonte das
+    // perguntas (bloco "Fluxo de atendimento" mais abaixo). Dois roteiros de
+    // coleta no mesmo turno é o defeito que a decisão do dono fecha.
+    ...(fluxoAtivo
+      ? []
+      : (() => {
+          const cf = (context.contact.custom_fields ?? {}) as Record<string, unknown>;
+          const str = (v: unknown): string | null =>
+            typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+          const nome = context.contact.name ?? str(cf.nome);
+          const cidade = str(cf.cidade);
+          const cnhBruto = cf.cnh;
+          const cnh =
+            typeof cnhBruto === 'boolean'
+              ? cnhBruto
+                ? 'sim'
+                : 'não'
+              : str(cnhBruto);
+          const pendentes: string[] = [];
+          if (!nome) pendentes.push('nome');
+          if (!cidade) pendentes.push('cidade');
+          if (cnh === null) pendentes.push('CNH');
+          return [
+            '## Dados essenciais do cliente',
+            `Nome: ${nome ?? 'não informado'}`,
+            `Cidade: ${cidade ?? 'não informado'}`,
+            `CNH: ${cnh ?? 'não informado'}`,
+            pendentes.length > 0
+              ? `PENDENTES: ${pendentes.join(', ')} — colete NO MÁXIMO UMA quando houver abertura natural, sem deslocar o assunto do cliente; atenda/responda o cliente primeiro. NÃO pergunte financiamento, CPF, data de nascimento nem CNH antes de o cliente demonstrar interesse em uma moto. Pare quando não houver mais pendentes.`
+              : 'PENDENTES: nenhum (dados essenciais completos) — não pergunte esses dados.',
+            '',
+          ];
+        })()),
     // Índice da memória durável do lead (F3-05): headlines + id, orçamento fixo. O
     // corpo vem sob demanda (get_lead_note). Injetado AQUI, no SUFIXO — depois do
     // prefixo cacheável (F2-17), como o bloco temporal da F3-03.
@@ -1204,6 +1341,13 @@ export function buildOpeningMessage(
   compromissosBlock = '',
   /** Mensagem canônica do job inbound; vence uma leitura concorrente do histórico. */
   currentInboundText?: string,
+  /**
+   * Há um FLUXO DE ATENDIMENTO ativo guiando este turno. Quando `true`, o bloco
+   * fixo de "Dados essenciais / PENDENTES" (C-012) CEDE LUGAR ao fluxo — decisão
+   * do dono: a coleta passa a ser do fluxo, não do bloco. Sem fluxo, o bloco
+   * continua como sempre foi (aditivo, retrocompatível).
+   */
+  fluxoAtivo = false,
 ): string {
   const entregue = (nome: string): boolean => entregues.includes(nome);
   const mensagemAtual =
@@ -1226,7 +1370,15 @@ export function buildOpeningMessage(
   return [
     'Novo turno de atendimento: o lead enviou uma mensagem (a última inbound do histórico abaixo).',
     '',
-    ...ritualBlocks(previous, leadState, context, notesIndexBlock, projeta, compromissosBlock),
+    ...ritualBlocks(
+      previous,
+      leadState,
+      context,
+      notesIndexBlock,
+      projeta,
+      compromissosBlock,
+      fluxoAtivo,
+    ),
     '',
     ...mensagemAtualBlock,
     '',
@@ -1359,6 +1511,12 @@ export interface AgentTurnInput {
     projeta?: boolean;
     /** ferramentas que saíram para o Operador — o prompt não pode citá-las. */
     entregues?: readonly string[];
+    /**
+     * O turno tem um FLUXO DE ATENDIMENTO ativo? Quando `true`, o bloco fixo de
+     * "Dados essenciais / PENDENTES" cede lugar ao fluxo. Decidido pelo turno
+     * (que carrega o enrollment), não pelo callback.
+     */
+    fluxoAtivo?: boolean;
   }) => string;
 }
 
@@ -1696,7 +1854,7 @@ async function executarTurnoDoAgente(
   }
 
   const routed = preview
-    ? { config: preview.agent, routerId: null, intentName: null, confidence: null, outcome: 'preview' }
+    ? { config: preview.agent, routerId: null, intentName: null, confidence: null, outcome: 'preview', flowPointerId: null }
     : input.resolvedAgent ?? await resolveConversationTurn(pool, deps.llmCfg, {
         tenantId, leadId, jobId: liveJob().id,
         channelSessionId: input.channelSessionId,
@@ -1704,6 +1862,23 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog });
   const agentConfig = routed.config;
+  // Fase 4: o roteador casou uma intenção ligada a um fluxo de atendimento —
+  // começa o fluxo para o contato. O estado do fluxo é carregado logo abaixo
+  // (depois das skills), então ele já guia ESTE turno.
+  if (!preview && routed.flowPointerId) {
+    try {
+      await iniciarFluxoDeAtendimento(pool, {
+        organizationId: tenantId,
+        contactId: leadId,
+        flowPointerId: routed.flowPointerId,
+      });
+    } catch (err) {
+      runLog.warn('não consegui iniciar o fluxo de atendimento do roteador', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        flow_pointer_id: routed.flowPointerId,
+      });
+    }
+  }
   if (!preview && agentConfig?.operationMode === 'assisted' && job?.kind === 'inbound_turn') {
     const { generateReplyDraft } = await import('./reply-drafts');
     await generateReplyDraft(pool, deps, {
@@ -1854,6 +2029,69 @@ async function executarTurnoDoAgente(
   // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
   const skills = await loadSkills(pool, tenantId);
   const skillIndex = renderSkillIndex(skills);
+  // Mensagem inbound do job, lida UMA vez: alimenta o gatilho por assunto, a
+  // captura determinística do fluxo e o contexto do turno (antes era lida duas
+  // vezes). `null` quando o job não tem inbound (ex.: follow-up).
+  const currentInboundText =
+    input.inboundMessageId === undefined
+      ? null
+      : await loadInboundBodyForJob(pool, {
+          tenantId,
+          conversationId: input.conversationId,
+          inboundMessageId: input.inboundMessageId,
+        });
+
+  // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
+  // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
+  // null e nada muda.
+  let atendimento = preview
+    ? null
+    : await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
+  // FASE 2 — ENTRADA POR GATILHO (motor): sem fluxo ativo, o MOTOR decide começar
+  // pelo assunto da mensagem — não depende do modelo chamar flow_start. Só no
+  // inbound e quando a mensagem casa as palavras-gatilho de um fluxo ativo.
+  let fluxoIniciadoNesteTurno = false;
+  // O VALIDADOR rodou neste turno? Se sim, ele é a FONTE da gravação do fluxo e
+  // o `flow_collect` do modelo vira no-op. Motivo medido (2026-09-19): com o
+  // modelo lento, um turno de abertura atrasado ainda chamava `flow_collect` e
+  // gravava a mensagem antiga num campo — o validador já tinha decidido. Uma
+  // resposta, um gravador.
+  let validadorDecidiuNesteTurno = false;
+  let validadorGravouNesteTurno = false;
+  if (
+    !preview &&
+    atendimento === null &&
+    liveJob().kind === 'inbound_turn' &&
+    input.inboundMessageId !== undefined
+  ) {
+    try {
+      const alvo = await escolherFluxoPeloGatilho(pool, {
+        organizationId: tenantId,
+        texto: currentInboundText,
+      });
+      if (alvo !== null) {
+        await iniciarFluxoDeAtendimento(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+          flowPointerId: alvo.id,
+        }).catch(() => {});
+        atendimento = await carregarEstadoDeAtendimento(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+        });
+        // A mensagem que ACIONOU o fluxo é o gatilho, não resposta às perguntas
+        // que ainda nem foram feitas. Medido ao vivo (2026-09-18): a frase
+        // "quero dar minha moto na troca" foi gravada como resposta de
+        // `moto_troca` e de `troca_ano`. Sem processar captura/registro neste
+        // turno, a abertura só inicia e o modelo responde.
+        fluxoIniciadoNesteTurno = atendimento !== null;
+      }
+    } catch (err) {
+      runLog.warn('não consegui avaliar o gatilho do fluxo de atendimento', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  }
   // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
   // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
   // encaixa playbook + memória + índice de skills no prefixo cacheável.
@@ -1895,14 +2133,6 @@ async function executarTurnoDoAgente(
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
-  const currentInboundText =
-    input.inboundMessageId === undefined
-      ? null
-      : await loadInboundBodyForJob(pool, {
-          tenantId,
-          conversationId: input.conversationId,
-          inboundMessageId: input.inboundMessageId,
-        });
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -2107,6 +2337,115 @@ async function executarTurnoDoAgente(
     }
   }
 
+  // FASE 2 — CAPTURA/VALIDAÇÃO DO FLUXO (motor): processa o inbound contra a
+  // pergunta pendente ANTES de gerar, agora com o CONTEXTO já carregado (o
+  // validador precisa das últimas mensagens). Resposta e desvio NÃO contam
+  // tentativa; aceno/silêncio conta; ao teto, o fluxo esgota e conclui.
+  let finalizacaoDoFluxo: EndFinish | undefined;
+  if (
+    atendimento !== null &&
+    !preview &&
+    liveJob().kind === 'inbound_turn' &&
+    input.inboundMessageId !== undefined &&
+    // O turno que ACIONOU o fluxo não tem resposta a capturar (ver acima).
+    !fluxoIniciadoNesteTurno
+  ) {
+    // Narrowing estável dentro do callback/try: o TypeScript perde o `!== null`
+    // do `if` quando `atendimento` é reatribuído mais abaixo.
+    const atendimentoDoTurno = atendimento;
+    try {
+      // O VALIDADOR (agente dedicado) decide o que gravar — a pergunta pendente
+      // OU a correção de um campo já preenchido. Ele vê o CONTEXTO da conversa,
+      // o que impede a gravação errada do modelo principal. Falha dele
+      // (`indefinido`) cai no classificador determinístico de sempre.
+      const pendente = atendimentoDoTurno.situacao.pendentes[0];
+      // Campos já preenchidos que ACEITAM correção — o cliente pode mudar um dado
+      // a qualquer momento ("na verdade o ano é 2020").
+      const corrigiveis = atendimentoDoTurno.checklist.passos
+        .filter(
+          (p): p is Extract<(typeof atendimentoDoTurno.checklist.passos)[number], { kind: "collect" }> =>
+            p.kind === "collect" &&
+            p.node.config.permite_correcao &&
+            atendimentoDoTurno.valores[p.node.config.key] !== undefined,
+        )
+        .map((p) => ({
+          key: p.node.config.key,
+          label: p.node.config.label,
+          valor: atendimentoDoTurno.valores[p.node.config.key] ?? "",
+        }));
+      let validacao: { respondeu: boolean; valor?: string; campo?: string } | undefined;
+      if (
+        (pendente !== undefined || corrigiveis.length > 0) &&
+        currentInboundText !== null &&
+        currentInboundText.trim() !== ''
+      ) {
+        const ultimasMensagens = effectiveContext.messages.slice(-6).map((m) => ({
+          de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
+          texto: m.body,
+        }));
+        const cfg = pendente?.config;
+        const leitura = await validarRespostaDoFluxo(
+          pool,
+          deps.llmCfg,
+          { tenantId, leadId, jobId: liveJob().id },
+          {
+            pergunta:
+              cfg === undefined
+                ? null
+                : {
+                    key: cfg.key,
+                    label: cfg.label,
+                    type: cfg.type,
+                    ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+                    ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+                  },
+            preenchidos: corrigiveis,
+            mensagens: ultimasMensagens,
+          },
+          { registry: deps.registry, log: runLog },
+        );
+        if (leitura.resultado === 'respondeu') {
+          validacao = { respondeu: true, valor: leitura.valor, campo: leitura.campo };
+        } else if (leitura.resultado === 'nao_respondeu') {
+          validacao = { respondeu: false };
+        }
+        // `indefinido` → sem validação; o classificador puro decide abaixo.
+        validadorDecidiuNesteTurno = leitura.resultado !== 'indefinido';
+        runLog.info('fluxo: decisão do validador', {
+          campo: cfg?.key ?? null,
+          corrigiveis: corrigiveis.map((c) => c.key),
+          resultado: leitura.resultado,
+          campo_alvo: leitura.resultado === 'respondeu' ? leitura.campo : null,
+          texto: (currentInboundText ?? '').slice(0, 60),
+        });
+      }
+      // Se o VALIDADOR já gravou neste turno, o modelo principal NÃO pode chamar
+      // `flow_collect`: ele gravava a MESMA resposta no próximo campo (medido ao
+      // vivo: validador grava `moto_troca`, e 6s depois o modelo grava
+      // `troca_ano`). Uma resposta, um campo — quem grava é o motor.
+      validadorGravouNesteTurno = validacao?.respondeu === true;
+      const r = await processarInboundDoFluxo(pool, {
+        organizationId: tenantId,
+        estado: atendimento,
+        texto: currentInboundText,
+        messageId: input.inboundMessageId,
+        ...(validacao !== undefined ? { validacao } : {}),
+      });
+      atendimento = r.estado;
+      if (r.concluiu) {
+        finalizacaoDoFluxo = r.finalizacao ?? atendimento.checklist.fim.config.ao_finalizar;
+      }
+    } catch (err) {
+      runLog.warn('não consegui processar o inbound do fluxo de atendimento', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  }
+
+  const fluxoAtendimento = atendimento;
+  const valoresDoFluxo =
+    fluxoAtendimento === null ? null : new Set(Object.keys(fluxoAtendimento.valores));
+
   // Índice da memória durável do lead (F3-05) — headlines dentro do orçamento fixo,
   // injetado no SUFIXO da abertura (não invalida o prefixo cacheável F2-17). Montado
   // DEPOIS do flush (F3-07) para que as notas gravadas neste turno já entrem no índice.
@@ -2192,6 +2531,11 @@ async function executarTurnoDoAgente(
   // (`internal_vocabulary_leak`): 1º veto no turno ensina o modelo a reescrever; persistir
   // solta o envio com registro. Por turno (closure), nunca cross-turno.
   let internalVocabularyVetoCount = 0;
+  // Contador do fail-safe do gate anti-mecânico (`muleta_mecanica`): 1º veto no
+  // turno ensina o modelo a reescrever sem a costura; persistiu, solta o envio
+  // (com registro) — mesma doutrina do vazamento de vocabulário: cliente mudo
+  // nunca é desfecho.
+  let muletaVetoCount = 0;
   // Uma recusa deste tipo devolve o texto confirmado ao modelo para que ele
   // reescreva antes de falar com o cliente. Não gasta envio nem toca no canal.
   let falseEmptyInboundVetoCount = 0;
@@ -2235,6 +2579,10 @@ async function executarTurnoDoAgente(
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
+  // Corpos EFETIVAMENTE enviados neste turno (já após a cadeia de guardrails).
+  // Usados pela trava "a pergunta saiu?" do fluxo de atendimento: se a pergunta
+  // pendente não apareceu em nenhum deles, o motor a envia em mensagem própria.
+  const corposEnviados: string[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
   let pendingCitations: ReturnType<typeof citationsFromHits> = [];
@@ -2253,7 +2601,19 @@ async function executarTurnoDoAgente(
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
   const skillSignal = latestInboundSignal(effectiveContext.messages);
   const skillMatch = matchSkills(skills, skillSignal);
-  const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
+  // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
+  // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
+  // por keyword vence, e a mesma skill não entra duas vezes. A skill da
+  // FINALIZAÇÃO também entra (o fluxo concluiu e ela deve valer neste turno).
+  const nomesDeSkillDoFluxo = [
+    ...(fluxoAtendimento?.situacao.skills ?? []),
+    ...(finalizacaoDoFluxo?.tipo === 'skill' ? [finalizacaoDoFluxo.skill_name] : []),
+  ];
+  const skillsDoFluxo = nomesDeSkillDoFluxo
+    .map((nome) => skills.find((s) => s.name === nome))
+    .filter((s): s is (typeof skills)[number] => s !== undefined)
+    .filter((s) => !skillMatch.matched.some((m) => m.name === s.name));
+  const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoFluxo]);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
@@ -2314,6 +2674,300 @@ async function executarTurnoDoAgente(
   const mcpToolIdsDoTurno: string[] = [];
 
   const rawTools: ToolSet = {
+    read_skill: tool({
+      ...AGENT_TOOL_DEFS.read_skill,
+      execute: async ({ name }) => {
+        const skill = skills.find((s) => s.name === name);
+        if (!skill) {
+          return {
+            ok: false,
+            error: {
+              code: 'skill_nao_encontrada',
+              message: `Não existe skill "${name}". Disponíveis: ${skills
+                .map((s) => s.name)
+                .join(', ')}.`,
+            },
+          };
+        }
+        return { ok: true, name: skill.name, description: skill.description, body: skill.body };
+      },
+    }),
+    flow_collect: tool({
+      ...AGENT_TOOL_DEFS.flow_collect,
+      execute: async ({ campo, valor, bruto }) => {
+        if (fluxoAtendimento === null || valoresDoFluxo === null) {
+          return { ok: false, error: { code: 'sem_fluxo', message: 'Não há fluxo de atendimento ativo.' } };
+        }
+        // No turno que ACIONOU o fluxo, a mensagem do cliente é o gatilho — não
+        // resposta a pergunta alguma (que ainda não foi feita). Bloquear o
+        // registro aqui é o que impede o modelo de gravar a frase de abertura
+        // como `moto_troca`/`troca_ano` (medido ao vivo, 2026-09-18).
+        if (fluxoIniciadoNesteTurno) {
+          return {
+            ok: false,
+            error: {
+              code: 'fluxo_acabou_de_iniciar',
+              message:
+                'O fluxo acabou de começar por este assunto. NÃO registre nada ainda: responda o cliente e faça a primeira pergunta.',
+            },
+          };
+        }
+        // O VALIDADOR já decidiu este turno? Então o modelo NÃO registra: ele é
+        // a única fonte da gravação do fluxo. Recusar aqui fecha a via frágil
+        // (modelo lento/reprocessado gravando mensagem antiga num campo).
+        if (validadorDecidiuNesteTurno || validadorGravouNesteTurno) {
+          return {
+            ok: false,
+            error: {
+              code: 'resposta_ja_registrada',
+              message:
+                'O sistema já registrou a resposta deste turno. Não chame flow_collect; siga a conversa.',
+            },
+          };
+        }
+        const campoNode = campoPorChave(fluxoAtendimento.checklist, campo);
+        if (campoNode === null) {
+          return {
+            ok: false,
+            error: {
+              code: 'campo_desconhecido',
+              message: `O campo "${campo}" não pertence ao fluxo ativo.`,
+              campos: fluxoAtendimento.situacao.pendentes.map((n) => n.config.key),
+            },
+          };
+        }
+        // SÓ a PERGUNTA PENDENTE (a que está sendo feita agora) pode ser
+        // registrada pelo modelo — é ela que o VALIDADOR (`flow_validate`)
+        // controla. Sem este corte, o modelo gravava a MESMA resposta em campos
+        // seguintes (medido ao vivo: "é uma CG 125" ia para `moto_troca` E
+        // `troca_ano`). Dado de campo fora de ordem entra pelo validador/captura,
+        // não por aqui.
+        const pendenteAgora = fluxoAtendimento.situacao.pendentes[0];
+        if (pendenteAgora !== undefined && campoNode.config.key !== pendenteAgora.config.key) {
+          return {
+            ok: false,
+            error: {
+              code: 'fora_da_pergunta_atual',
+              message: `A pergunta atual é "${pendenteAgora.config.key}". Registre só ela; as demais vêm depois, uma por vez.`,
+            },
+          };
+        }
+        // O valor tem que bater com o TIPO do campo. Sem isto, o modelo gravava
+        // "ok" num campo `number` (medido no teste ao vivo) e a pergunta ficava
+        // "respondida" com lixo. Recusar devolve ao modelo para reinterpretar;
+        // `text` continua aceitando qualquer coisa (é o tipo livre).
+        if (!valorBateComTipo(campoNode.config, valor)) {          return {
+            ok: false,
+            error: {
+              code: 'valor_incompativel',
+              message: `O valor enviado não responde ao campo "${campoNode.config.key}" (tipo ${campoNode.config.type}). Se o cliente NÃO respondeu, não chame flow_collect.`,
+            },
+          };
+        }
+        // Aceno/silêncio NUNCA é resposta — vale para TODO tipo, inclusive `text`.
+        // Medido no teste ao vivo: o modelo gravou "ok" em `troca_estado` e
+        // "beleza" em `troca_documentacao`. Isso é dado errado no cadastro, e o
+        // certo é a tentativa contar (o motor já faz) e a pergunta seguir.
+        if (ehAcenoOuSilencio(String(bruto ?? valor))) {
+          return {
+            ok: false,
+            error: {
+              code: 'aceno_nao_e_resposta',
+              message:
+                'O cliente não respondeu à pergunta (foi só um "ok"/emoji). NÃO registre; siga a conversa.',
+            },
+          };
+        }
+        // Correção: só sobrescreve o que já existe quando o campo permite.
+        if (valoresDoFluxo.has(campoNode.config.key) && !campoNode.config.permite_correcao) {
+          return {
+            ok: false,
+            error: {
+              code: 'correcao_nao_permitida',
+              message: `O campo "${campoNode.config.key}" já foi preenchido e não permite correção.`,
+            },
+          };
+        }
+        try {
+          await registrarDadoDoFluxo(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            flowPointerId: fluxoAtendimento.enrollment.pointer_id,
+            enrollmentId: fluxoAtendimento.enrollment.id,
+            fieldKey: campoNode.config.key,
+            // `value` = texto cru do cliente; `value_json` = o NORMALIZADO (o que o sistema usa).
+            value: bruto ?? valor,
+            valueJson: { normalizado: valor, tipo: campoNode.config.type },
+            source: 'agent',
+          });
+        } catch {
+          return { ok: false, error: { code: 'gravar_falhou', message: 'Não consegui registrar agora.' } };
+        }
+        valoresDoFluxo.add(campoNode.config.key);
+        void registrarEventoDoFluxo(pool, {
+          organizationId: tenantId,
+          enrollmentId: fluxoAtendimento.enrollment.id,
+          flowPointerId: fluxoAtendimento.enrollment.pointer_id,
+          contactId: leadId,
+          kind: 'resposta',
+          messageId: input.inboundMessageId ?? null,
+          fieldKey: campoNode.config.key,
+          payload: { normalizado: valor, tipo: campoNode.config.type },
+        }).catch(() => {});
+        const situacao = situacaoDoChecklist(fluxoAtendimento.checklist, valoresDoFluxo, {
+          tentativas: fluxoAtendimento.tentativas,
+          maxTentativas: fluxoAtendimento.maxTentativas,
+        });
+        if (!situacao.completo) {
+          return {
+            ok: true,
+            gravou: campoNode.config.key,
+            pendentes: situacao.pendentes.map((n) => n.config.key),
+          };
+        }
+        // O valor recém-capturado entra no estado: é ele que a síntese enxerga.
+        const estadoComValor = {
+          ...fluxoAtendimento,
+          valores: { ...fluxoAtendimento.valores, [campoNode.config.key]: valor },
+        };
+        const { finalizacao: fim } = await finalizarFluxoDeAtendimento(pool, {
+          organizationId: tenantId,
+          estado: estadoComValor,
+          messageId: input.inboundMessageId ?? null,
+          kind: 'concluido',
+        });
+        if (fim?.tipo === 'skill') {
+          const skill = skills.find((s) => s.name === fim.skill_name);
+          return {
+            ok: true,
+            completo: true,
+            acao: 'skill',
+            ...(skill ? { skill: { name: skill.name, body: skill.body } } : {}),
+            mensagem: `Fluxo concluído. Puxe agora a skill ${fim.skill_name}.`,
+          };
+        }
+        if (fim?.tipo === 'ia') {
+          return {
+            ok: true,
+            completo: true,
+            acao: 'ia',
+            ...(fim.prompt ? { orientacao: fim.prompt } : {}),
+            mensagem: 'Fluxo concluído — siga o atendimento normalmente.',
+          };
+        }
+        if (fim?.tipo === 'proximo_fluxo') {
+          return {
+            ok: true,
+            completo: true,
+            acao: 'proximo_fluxo',
+            mensagem:
+              'Fluxo concluído. O próximo fluxo da sequência já foi iniciado — continue o atendimento a partir dele.',
+          };
+        }
+        return { ok: true, completo: true, acao: 'nada', mensagem: 'Fluxo concluído.' };
+      },
+    }),
+    flow_start: tool({
+      ...AGENT_TOOL_DEFS.flow_start,
+      execute: async ({ fluxo }) => {
+        if (preview) {
+          return { ok: false, error: { code: 'previa', message: 'Prévia não inicia fluxo.' } };
+        }
+        // Já existe um fluxo ativo neste contato: devolve o que falta, não inicia outro.
+        if (fluxoAtendimento !== null) {
+          return {
+            ok: true,
+            ja_ativo: true,
+            fluxo: fluxoAtendimento.nomeDoFluxo,
+            pendentes: fluxoAtendimento.situacao.pendentes.map((n) => n.config.key),
+          };
+        }
+        const ativos = await listarFluxosDeAtendimentoAtivos(pool, tenantId);
+        let alvo: { id: string; nome: string } | null = null;
+        if (fluxo) {
+          alvo = ativos.find((f) => f.nome.toLowerCase() === fluxo.trim().toLowerCase()) ?? null;
+          if (alvo === null) {
+            return {
+              ok: false,
+              error: {
+                code: 'fluxo_nao_encontrado',
+                message: `Não existe fluxo de atendimento ativo "${fluxo}".`,
+                fluxos: ativos.map((f) => f.nome),
+              },
+            };
+          }
+        } else if (ativos.length === 1) {
+          alvo = ativos[0]!;
+        } else {
+          return {
+            ok: false,
+            error: {
+              code: 'fluxo_ambiguo',
+              message: 'Há mais de um fluxo de atendimento ativo; diga qual.',
+              fluxos: ativos.map((f) => f.nome),
+            },
+          };
+        }
+        let enrollmentId: string | null;
+        try {
+          enrollmentId = await iniciarFluxoDeAtendimento(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            flowPointerId: alvo.id,
+          });
+        } catch {
+          return { ok: false, error: { code: 'iniciar_falhou', message: 'Não consegui iniciar o fluxo agora.' } };
+        }
+        if (enrollmentId === null) {
+          return {
+            ok: false,
+            error: { code: 'nao_iniciou', message: 'O cliente já está em outro fluxo ativo (ou o fluxo não pôde começar).' },
+          };
+        }
+        const estado = await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
+        return {
+          ok: true,
+          fluxo: alvo.nome,
+          pendentes: (estado?.situacao.pendentes ?? []).map((n) => ({
+            campo: n.config.key,
+            pergunta: n.config.question ?? n.config.label,
+            obrigatoria: n.config.required,
+          })),
+          instrucao:
+            'O fluxo começou. Faça no máximo UMA pergunta agora e registre a resposta com flow_collect quando o cliente responder.',
+        };
+      },
+    }),
+    save_client_data: tool({
+      ...AGENT_TOOL_DEFS.save_client_data,
+      execute: async (dados) => {
+        const campos: Record<string, unknown> = {};
+        if (dados.cidade !== undefined) campos.cidade = dados.cidade;
+        if (dados.cnh !== undefined) campos.cnh = dados.cnh;
+        if (dados.cpf !== undefined) campos.cpf = dados.cpf;
+        if (dados.data_nascimento !== undefined) campos.data_nascimento = dados.data_nascimento;
+        if (dados.nome !== undefined) campos.nome = dados.nome;
+        if (Object.keys(campos).length === 0) {
+          return { ok: false, error: { code: 'nada_a_gravar', message: 'Nenhum dado informado.' } };
+        }
+        try {
+          if (dados.nome !== undefined) {
+            await pool.query(
+              `update contacts set name = $3 where organization_id = $1 and id = $2`,
+              [tenantId, leadId, dados.nome],
+            );
+          }
+          await pool.query(
+            `update contacts set custom_fields = coalesce(custom_fields, '{}'::jsonb) || $3::jsonb
+              where organization_id = $1 and id = $2`,
+            [tenantId, leadId, JSON.stringify(campos)],
+          );
+        } catch {
+          return { ok: false, error: { code: 'gravar_falhou', message: 'Não consegui registrar agora.' } };
+        }
+        return { ok: true, gravou: Object.keys(campos) };
+      },
+    }),
     get_lead_context: tool({
       ...AGENT_TOOL_DEFS.get_lead_context,
       execute: async (): Promise<
@@ -2445,6 +3099,7 @@ async function executarTurnoDoAgente(
           sleep: deps.sleep,
           lgpd,
           send: (finalBody: string) => {
+            corposEnviados.push(finalBody);
             seq += 1;
             return liveChannel().send({
               tenantId,
@@ -2520,7 +3175,17 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: async ({ body, media_url, media_urls }) => {
+        // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
+        // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
+        const fotos = [
+          ...new Set(
+            [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
+              .flatMap((u) => String(u).split('|'))
+              .map((s) => s.trim())
+              .filter((s) => /^https?:\/\//i.test(s)),
+          ),
+        ];
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2577,6 +3242,28 @@ async function executarTurnoDoAgente(
             agentConfig?.casesEnabled === true
               ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
               : false;
+          // C-015: envia as fotos EM SEQUÊNCIA — só a 1ª leva a legenda; as demais
+          // sem legenda. Feito AQUI (sem rodada do modelo por foto) para ser rápido.
+          const dormir =
+            deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+          const enviarFotos = async (legenda: string): Promise<ChannelSendResult> => {
+            let ultimo: ChannelSendResult | undefined;
+            for (let i = 0; i < fotos.length; i++) {
+              ultimo = await liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq: (seq += 1),
+                conversationId: input.conversationId,
+                body: i === 0 ? legenda : '',
+                media: { type: 'image', url: fotos[i]! },
+              });
+              if (i < fotos.length - 1) await dormir(700);
+            }
+            return ultimo!;
+          };
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -2612,6 +3299,10 @@ async function executarTurnoDoAgente(
             // não é dele, e a única saída seria o silêncio. O follow-up determinístico
             // idem (ver GateContext.internalVocabularyEnforced).
             enforceInternalVocabulary: true,
+            // Fase 2 do fluxo robusto: com um fluxo de atendimento ATIVO, veta a
+            // costura mecânica ("como estamos falando disso, vamos continuar").
+            // Sem fluxo, o gate fica desarmado — é estilo, não dano a prevenir.
+            antiMecanicoEnforced: fluxoAtendimento !== null,
             // Mesmo padrão do vocabulário interno: só o `send_message` arma — é o único
             // corpo escrito pelo modelo. `active` segue a MESMA condição de
             // `AGENDA_SYSTEM_BLOCK` (crm_book_appointment publicado); sem ela o gate
@@ -2630,8 +3321,15 @@ async function executarTurnoDoAgente(
               : {}),
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
-            send: (finalBody: string) =>
-              sendInBubbles(finalBody, {
+            //
+            // C-007 (mídia): quando há `media_url`, envia UMA mensagem de imagem com o
+            // `finalBody` como legenda — NÃO passa por `sendInBubbles` (quebrar uma
+            // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
+            send: (finalBody: string) => {
+              corposEnviados.push(finalBody);
+              return fotos.length > 0
+                ? enviarFotos(finalBody)
+                : sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
@@ -2677,7 +3375,8 @@ async function executarTurnoDoAgente(
                     body: bubble,
                   });
                 },
-              }),
+                });
+            },
           };
           let chain = await runBeforeSend(beforeSendArgs);
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
@@ -2754,6 +3453,25 @@ async function executarTurnoDoAgente(
               openedCaseThisTurn,
               hasOpenCase: hasOpenCase || openedCaseThisTurn,
               enforceInternalVocabulary: false,
+            });
+          }
+          if (chain.status === 'vetoed' && chain.code === 'muleta_mecanica') {
+            // Mesma doutrina do vazamento de vocabulário: rede de estilo, não
+            // invariante sagrada. 1º veto ensina (o modelo reescreve sem a
+            // costura); persistiu, o envio sai com SÓ este gate desarmado — o
+            // re-run passa pela cadeia inteira, os demais continuam valendo.
+            muletaVetoCount += 1;
+            if (muletaVetoCount < MAX_VETOS_DE_MULETA) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            runLog.warn('fail-safe do gate anti-mecânico: envio liberado após vetos seguidos', {
+              vetos: muletaVetoCount,
+            });
+            chain = await runBeforeSend({
+              ...beforeSendArgs,
+              openedCaseThisTurn,
+              hasOpenCase: hasOpenCase || openedCaseThisTurn,
+              antiMecanicoEnforced: false,
             });
           }
           if (chain.status === 'vetoed') {
@@ -3452,6 +4170,10 @@ async function executarTurnoDoAgente(
       entregues,
       compromissosBlock,
       ...(currentInboundText !== null ? { currentInboundText } : {}),
+      // O turno decide: com FLUXO ativo, o bloco fixo de PENDENTES cede lugar ao
+      // fluxo (decisão do dono). O callback não enxerga `fluxoAtendimento` — ele
+      // mora neste escopo, então o flag viaja junto.
+      fluxoAtivo: fluxoAtendimento !== null,
     });
     // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
     // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
@@ -3494,6 +4216,7 @@ async function executarTurnoDoAgente(
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
+      fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,
@@ -3589,6 +4312,91 @@ async function executarTurnoDoAgente(
       throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
     }
 
+    // FASE 2 — TRAVA "A PERGUNTA SAIU?" (motor): a pergunta pendente do fluxo é
+    // COMPROMISSO, não sugestão. Se o modelo não a incluiu em NENHUMA das
+    // mensagens deste turno, o motor a envia em mensagem própria — pela MESMA
+    // cadeia de guardrails (nada sai por baixo dela). Best-effort: falhar aqui
+    // não derruba o turno que já respondeu ao cliente.
+    if (
+      !preview &&
+      liveJob().kind === 'inbound_turn' &&
+      atendimento !== null &&
+      valoresDoFluxo !== null &&
+      seq < maxSendsPerTurn
+    ) {
+      const estadoDoFluxo = atendimento;
+      const pendenteDoTurno = estadoDoFluxo.situacao.pendentes[0];
+      if (pendenteDoTurno !== undefined && !valoresDoFluxo.has(pendenteDoTurno.config.key)) {
+        const cfg = pendenteDoTurno.config;
+        const pergunta = textoDaPergunta({
+          key: cfg.key,
+          label: cfg.label,
+          type: cfg.type,
+          ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+          ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+        });
+        const eventoPergunta = (origem: 'modelo' | 'motor'): void => {
+          void registrarEventoDoFluxo(pool, {
+            organizationId: tenantId,
+            enrollmentId: estadoDoFluxo.enrollment.id,
+            flowPointerId: estadoDoFluxo.enrollment.pointer_id,
+            contactId: estadoDoFluxo.enrollment.contact_id,
+            kind: 'pergunta_feita',
+            messageId: input.inboundMessageId ?? null,
+            fieldKey: cfg.key,
+            payload: { origem },
+          }).catch(() => {});
+        };
+        if (perguntaSaiuNosTextos(pergunta, corposEnviados)) {
+          eventoPergunta('modelo');
+        } else {
+          try {
+            const chain = await runBeforeSend({
+              pool,
+              log: runLog,
+              agentOperation,
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              channelSessionId: input.channelSessionId,
+              body: pergunta,
+              optedOutThisTurn,
+              crmDailyLimit: null,
+              // A pergunta é DETERMINÍSTICA e pode repetir por design (foi feita e
+              // não respondida): o gate anti-blast vetaria justamente o que este
+              // caminho existe para garantir. Mesmo motivo do aviso de escalação.
+              enforceSpinning: false,
+              now: clock(),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              ...(lgpd !== undefined ? { lgpd } : {}),
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              send: (finalBody: string) => {
+                seq += 1;
+                corposEnviados.push(finalBody);
+                return liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq,
+                  conversationId: input.conversationId,
+                  body: finalBody,
+                });
+              },
+            });
+            if (chain.status === 'sent') eventoPergunta('motor');
+          } catch (err) {
+            runLog.warn('trava da pergunta do fluxo falhou — o turno segue', {
+              error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+            });
+          }
+        }
+      }
+    }
+
     // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
     // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
     // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
@@ -3656,6 +4464,15 @@ async function executarTurnoDoAgente(
     // faria a seguir.
     const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
     await insertCheckpoint(pool, { tenantId, leadId, jobId: liveJob().id, content });
+
+    // C-003: captura DETERMINÍSTICA de CPF/CNH/data de nascimento da fala do cliente.
+    // Não depende do modelo; best-effort (falha aqui NUNCA derruba o turno que já
+    // respondeu ao cliente).
+    void gravarDadosDeterministicos(pool, {
+      tenantId,
+      contatoId: leadId,
+      texto: currentInboundText,
+    }).catch(() => {});
 
     // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
     //
@@ -4067,6 +4884,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         entregues,
         compromissosBlock,
         currentInboundText,
+        fluxoAtivo,
       }) =>
         buildOpeningMessage(
           previous,
@@ -4077,6 +4895,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           entregues,
           compromissosBlock,
           currentInboundText,
+          fluxoAtivo ?? false,
         ),
     });
   };
