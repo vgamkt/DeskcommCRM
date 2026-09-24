@@ -24246,3 +24246,202 @@ create policy tenant_isolation_contact_flow_events_write on public.contact_flow_
 -- 3. LGPD: a cascata alcança a síntese e a trilha do fluxo de atendimento.
 --    Mesma função da 0229, com o passo 6b acrescentado.
 -- ─────────────────────────────────────────────────────────────────────────────
+
+-- ---- catálogo configurável do agente (migration 0244) ----
+-- 0244 · O catálogo do agente (tabela/colunas do banco externo) deixa de estar
+-- cravado no código (`motos`, `imagem_url`) e passa a ser configurável pela tela
+-- de Integração de dados. Uma linha por organização (unique organization_id).
+-- Leitura para qualquer membro; escrita só `admin`. Nenhuma função nova em
+-- `public` (usa fn_set_updated_at, fn_audit_log_row, fn_user_org_ids,
+-- fn_role_at_least). Idempotente: create if not exists + drop policy/trigger.
+
+create table if not exists public.catalog_mappings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  connection_id uuid not null references public.external_db_connections(id) on delete cascade,
+  schema_name text not null default 'public',
+  table_name text not null,
+  col_nome text not null,
+  col_ano text,
+  col_cor text,
+  col_km text,
+  col_preco text,
+  col_imagem text,
+  col_estoque text,
+  col_cilindrada text,
+  col_tipo text,
+  busca_operador text not null default 'contem',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint catalog_mappings_org_uk unique (organization_id),
+  constraint catalog_mappings_busca_operador_conhecido
+    check (busca_operador in ('contem', 'eq', 'comeca_com'))
+);
+
+comment on table public.catalog_mappings is
+  'Mapeamento do catálogo do agente: qual tabela do banco externo e quais colunas são nome/ano/cor/km/preço/imagem/estoque. Uma por organização nesta fase. O runtime lê isto para montar a apresentação e o bloco de catálogo injetado no turno (nunca no prompt fixo da persona).';
+comment on column public.catalog_mappings.col_nome is
+  'Coluna do banco externo que guarda o nome/modelo (obrigatória): é o que casa com o termo do cliente.';
+comment on column public.catalog_mappings.col_cilindrada is
+  'Coluna de cilindrada, se existir. Nula = o motor extrai a cilindrada do nome (ex.: "CB 250" -> 250).';
+comment on column public.catalog_mappings.busca_operador is
+  'Operador da busca por nome: contem | eq | comeca_com. Default contem (tolerante a espaços/caixa).';
+
+create index if not exists catalog_mappings_connection_idx
+  on public.catalog_mappings (connection_id);
+
+alter table public.catalog_mappings enable row level security;
+
+drop policy if exists tenant_isolation_catalog_mappings_select on public.catalog_mappings;
+create policy tenant_isolation_catalog_mappings_select on public.catalog_mappings
+  for select
+  using (organization_id in (select * from public.fn_user_org_ids()));
+
+drop policy if exists tenant_isolation_catalog_mappings_write on public.catalog_mappings;
+create policy tenant_isolation_catalog_mappings_write on public.catalog_mappings
+  for all
+  using (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  )
+  with check (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  );
+
+revoke all on public.catalog_mappings from anon;
+
+drop trigger if exists trg_catalog_mappings_updated_at on public.catalog_mappings;
+create trigger trg_catalog_mappings_updated_at
+  before update on public.catalog_mappings
+  for each row execute function public.fn_set_updated_at();
+
+drop trigger if exists trg_catalog_mappings_audit on public.catalog_mappings;
+create trigger trg_catalog_mappings_audit
+  after insert or update or delete on public.catalog_mappings
+  for each row execute function public.fn_audit_log_row();
+
+-- ---- fim catálogo configurável do agente (migration 0244) ----
+
+-- ---- regras do catálogo no próprio catálogo (migration 0245) ----
+-- 0245 · ligar/desligar, ordem e "quantas oferecer" passam a morar junto ao
+-- catálogo (Integração de dados). Idempotente.
+
+alter table public.catalog_mappings
+  add column if not exists similaridade_deterministica boolean not null default false,
+  add column if not exists similares_qtd integer not null default 3,
+  add column if not exists ordem jsonb not null default '{}'::jsonb;
+
+alter table public.catalog_mappings
+  drop constraint if exists catalog_mappings_similares_qtd_valido;
+alter table public.catalog_mappings
+  add constraint catalog_mappings_similares_qtd_valido
+    check (similares_qtd between 1 and 8);
+
+comment on column public.catalog_mappings.similaridade_deterministica is
+  'true = o motor escolhe as motos semelhantes por regra fixa (ordem), sem depender do julgamento do modelo.';
+comment on column public.catalog_mappings.similares_qtd is
+  'Quantas motos semelhantes oferecer quando o modelo pedido não existe (1..8).';
+comment on column public.catalog_mappings.ordem is
+  'Prioridade por papel de coluna (ex.: {"cilindrada":1,"preco":2}). Vale para escolher as semelhantes e para a ordem dos campos na legenda.';
+
+-- ---- fim regras do catálogo no próprio catálogo (migration 0245) ----
+
+-- ---- backfill: leva a config do agente para o catálogo (migration 0246) ----
+-- Idempotente. Copia `ai_agents.config.catalog` para `catalog_mappings` só quando
+-- o catálogo ainda não tem a regra ligada. O runtime também tem fallback.
+
+update public.catalog_mappings cm
+set
+  similaridade_deterministica = true,
+  similares_qtd = coalesce(
+    nullif(a.config->'catalog'->>'similares_qtd', '')::int,
+    cm.similares_qtd
+  ),
+  ordem = coalesce(
+    (
+      select jsonb_object_agg(t.elem, t.ord::int)
+      from jsonb_array_elements_text(a.config->'catalog'->'criterio') with ordinality as t(elem, ord)
+      where t.elem in ('cilindrada', 'preco', 'tipo')
+    ),
+    cm.ordem
+  ),
+  updated_at = now()
+from public.ai_agents a
+where a.organization_id = cm.organization_id
+  and cm.similaridade_deterministica = false
+  and (a.config->'catalog'->>'similaridade_deterministica')::boolean is true
+  and a.config->'catalog'->'criterio' is not null;
+
+-- ---- fim backfill: config do agente para o catálogo (migration 0246) ----
+
+-- ---- papel `versao` e nome composto no catálogo (migration 0247) ----
+-- Idempotente. A tela passa a reconhecer a coluna `versao` (e `versão`,
+-- `submodelo`) e o nome exibido vira a junção das colunas de prioridade 1.
+
+alter table public.catalog_mappings
+  add column if not exists col_versao text;
+
+comment on column public.catalog_mappings.col_versao is
+  'Coluna de versão/submodelo, se existir. Marque `nome` e `versao` como prioridade 1 para o nome exibido ser a junção dos dois (ex.: "Biz 125" + "Flex").';
+
+-- ---- fim papel `versao` e nome composto no catálogo (migration 0247) ----
+
+-- ---- embedding pelo Google/Gemini no catálogo de modelos (migration 0248) ----
+-- Idempotente. Habilita o RAG sem OpenAI (opção B): o painel passa a oferecer
+-- `gemini-embedding-001` (dimensão 1536) para indexar/consultar o material.
+
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, supports_embedding, embedding_dims)
+values
+  ('google', 'gemini-embedding-001', 'Gemini Embedding 001',
+   'Alternativa sem OpenAI para indexar e consultar o seu material. Dimensão 1536 (MRL) — a coluna vetorial não muda. Trocar de provedor exige reindexar o material.',
+   0, 0, false, true, 1536)
+on conflict (provider, model_id) do update set
+  display_name       = excluded.display_name,
+  description        = excluded.description,
+  supports_embedding = excluded.supports_embedding,
+  embedding_dims     = excluded.embedding_dims,
+  supports_tools     = excluded.supports_tools;
+
+-- ---- fim embedding pelo Google/Gemini no catálogo (migration 0248) ----
+
+-- ---- reindexação incremental: hash do conteúdo por fonte (migration 0249) ----
+-- Idempotente. O indexador grava aqui o hash do conteúdo indexado e pula a
+-- reindexação quando nada mudou (e o modelo de embedding é o mesmo).
+
+alter table public.ai_knowledge_sources
+  add column if not exists content_hash text;
+
+comment on column public.ai_knowledge_sources.content_hash is
+  'Hash do conteúdo que foi indexado por último. O indexador pula a reindexação quando o hash atual é igual E o modelo de embedding da versão ativa é o mesmo.';
+
+-- ---- fim reindexação incremental (migration 0249) ----
+
+-- ---- legenda configurável do catálogo (migration 0250) ----
+-- Idempotente. Quais papéis aparecem no texto enviado JUNTO com a foto.
+
+alter table public.catalog_mappings
+  add column if not exists legenda jsonb not null default '[]'::jsonb;
+
+comment on column public.catalog_mappings.legenda is
+  'Papéis de coluna que aparecem na legenda enviada com a foto da moto (ex.: ["ano","cor","preco"]). Independente do uso interno do dado (semelhança/disponibilidade). Default: ano, cor, km, preço.';
+
+-- ---- fim legenda configurável do catálogo (migration 0250) ----
+
+-- ---- configuração por coluna + referência de similares (migration 0251) ----
+-- Idempotente. `colunas` vazio = derivar da configuração antiga.
+
+alter table public.catalog_mappings
+  add column if not exists colunas jsonb not null default '[]'::jsonb,
+  add column if not exists col_similares text;
+
+comment on column public.catalog_mappings.colunas is
+  'Configuração POR COLUNA: array de {coluna, ia, criterio, mostrar, comparar, ordem, compoe_nome}. Vazio = derivar da configuração antiga (papéis + legenda + ordem).';
+comment on column public.catalog_mappings.col_similares is
+  'Coluna de REFERÊNCIA de motos similares (ex.: moto_similar). Usada SÓ no motor: acha a moto real que cita o pedido. Nunca vai para a IA nem para o cliente.';
+
+-- ---- fim configuração por coluna + referência (migration 0251) ----

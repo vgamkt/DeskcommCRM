@@ -19,9 +19,9 @@ const cfg = {} as never;
 const PERGUNTA: PerguntaDoFluxo = { key: "troca_ano", label: "Ano", type: "number" };
 
 describe("montarMensagemDoValidador", () => {
-  it("traz a pergunta, o tipo, os preenchidos e as últimas mensagens", () => {
+  it("traz as perguntas pendentes, os preenchidos e as últimas mensagens", () => {
     const msg = montarMensagemDoValidador(
-      PERGUNTA,
+      [PERGUNTA, { key: "troca_km", label: "Km", type: "number" }],
       [{ key: "moto_troca", label: "Moto", valor: "CG 125" }],
       [
         { de: "loja", texto: "De que ano ela é?" },
@@ -29,48 +29,72 @@ describe("montarMensagemDoValidador", () => {
       ],
     );
     expect(msg).toContain("chave: troca_ano, tipo: number");
+    expect(msg).toContain("chave: troca_km, tipo: number");
     expect(msg).toContain("chave: moto_troca): CG 125");
     expect(msg).toContain("CLIENTE: é 2019");
   });
 
-  it("sem pendente, declara que só pode estar corrigindo", () => {
-    const msg = montarMensagemDoValidador(null, [{ key: "ano", label: "Ano", valor: "2019" }], []);
-    expect(msg).toContain("nenhuma — o fluxo só pode estar corrigindo");
+  it("sem pendentes, declara que não há perguntas", () => {
+    const msg = montarMensagemDoValidador([], [{ key: "ano", label: "Ano", valor: "2019" }], []);
+    expect(msg).toContain("(nenhuma)");
   });
 
   it("select lista as opções", () => {
     const msg = montarMensagemDoValidador(
-      { key: "cor", label: "Cor", type: "select", options: ["Azul", "Vermelha"] },
+      [{ key: "cor", label: "Cor", type: "select", options: ["Azul", "Vermelha"] }],
       [],
       [],
     );
     expect(msg).toContain("uma de: Azul, Vermelha");
   });
+
+  it("lista os campos ENCERRADOS por não resposta (resposta tardia)", () => {
+    const msg = montarMensagemDoValidador([], [], [], [
+      { key: "cpf", label: "CPF", type: "text", question: "Pode me passar seu CPF?" },
+    ]);
+    expect(msg).toContain("encerrados por não resposta");
+    expect(msg).toContain("chave: cpf");
+  });
 });
 
 describe("parseLeituraDoValidador", () => {
-  it("lê o JSON mesmo com prosa/cerca em volta", () => {
+  it("lê o formato novo (lista de respostas) mesmo com cerca em volta", () => {
     expect(
-      parseLeituraDoValidador('```json\n{"campo":"troca_ano","respondeu":true,"valor":"2019"}\n```'),
-    ).toEqual({ campo: "troca_ano", respondeu: true, valor: "2019" });
+      parseLeituraDoValidador(
+        '```json\n{"respostas":[{"campo":"troca_ano","valor":"2019"},{"campo":"troca_km","valor":"120"}]}\n```',
+      ),
+    ).toEqual({
+      respostas: [
+        { campo: "troca_ano", valor: "2019" },
+        { campo: "troca_km", valor: "120" },
+      ],
+    });
   });
 
-  it("saída sem JSON/ sem `respondeu` booleano vira null", () => {
+  it("aceita o formato antigo (campo/respondeu/valor) por compatibilidade", () => {
+    expect(
+      parseLeituraDoValidador('{"campo":"troca_ano","respondeu":true,"valor":"2019"}'),
+    ).toEqual({ respostas: [{ campo: "troca_ano", valor: "2019" }] });
+    expect(parseLeituraDoValidador('{"campo":"","respondeu":false,"valor":""}')).toEqual({
+      respostas: [],
+    });
+  });
+
+  it("saída sem JSON vira null", () => {
     expect(parseLeituraDoValidador("não sei")).toBeNull();
-    expect(parseLeituraDoValidador('{"valor":"x"}')).toBeNull();
   });
 });
 
 describe("validarRespostaDoFluxo", () => {
   const base = {
-    pergunta: PERGUNTA,
+    perguntas: [PERGUNTA] as readonly PerguntaDoFluxo[],
     preenchidos: [] as readonly { key: string; label: string; valor: string }[],
     mensagens: [] as readonly { de: "cliente" | "loja"; texto: string }[],
   };
 
   it("respondeu a pendente com valor válido → respondeu", async () => {
     runModelCallMock.mockResolvedValue({
-      result: { text: '{"campo":"troca_ano","respondeu":true,"valor":"2019"}' },
+      result: { text: '{"respostas":[{"campo":"troca_ano","valor":"2019"}]}' },
     } as never);
     const r = await validarRespostaDoFluxo(
       db,
@@ -79,12 +103,41 @@ describe("validarRespostaDoFluxo", () => {
       base,
       { log: logger },
     );
-    expect(r).toEqual({ resultado: "respondeu", valor: "2019", campo: "troca_ano" });
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "troca_ano", valor: "2019" }] });
   });
 
-  it("valor incompatível com o tipo vira nao_respondeu (não grava lixo)", async () => {
+  it("MÚLTIPLOS campos de uma vez (ordem livre) → devolve todos os válidos", async () => {
     runModelCallMock.mockResolvedValue({
-      result: { text: '{"campo":"troca_ano","respondeu":true,"valor":"ok"}' },
+      result: {
+        text: '{"respostas":[{"campo":"troca_km","valor":"120"},{"campo":"troca_ano","valor":"2015"}]}',
+      },
+    } as never);
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      {
+        perguntas: [
+          { key: "troca_ano", label: "Ano", type: "number" },
+          { key: "troca_km", label: "Km", type: "number" },
+        ],
+        preenchidos: [],
+        mensagens: [],
+      },
+      { log: logger },
+    );
+    expect(r).toEqual({
+      resultado: "respondeu",
+      respostas: [
+        { campo: "troca_km", valor: "120" },
+        { campo: "troca_ano", valor: "2015" },
+      ],
+    });
+  });
+
+  it("valor incompatível com o tipo é DESCARTADO (não grava lixo)", async () => {
+    runModelCallMock.mockResolvedValue({
+      result: { text: '{"respostas":[{"campo":"troca_ano","valor":"ok"}]}' },
     } as never);
     const r = await validarRespostaDoFluxo(
       db,
@@ -98,7 +151,7 @@ describe("validarRespostaDoFluxo", () => {
 
   it("CORREÇÃO: campo preenchido corrigível é aceito", async () => {
     runModelCallMock.mockResolvedValue({
-      result: { text: '{"campo":"moto_troca","respondeu":true,"valor":"CG 150"}' },
+      result: { text: '{"respostas":[{"campo":"moto_troca","valor":"CG 150"}]}' },
     } as never);
     const r = await validarRespostaDoFluxo(
       db,
@@ -107,12 +160,12 @@ describe("validarRespostaDoFluxo", () => {
       { ...base, preenchidos: [{ key: "moto_troca", label: "Moto", valor: "CG 125" }] },
       { log: logger },
     );
-    expect(r).toEqual({ resultado: "respondeu", valor: "CG 150", campo: "moto_troca" });
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "moto_troca", valor: "CG 150" }] });
   });
 
-  it("campo desconhecido (nem pendente nem corrigível) → nao_respondeu", async () => {
+  it("campo desconhecido (nem pendente nem corrigível) é ignorado", async () => {
     runModelCallMock.mockResolvedValue({
-      result: { text: '{"campo":"outro_campo","respondeu":true,"valor":"x"}' },
+      result: { text: '{"respostas":[{"campo":"outro_campo","valor":"x"}]}' },
     } as never);
     const r = await validarRespostaDoFluxo(
       db,
@@ -124,10 +177,8 @@ describe("validarRespostaDoFluxo", () => {
     expect(r).toEqual({ resultado: "nao_respondeu" });
   });
 
-  it("respondeu=false → nao_respondeu", async () => {
-    runModelCallMock.mockResolvedValue({
-      result: { text: '{"campo":"","respondeu":false,"valor":""}' },
-    } as never);
+  it("lista vazia → nao_respondeu", async () => {
+    runModelCallMock.mockResolvedValue({ result: { text: '{"respostas":[]}' } } as never);
     const r = await validarRespostaDoFluxo(
       db,
       cfg,
@@ -156,10 +207,29 @@ describe("validarRespostaDoFluxo", () => {
       db,
       cfg,
       { tenantId: "o", leadId: "l", jobId: "j" },
-      { pergunta: null, preenchidos: [], mensagens: [] },
+      { perguntas: [], preenchidos: [], mensagens: [] },
       { log: logger },
     );
     expect(r).toEqual({ resultado: "nao_respondeu" });
     expect(runModelCallMock).not.toHaveBeenCalled();
+  });
+
+  it("RESPOSTA TARDIA: campo encerrado por não resposta é aceito se a mensagem o informar", async () => {
+    runModelCallMock.mockResolvedValue({
+      result: { text: '{"respostas":[{"campo":"cpf","valor":"12345678900"}]}' },
+    } as never);
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      {
+        perguntas: [],
+        preenchidos: [],
+        esgotados: [{ key: "cpf", label: "CPF", type: "text" }],
+        mensagens: [{ de: "cliente", texto: "meu cpf é 12345678900" }],
+      },
+      { log: logger },
+    );
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cpf", valor: "12345678900" }] });
   });
 });

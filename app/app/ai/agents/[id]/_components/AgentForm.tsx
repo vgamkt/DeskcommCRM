@@ -50,6 +50,8 @@ import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
+import { CatalogoDoAgente } from "./CatalogoDoAgente";
+import { ComandosDoCelular } from "./ComandosDoCelular";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1088,6 +1090,26 @@ export function AgentForm(props: Props) {
               disabled={disabled}
             />
           </Card>
+
+          {/* Catálogo: regras de apresentação e escolha das semelhantes. Salva em
+              `ai_agents.config.catalog` (config do agente, vale no próximo turno). */}
+          {isEdit && (
+            <CatalogoDoAgente
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).catalog}
+              disabled={disabled}
+            />
+          )}
+
+          {/* Comandos pelo celular (`#on`/`#off`, C-076). Salva em
+              `ai_agents.config.aceita_comandos_celular`. */}
+          {isEdit && (
+            <ComandosDoCelular
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).aceita_comandos_celular}
+              disabled={disabled}
+            />
+          )}
         </div>
       </div>
 

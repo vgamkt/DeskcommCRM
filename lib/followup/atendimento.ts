@@ -181,6 +181,41 @@ function normalizarTexto(s: string): string {
     .trim();
 }
 
+/** Texto de um valor de `custom_fields` (mesmo critério do bloco de estado). */
+function valorComoTexto(valor: unknown): string | null {
+  if (typeof valor === "string" && valor.trim() !== "") return valor.trim();
+  if (typeof valor === "boolean") return valor ? "sim" : "não";
+  if (typeof valor === "number" && Number.isFinite(valor)) return String(valor);
+  return null;
+}
+
+/**
+ * Dados JÁ CONHECIDOS do contato, indexados pela chave do campo: cada chave de
+ * `custom_fields` + o `nome` de `contacts.name` (que vence o custom_field, por
+ * ser o nome do WhatsApp já resolvido).
+ *
+ * É a fonte que o motor SOMA aos valores de `contact_flow_data` para calcular as
+ * pendências — a regra é: dado já gravado (em qualquer das duas origens) NÃO é
+ * perguntado de novo. Sem isto, o fluxo reperguntava o nome já conhecido do
+ * contato (medido ao vivo: saudou "Vander" e depois perguntou "Como você se
+ * chama?").
+ */
+export function valoresConhecidosDoContato(
+  contato: { name?: string | null; custom_fields?: unknown } | null | undefined,
+): Record<string, string> {
+  const saida: Record<string, string> = {};
+  const cf = contato?.custom_fields;
+  if (cf !== null && cf !== undefined && typeof cf === "object" && !Array.isArray(cf)) {
+    for (const [chave, valor] of Object.entries(cf as Record<string, unknown>)) {
+      const t = valorComoTexto(valor);
+      if (t !== null) saida[chave] = t;
+    }
+  }
+  const nome = typeof contato?.name === "string" ? contato.name.trim() : "";
+  if (nome !== "") saida.nome = nome;
+  return saida;
+}
+
 export interface FluxoComGatilhos {
   id: string;
   nome: string;
@@ -347,6 +382,26 @@ export async function carregarEstadoDeAtendimento(
   for (const v of dados.rows) {
     if (v.value !== null) valores[v.field_key] = v.value;
     tentativas[v.field_key] = v.attempts;
+  }
+
+  // DADO JÁ CONHECIDO NÃO SE PERGUNTA DE NOVO: soma aos valores do fluxo os
+  // dados gravados no CONTATO (nome do WhatsApp + `custom_fields`), apenas para
+  // as chaves que pertencem a este fluxo e ainda não têm valor. O valor do
+  // fluxo (`contact_flow_data`) tem precedência; a correção pedida pelo cliente
+  // continua valendo pelo caminho `permite_correcao`.
+  const contato = await db.query<{ name: string | null; custom_fields: unknown }>(
+    `select name, custom_fields from contacts
+      where organization_id = $1 and id = $2
+      limit 1`,
+    [args.organizationId, args.contactId],
+  );
+  const conhecidos = valoresConhecidosDoContato(contato.rows[0] ?? null);
+  for (const passo of checklist.checklist.passos) {
+    if (passo.kind !== "collect") continue;
+    const chave = passo.node.config.key;
+    if (valores[chave] !== undefined) continue;
+    const conhecido = conhecidos[chave];
+    if (conhecido !== undefined) valores[chave] = conhecido;
   }
   const maxTentativas =
     parsed.data.settings?.max_tentativas_pergunta ?? MAX_TENTATIVAS_PADRAO;
@@ -596,9 +651,10 @@ export async function processarInboundDoFluxo(
      * chamador conseguiu rodá-lo. Tem PRECEDÊNCIA sobre a captura determinística
      * porque ele vê o CONTEXTO da conversa — é o que evita gravar "ok"/2019 no
      * campo errado. Ausente = comportamento de antes (só o classificador puro).
-     * `campo` presente = CORREÇÃO de um dado já preenchido (com permite_correcao).
+     * Pode trazer VÁRIOS campos (respostas e/ou correções), em qualquer ordem —
+     * o cliente costuma responder a mais de uma pergunta na mesma mensagem.
      */
-    validacao?: { respondeu: boolean; valor?: string; campo?: string } | undefined;
+    validacoes?: ReadonlyArray<{ campo: string; valor: string }> | undefined;
   },
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
@@ -623,43 +679,48 @@ export async function processarInboundDoFluxo(
     }
   }
 
-  // CORREÇÃO: o validador apontou um campo JÁ PREENCHIDO que aceita correção.
-  // Trata antes da pendente — o cliente mudou um dado e isso não é resposta à
-  // pergunta atual. O campo precisa existir e permitir correção (defesa dupla).
-  if (args.validacao?.respondeu === true && args.validacao.campo !== undefined) {
-    const alvo = campoPorChave(estado.checklist, args.validacao.campo);
-    const pendenteAgora = estado.situacao.pendentes[0];
-    const ehCorrecao = alvo !== null && alvo.config.key !== pendenteAgora?.config.key;
-    if (ehCorrecao) {
-      if (!alvo.config.permite_correcao) return { estado, concluiu: false };
-      const valorNovo = args.validacao.valor ?? "";
-      // Correção NO-OP: o valor não mudou. Sem este corte, um turno atrasado que
-      // reprocessa uma mensagem antiga sobrescrevia o campo com o MESMO texto da
-      // pergunta anterior (medido ao vivo, 2026-09-18: `troca_ano` virou
-      // "é uma CG 125"). Não é correção, é ruído.
-      const valorAtual = estado.valores[alvo.config.key] ?? "";
-      if (valorNovo === "" || valorNovo === valorAtual) return { estado, concluiu: false };
+  // MÚLTIPLAS validações do validador (respostas e correções), em QUALQUER ordem.
+  // O cliente costuma responder a VÁRIAS perguntas na mesma mensagem ("é uma CG
+  // 125 2015, 120 mil km, tá boa, doc em dia"); aplicamos TODAS de uma vez, para
+  // nada ser reperguntado. Cada campo precisa ser uma pendente (resposta) ou um
+  // já preenchido que permite correção.
+  if (args.validacoes !== undefined && args.validacoes.length > 0) {
+    const valoresNovos: Record<string, string> = { ...estado.valores };
+    let aplicou = false;
+    for (const v of args.validacoes) {
+      const node = campoPorChave(estado.checklist, v.campo);
+      if (node === null) continue;
+      // Pendente = QUALQUER campo ainda não preenchido (não só o primeiro): o
+      // cliente pode responder a todos de uma vez, em qualquer ordem.
+      const ehPendente = estado.situacao.pendentes.some((n) => n.config.key === v.campo);
+      const ehCorrecao =
+        !ehPendente && node.config.permite_correcao && estado.valores[v.campo] !== undefined;
+      // RESPOSTA TARDIA: a pergunta foi encerrada por não resposta (teto), mas o
+      // cliente finalmente a informou. Gravar é melhor que perder o dado — era o
+      // que acontecia (medido: CPF informado após esgotar caiu no vazio).
+      const ehEsgotada =
+        !ehPendente && estado.situacao.esgotadas.some((n) => n.config.key === v.campo);
+      if (!ehPendente && !ehCorrecao && !ehEsgotada) continue;
+      // NO-OP: o valor não mudou (turno atrasado/reprocessado) — não é ruído novo.
+      if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
       try {
         await registrarDadoDoFluxo(db, {
           organizationId: args.organizationId,
           contactId: estado.enrollment.contact_id,
           flowPointerId: estado.enrollment.pointer_id,
           enrollmentId: estado.enrollment.id,
-          fieldKey: alvo.config.key,
-          // O texto cru de uma correção é o próprio valor normalizado: a mensagem
-          // que a trouxe pode ser de outro turno, e gravar `args.texto` colocava a
-          // pergunta anterior no cadastro.
-          value: valorNovo,
+          fieldKey: v.campo,
+          value: v.valor,
           valueJson: {
-            normalizado: valorNovo,
-            tipo: alvo.config.type,
+            normalizado: v.valor,
+            tipo: node.config.type,
             deterministico: true,
-            correcao: true,
+            ...(ehCorrecao ? { correcao: true } : {}),
           },
           source: "deterministic",
         });
       } catch {
-        return { estado, concluiu: false };
+        continue;
       }
       void registrarEventoDoFluxo(db, {
         organizationId: args.organizationId,
@@ -668,29 +729,32 @@ export async function processarInboundDoFluxo(
         contactId: estado.enrollment.contact_id,
         kind: "resposta",
         messageId: args.messageId ?? null,
-        fieldKey: alvo.config.key,
-        payload: { normalizado: valorNovo, correcao: true, deterministico: true },
+        fieldKey: v.campo,
+        payload: {
+          normalizado: v.valor,
+          deterministico: true,
+          ...(ehCorrecao ? { correcao: true } : {}),
+        },
       }).catch(() => {});
-      const valores = new Set(Object.keys(estado.valores));
-      valores.add(alvo.config.key);
-      const comValor = {
-        ...estado,
-        valores: { ...estado.valores, [alvo.config.key]: valorNovo },
-      };
-      const atualizado = recomputarSituacao(comValor, valores);
-      if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
-      const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
-        organizationId: args.organizationId,
-        estado: atualizado,
-        messageId: args.messageId ?? null,
-        kind: "concluido",
-      });
-      return {
-        estado: atualizado,
-        concluiu: true,
-        ...(finalizacao !== undefined ? { finalizacao } : {}),
-      };
+      valoresNovos[v.campo] = v.valor;
+      aplicou = true;
     }
+    if (!aplicou) return { estado, concluiu: false };
+
+    const comValor = { ...estado, valores: valoresNovos };
+    const atualizado = recomputarSituacao(comValor, new Set(Object.keys(valoresNovos)));
+    if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
+    const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
+      organizationId: args.organizationId,
+      estado: atualizado,
+      messageId: args.messageId ?? null,
+      kind: "concluido",
+    });
+    return {
+      estado: atualizado,
+      concluiu: true,
+      ...(finalizacao !== undefined ? { finalizacao } : {}),
+    };
   }
 
   const primeiro = estado.situacao.pendentes[0];
@@ -722,19 +786,10 @@ export async function processarInboundDoFluxo(
   // "ok"/emoji repetidos viravam `fora_do_fluxo` e o teto de tentativas nunca
   // disparava — `max_tentativas_pergunta` ficava inerte (achado da auditoria,
   // 2026-09-19). Sem validação → classificador puro direto.
-  const leitura =
-    args.validacao === undefined
-      ? classificarInbound(comoCampoParaCaptura(primeiro), args.texto)
-      : args.validacao.respondeu
-        ? {
-            resultado: "respondeu" as const,
-            captura: {
-              key: primeiro.config.key,
-              valor: args.validacao.valor ?? args.texto ?? "",
-              bruto: args.texto ?? "",
-            },
-          }
-        : classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
+  // Chegou aqui = SEM validação do validador (ou nenhum campo aplicável): decide
+  // pelo classificador puro (desvio x aceno/silêncio). As respostas e correções
+  // do validador foram aplicadas no bloco acima.
+  const leitura = classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
 
   if (leitura.resultado === "desviou") {
     await registrarEventoDoFluxo(db, {
@@ -969,10 +1024,17 @@ export async function finalizarFluxoDeAtendimento(
 /**
  * ENTRADA POR GATILHO (motor): entre os fluxos ativos, qual LIGA pela mensagem
  * do cliente (palavra-gatilho). Independe do modelo e do roteador.
+ *
+ * `contactId` (opcional) liga a regra "fluxo já concluído por este contato NÃO
+ * reabre". Sem ela, uma frase-gatilho genérica ("quero uma moto") reabria a
+ * Qualificação a cada mensagem depois de ela já ter concluído — ruído de
+ * enrollment e, pior, um fluxo ativo impedindo o gatilho do PRÓXIMO fluxo (o
+ * Financiamento não abria em "prefiro financiar"). Rodar uma vez por contato é
+ * o suficiente: os valores de `contact_flow_data` persistem entre execuções.
  */
 export async function escolherFluxoPeloGatilho(
   db: pg.Pool,
-  args: { organizationId: string; texto: string | null },
+  args: { organizationId: string; texto: string | null; contactId?: string },
 ): Promise<{ id: string; nome: string } | null> {
   if (!args.texto) return null;
   const { rows } = await db.query<{ id: string; nome: string; graph: unknown }>(
@@ -984,8 +1046,25 @@ export async function escolherFluxoPeloGatilho(
         and p.status = 'active'`,
     [args.organizationId],
   );
+
+  // Fluxos que ESTE contato já concluiu — não reabrem por palavra-gatilho.
+  const concluidos = new Set<string>();
+  if (args.contactId) {
+    try {
+      const feitos = await db.query<{ pointer_id: string }>(
+        `select distinct pointer_id from followup_enrollments
+          where organization_id = $1 and contact_id = $2 and status = 'completed'`,
+        [args.organizationId, args.contactId],
+      );
+      for (const f of feitos.rows) concluidos.add(f.pointer_id);
+    } catch {
+      // best-effort: sem a lista, cai no comportamento antigo (pode reabrir).
+    }
+  }
+
   const fluxos: FluxoComGatilhos[] = [];
   for (const row of rows) {
+    if (concluidos.has(row.id)) continue;
     const parsed = flowGraphSchema.safeParse(row.graph);
     if (!parsed.success) continue;
     const gatilhos = parsed.data.settings?.gatilhos ?? [];

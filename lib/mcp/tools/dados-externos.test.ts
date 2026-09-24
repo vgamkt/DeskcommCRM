@@ -46,11 +46,15 @@ const TABELA: TabelaExterna = {
   estimativaLinhas: 4200,
 };
 
-function ctxFake(conexoes: Array<{ id: string; label: string }> = [{ id: "conn-1", label: "Outro CRM" }]) {
+function ctxFake(
+  conexoes: Array<{ id: string; label: string }> = [{ id: "conn-1", label: "Outro CRM" }],
+  mapping: Record<string, unknown> | null = null,
+) {
   const chain = {
     select: () => chain,
     eq: () => chain,
     order: async () => ({ data: conexoes, error: null }),
+    maybeSingle: async () => ({ data: mapping, error: null }),
   };
   return {
     organizationId: "org-1",
@@ -204,6 +208,37 @@ describe("crm_query_external_data", () => {
     expect(chamada?.[3]).toEqual({ limiteMax: 150 });
   });
 
+  it("sem `colunas` do modelo, usa as colunas do catálogo configurado (não select *)", async () => {
+    vi.mocked(lerTabela).mockResolvedValue({
+      colunas: ["status"],
+      linhas: [],
+      limite: 20,
+      offset: 0,
+    });
+    await crmQueryExternalData.handler(
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 },
+      ctxFake([{ id: "conn-1", label: "Outro CRM" }], {
+        col_nome: "status",
+        col_versao: null,
+        col_ano: null,
+        col_cor: null,
+        col_km: null,
+        col_preco: null,
+        col_imagem: null,
+        col_estoque: null,
+        col_cilindrada: null,
+        col_tipo: null,
+      }),
+    );
+
+    const pedido = vi.mocked(lerTabela).mock.calls[0]?.[1] as {
+      colunas: string[];
+      ordem?: { coluna: string; desc: boolean };
+    };
+    expect(pedido.colunas).toEqual(["status"]);
+    expect(pedido.ordem).toEqual({ coluna: "status", desc: false });
+  });
+
   it("recusa quando os filtros passam do teto DA CONEXÃO", async () => {
     vi.mocked(abrirAcesso).mockResolvedValue({
       ok: true,
@@ -226,5 +261,42 @@ describe("crm_query_external_data", () => {
     )) as Record<string, unknown>;
     expect(r.erro).toBe("limite_de_filtros");
     expect(lerTabela).not.toHaveBeenCalled();
+  });
+
+  // Achado ao vivo (2026-09-19): o modelo mandava `{ coluna:"nome", operador:"contem" }`
+  // SEM `valor` para buscar "CB 250". A versão anterior descartava o filtro em
+  // silêncio e devolvia o catálogo inteiro — o turno seguia `success: true` e o
+  // agente escolhia a moto no olho, sem a busca que o cliente pediu.
+  it("filtro de comparação SEM valor vira erro de ensino, nunca catálogo inteiro", async () => {
+    const r = (await crmQueryExternalData.handler(
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [{ coluna: "status", operador: "contem" }],
+        limite: 20,
+      },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBe("filtro_sem_valor");
+    expect(String(r.mensagem)).toContain("valor");
+    // não toca o banco: sem valor, não há o que buscar
+    expect(lerTabela).not.toHaveBeenCalled();
+  });
+
+  it("`nulo`/`nao_nulo` continuam válidos sem valor (ausência por definição)", async () => {
+    vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 20, offset: 0 });
+    const r = (await crmQueryExternalData.handler(
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [{ coluna: "status", operador: "nao_nulo" }],
+        limite: 20,
+      },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBeUndefined();
+    expect(lerTabela).toHaveBeenCalled();
   });
 });
