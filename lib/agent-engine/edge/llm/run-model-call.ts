@@ -89,7 +89,12 @@ const paramsSchema = z
     temperature: z.number().optional(),
     topP: z.number().optional(),
     topK: z.number().int().optional(),
-    maxOutputTokens: z.number().int().positive().optional(),
+    // TETO DE SAÍDA. Sem ele, o provider pede o MÁXIMO do modelo (ex.: 65536 no
+    // Gemini) e a conta reserva/verifica crédito pelo pior caso — foi o que deu
+    // o HTTP 402 "can only afford 57787". 4096 é folgado para atendimento
+    // (resposta curta + tool calls) e não trunca o uso normal. A org pode afinar
+    // em `settings.llm.params.maxOutputTokens`.
+    maxOutputTokens: z.number().int().positive().default(4096),
   })
   .passthrough();
 
