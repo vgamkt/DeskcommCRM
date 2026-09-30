@@ -61,6 +61,33 @@ Corrigir, no sistema de atendimento:
 `docker compose up` **sem override** volta para `ghcr.io/vgamkt/deskcomm-worker:latest`
 (antigo). No deploy, **fixar** `WORKER_IMAGE`/`APP_IMAGE` (no `.env` ou num override).
 
+## Continuação 2026-09-30 — RÉGUA ÚNICA de oferta de motos
+- **Código**: `lib/agent-engine/agent/pode-oferecer-motos.ts` (régua pura) +
+  `pode-oferecer-motos.test.ts`, `pode-oferecer-motos.conversa.test.ts`;
+  `turno-de-catalogo.ts` virou fachada; `inbound-turn.ts` (motor + gates em
+  `crm_offer_similar_motos`, `send_message(motos)` e `media_urls` do catálogo;
+  critério da objeção vira preferência de ranking); `objecao-de-valor.ts`
+  (objeção de qualidade + exclusão de "outra loja/dia/forma/coisa…");
+  `selecao-por-intencao.ts` (`querAlternativa` idem).
+- **Defeito-raiz achado ao vivo**: `catalogoConsultadoNoTurno` autorizava oferta
+  (o "De sao paulo → 5 motos"); e `/outra/` solto ("outra LOJA") + agregação de
+  mensagens disparava `pediuOutraMoto`. Ambos corrigidos e com teste de regressão.
+- **Skill/persona**: `objecao-preco` e persona ainda dizem "com moto em foco
+  nunca ofereça"; precisam ganhar a exceção "se a objeção PERSISTIR, ofereça o
+  que ataca o motivo". **PENDENTE** (não aplicado nesta sessão).
+- **Release**: commit `11fa8bab` (régua) + `199b1ef9` (fix detecção/log),
+  imagens **1.31.1** buildadas localmente e deployadas (`pull_policy=never`).
+  GHCR continua bloqueado (sem `write:packages`).
+- **Validação ao vivo (logs da régua)**: 1ª objeção (qualquer forma:
+  "Ta caro", "Vi mais barato em outra loja", "Nao tenho esse valor",
+  "Esta muito rodada", "Achei antiga", "Vou pensar", "Esta salgada",
+  "Ta fora do meu orçamento") → `objecao_nova_persuadir`, `pode=false`.
+  Pedido explícito → `cliente_pediu_catalogo`, `pode=true`. Objeção persistente
+  (2ª) → `objecao_persistente`/ferramenta, `pode=true`, com critério
+  (`preco`/`ano`). Consulta ao catálogo sem pedido → bloqueada.
+- **Observação de teste**: o worker AGREGRA mensagens enviadas antes de o turno
+  terminar — medir por mensagem isolada exige esperar o turno concluir.
+
 ## Arquivos alterados NESTA sessão (minhas mudanças)
 - `lib/messaging/media/transcription.ts`, `workers/media-derive-worker.ts`
 - `lib/followup/atendimento.ts`, `lib/followup/atendimento.test.ts`, `lib/followup/captura-do-fluxo.test.ts`
