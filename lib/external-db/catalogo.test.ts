@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   atribuirPapeisUnicos,
+  camposDeBusca,
   colunaDeSimilares,
+  colunaDescricao,
   colunasConfiguradas,
   colunasDaIA,
   colunasDeComparacao,
@@ -34,6 +36,33 @@ const BASE: CatalogoMapeamento = {
   colTipo: null,
   buscaOperador: 'contem',
 };
+
+describe('colunaDescricao', () => {
+  it('acha a coluna `descricao` (exata) na config nova', () => {
+    expect(
+      colunaDescricao({
+        ...BASE,
+        colunas: [
+          { coluna: 'nome', ia: true, criterio: true },
+          { coluna: 'descricao', ia: false },
+          { coluna: 'preco', ia: true },
+        ],
+      }),
+    ).toBe('descricao');
+  });
+
+  it('tolera acento/variação (`descrição`, `descricao_completa`)', () => {
+    expect(colunaDescricao({ ...BASE, colunas: [{ coluna: 'descrição' }] })).toBe('descrição');
+    expect(colunaDescricao({ ...BASE, colunas: [{ coluna: 'descricao_completa' }] })).toBe(
+      'descricao_completa',
+    );
+  });
+
+  it('sem coluna de descrição → null (não busca nada)', () => {
+    expect(colunaDescricao(BASE)).toBeNull();
+    expect(colunaDescricao({ ...BASE, colunas: [{ coluna: 'nome' }, { coluna: 'preco' }] })).toBeNull();
+  });
+});
 
 describe('colunasDoCatalogo', () => {
   it('mapeia só as colunas preenchidas', () => {
@@ -336,6 +365,38 @@ describe('prefixo do nome (ex.: marca) — F3/formato', () => {
 
   it('o prefixo NÃO vira linha de legenda (já está no nome)', () => {
     expect(legendaParaExibicao(m).map((c) => c.coluna)).toEqual(['preco']);
+  });
+});
+
+describe('camposDeBusca (C-107) — "Critério da IA" é a autoridade', () => {
+  const m: CatalogoMapeamento = {
+    ...BASE,
+    colunas: [
+      { coluna: 'nome', ia: true, criterio: true, envio: true },
+      { coluna: 'marca', ia: true, criterio: false, envio: false },
+      { coluna: 'categoria', ia: true, criterio: true, envio: true },
+      { coluna: 'preco', ia: true, criterio: false, envio: true },
+    ],
+    colSimilares: 'moto_similar',
+  };
+
+  it('modo dinâmico usa SÓ o que está em "Critério da IA"', () => {
+    expect([...camposDeBusca(m, { dinamico: true })].sort()).toEqual(['categoria', 'nome']);
+  });
+
+  it('modo antigo soma "Envio" quando "enviar todas que casam" está ligado', () => {
+    expect([...camposDeBusca(m, { dinamico: false, enviarTodas: true })].sort()).toEqual([
+      'categoria',
+      'nome',
+      'preco',
+    ]);
+  });
+
+  it('modo antigo sem "enviar todas" usa só os "Critério da IA"', () => {
+    expect([...camposDeBusca(m, { dinamico: false, enviarTodas: false })].sort()).toEqual([
+      'categoria',
+      'nome',
+    ]);
   });
 });
 

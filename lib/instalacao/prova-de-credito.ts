@@ -68,6 +68,13 @@ export function montarRequisicaoDeProva(
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 1, messages: msg },
       };
+    case "groq":
+      // Groq fala a API da OpenAI — mesma forma de prova, endpoint próprio.
+      return {
+        url: `${baseUrl ?? "https://api.groq.com/openai/v1"}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 1, messages: msg },
+      };
     case "openrouter":
       return {
         url: `${baseUrl ?? OPENROUTER_ENDPOINT}/chat/completions`,

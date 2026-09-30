@@ -9,6 +9,15 @@ describe('catalogConfigSchema', () => {
     expect(CATALOG_CONFIG_DEFAULT.usar_limite_quantidade).toBe(true);
     expect(CATALOG_CONFIG_DEFAULT.especificacao_mostra_todas).toBe(true);
     expect(CATALOG_CONFIG_DEFAULT.criterio).toEqual(['cilindrada', 'preco']);
+    // C-106: o modo "critérios dinâmicos" nasce LIGADO (comportamento novo).
+    expect(CATALOG_CONFIG_DEFAULT.criterios_dinamicos).toBe(true);
+    // C-105/C-106: o bloqueio do ano nasce LIGADO.
+    expect(CATALOG_CONFIG_DEFAULT.bloquear_ano_ia).toBe(true);
+  });
+
+  it('C-106: criterios_dinamicos aceita desligar e o parse tolerante preenche o default', () => {
+    expect(catalogConfigSchema.parse({ criterios_dinamicos: false }).criterios_dinamicos).toBe(false);
+    expect(parseCatalogConfig({ similares_qtd: 3 }).criterios_dinamicos).toBe(true);
   });
 
   it('recusa quantidade fora da faixa e critério vazio', () => {

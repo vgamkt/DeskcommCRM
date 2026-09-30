@@ -191,17 +191,28 @@ function valorComoTexto(valor: unknown): string | null {
 
 /**
  * Dados JÁ CONHECIDOS do contato, indexados pela chave do campo: cada chave de
- * `custom_fields` + o `nome` de `contacts.name` (que vence o custom_field, por
- * ser o nome do WhatsApp já resolvido).
+ * `custom_fields` + o `nome` do contato (que vence o custom_field, por ser o
+ * nome já resolvido).
+ *
+ * ⚠️ O NOME VEM DE `name` **OU** DE `display_name`, e a segunda metade não era
+ * lida antes. O nome que o WhatsApp entrega no primeiro contato vai para
+ * `contacts.display_name` (o `notify_name` do WAHA); `contacts.name` só é
+ * preenchido quando o cliente DIZ o nome. Enquanto esta função lia só `name`,
+ * um contato que chegou com o perfil do WhatsApp tinha `name = null` e
+ * `display_name = "Vander"` — o agente saudava "Vander" (o contexto do turno lê
+ * `display_name`) e depois perguntava "Como você se chama?", porque o fluxo
+ * achava o nome desconhecido. O comentário anterior já descrevia esse sintoma
+ * como o defeito que a função vinha matar; faltava ler a coluna certa.
  *
  * É a fonte que o motor SOMA aos valores de `contact_flow_data` para calcular as
- * pendências — a regra é: dado já gravado (em qualquer das duas origens) NÃO é
- * perguntado de novo. Sem isto, o fluxo reperguntava o nome já conhecido do
- * contato (medido ao vivo: saudou "Vander" e depois perguntou "Como você se
- * chama?").
+ * pendências — a regra é: dado já gravado (em qualquer das origens) NÃO é
+ * perguntado de novo.
  */
 export function valoresConhecidosDoContato(
-  contato: { name?: string | null; custom_fields?: unknown } | null | undefined,
+  contato:
+    | { name?: string | null; display_name?: string | null; custom_fields?: unknown }
+    | null
+    | undefined,
 ): Record<string, string> {
   const saida: Record<string, string> = {};
   const cf = contato?.custom_fields;
@@ -212,8 +223,49 @@ export function valoresConhecidosDoContato(
     }
   }
   const nome = typeof contato?.name === "string" ? contato.name.trim() : "";
-  if (nome !== "") saida.nome = nome;
+  const apelido = typeof contato?.display_name === "string" ? contato.display_name.trim() : "";
+  const nomeConhecido = nome !== "" ? nome : apelido;
+  if (nomeConhecido !== "") saida.nome = nomeConhecido;
   return saida;
+}
+
+/**
+ * Normaliza o nome de um fluxo para casar o que o MODELO digitou com o nome
+ * real: minúsculas, sem acento, espaços colapsados. Puro.
+ */
+export function normalizarNomeDeFluxo(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Resolve o fluxo que o modelo pediu pelo NOME, tolerando nome imperfeito.
+ *
+ * O `flow_start` comparava com igualdade exata (`===`) — "troca de moto",
+ * "Troca " ou "troca" com acento/grafia diferente viravam `fluxo_nao_encontrado`
+ * e o modelo repetia a MESMA chamada até o circuit breaker (medido ao vivo:
+ * 4 falhas `exact_failure`). Aqui: casamento normalizado exato; se não houver,
+ * casamento PARCIAL (contém um ao outro), aceito só quando sobra UM. Ambíguo ou
+ * sem casar ⇒ `null` (o chamador devolve o erro com a lista). Puro.
+ */
+export function escolherFluxoPorNome(
+  ativos: readonly { id: string; nome: string }[],
+  nomePedido: string,
+): { id: string; nome: string } | null {
+  const pedido = normalizarNomeDeFluxo(nomePedido);
+  if (pedido === "") return null;
+  const exatos = ativos.filter((f) => normalizarNomeDeFluxo(f.nome) === pedido);
+  if (exatos.length === 1) return exatos[0]!;
+  if (exatos.length > 1) return null;
+  const parciais = ativos.filter((f) => {
+    const n = normalizarNomeDeFluxo(f.nome);
+    return n.includes(pedido) || pedido.includes(n);
+  });
+  return parciais.length === 1 ? parciais[0]! : null;
 }
 
 export interface FluxoComGatilhos {
@@ -246,6 +298,38 @@ export function melhorFluxoPorGatilho(
     }
   }
   return melhor;
+}
+
+/**
+ * TODOS os fluxos que a mensagem aciona, na ORDEM em que o cliente os citou
+ * (menor posição do primeiro gatilho vence; empate desempata por mais hits).
+ * Puro. É a base da FILA: "quero dar minha moto na troca e financiar o resto"
+ * devolve [Troca, Financiamento] — nessa ordem.
+ */
+export function fluxosPorGatilho(
+  fluxos: readonly FluxoComGatilhos[],
+  texto: string,
+): Array<{ id: string; nome: string }> {
+  const alvo = normalizarTexto(texto);
+  if (alvo === "") return [];
+  const comHits = fluxos
+    .map((f) => {
+      let hits = 0;
+      let primeira = Number.POSITIVE_INFINITY;
+      for (const g of f.gatilhos) {
+        const ng = normalizarTexto(g);
+        if (ng === "") continue;
+        const pos = alvo.indexOf(ng);
+        if (pos >= 0) {
+          hits += 1;
+          if (pos < primeira) primeira = pos;
+        }
+      }
+      return { id: f.id, nome: f.nome, hits, primeira };
+    })
+    .filter((f) => f.hits > 0)
+    .sort((a, b) => a.primeira - b.primeira || b.hits - a.hits);
+  return comHits.map(({ id, nome }) => ({ id, nome }));
 }
 
 /**
@@ -389,8 +473,12 @@ export async function carregarEstadoDeAtendimento(
   // as chaves que pertencem a este fluxo e ainda não têm valor. O valor do
   // fluxo (`contact_flow_data`) tem precedência; a correção pedida pelo cliente
   // continua valendo pelo caminho `permite_correcao`.
-  const contato = await db.query<{ name: string | null; custom_fields: unknown }>(
-    `select name, custom_fields from contacts
+  const contato = await db.query<{
+    name: string | null;
+    display_name: string | null;
+    custom_fields: unknown;
+  }>(
+    `select name, display_name, custom_fields from contacts
       where organization_id = $1 and id = $2
       limit 1`,
     [args.organizationId, args.contactId],
@@ -917,6 +1005,113 @@ export function montarNotaDeConclusao(estado: EstadoDeAtendimento): string {
  * Best-effort: toda falha é engolida para não derrubar o turno que já respondeu
  * ao cliente; a conclusão se repete no próximo turno se algo falhar aqui.
  */
+/** Chaves de `contact_flow_data` que o CONTATO guarda de forma durável. */
+const CAMPOS_DURAVEIS_DO_CONTATO = ["nome", "cidade", "cnh", "cpf", "data_nascimento"] as const;
+
+/** "true"/"sim"/"1" ⇒ true; "false"/"não"/"0" ⇒ false; resto fica texto. */
+function booleanDeTexto(valor: string): boolean | string {
+  const t = valor.trim().toLowerCase();
+  if (t === "true" || t === "sim" || t === "1") return true;
+  if (t === "false" || t === "nao" || t === "não" || t === "0") return false;
+  return valor;
+}
+
+/**
+ * Grava no CONTATO os campos de cadastro coletados no fluxo, para sobreviverem ao
+ * fim do enrollment. Só as chaves de cadastro conhecidas entram — o resto do que
+ * o fluxo coleta é do fluxo, não do contato. Best-effort: o chamador engole.
+ *
+ * É a ponte `contact_flow_data` → `contacts.custom_fields` que faltava: sem ela,
+ * o dado sumia da vista do agente quando o fluxo concluía (blocos "Dados
+ * essenciais" C-084 e "Estado do atendimento" leem `custom_fields`).
+ */
+export async function persistirDadosDoContato(
+  db: pg.Pool,
+  args: { organizationId: string; contactId: string; valores: Record<string, string> },
+): Promise<void> {
+  const dados: Record<string, unknown> = {};
+  for (const chave of CAMPOS_DURAVEIS_DO_CONTATO) {
+    const valor = args.valores[chave];
+    if (typeof valor !== "string" || valor.trim() === "") continue;
+    dados[chave] = chave === "cnh" ? booleanDeTexto(valor) : valor;
+  }
+  if (Object.keys(dados).length === 0) return;
+  await db.query(
+    `update contacts
+        set custom_fields = coalesce(custom_fields, '{}'::jsonb) || $3::jsonb
+      where organization_id = $1 and id = $2`,
+    [args.organizationId, args.contactId, JSON.stringify(dados)],
+  );
+}
+
+// ─── FILA de fluxos pendentes (um fluxo vivo por contato) ────────────────────
+//
+// O índice `idx_followup_enrollments_one_live` permite UM enrollment vivo por
+// contato. E o cliente PODE pedir vários processos na mesma conversa (ou na
+// mesma frase): "quero dar minha moto na troca e financiar o restante". Então
+// guardamos uma FILA na conversa e iniciamos UM por vez, na ordem pedida,
+// conforme cada fluxo conclui.
+export interface FluxoPendente {
+  pointer_id: string;
+  nome: string;
+}
+
+/** Enfileira sem duplicar, preservando a ordem. Puro. */
+export function enfileirarFluxo(
+  fila: readonly FluxoPendente[],
+  novo: FluxoPendente,
+): FluxoPendente[] {
+  if (fila.some((f) => f.pointer_id === novo.pointer_id)) return [...fila];
+  return [...fila, { pointer_id: novo.pointer_id, nome: novo.nome }];
+}
+
+export async function lerFluxosPendentes(
+  db: pg.Pool,
+  args: { organizationId: string; conversationId: string },
+): Promise<FluxoPendente[]> {
+  const { rows } = await db.query<{ pendentes: unknown }>(
+    `select metadata->'fluxos_pendentes' as pendentes
+       from conversations
+      where organization_id = $1 and id = $2
+      limit 1`,
+    [args.organizationId, args.conversationId],
+  );
+  const arr = rows[0]?.pendentes;
+  if (!Array.isArray(arr)) return [];
+  const saida: FluxoPendente[] = [];
+  for (const item of arr) {
+    const it = item as { pointer_id?: unknown; nome?: unknown } | null;
+    if (it === null || typeof it.pointer_id !== "string" || it.pointer_id === "") continue;
+    saida.push({ pointer_id: it.pointer_id, nome: typeof it.nome === "string" ? it.nome : "" });
+  }
+  return saida;
+}
+
+export async function salvarFluxosPendentes(
+  db: pg.Pool,
+  args: { organizationId: string; conversationId: string; pendentes: readonly FluxoPendente[] },
+): Promise<void> {
+  await db.query(
+    `update conversations
+        set metadata = coalesce(metadata, '{}'::jsonb)
+                     || jsonb_build_object('fluxos_pendentes', $3::jsonb)
+      where organization_id = $1 and id = $2`,
+    [args.organizationId, args.conversationId, JSON.stringify(args.pendentes)],
+  );
+}
+
+export async function limparFluxosPendentes(
+  db: pg.Pool,
+  args: { organizationId: string; conversationId: string },
+): Promise<void> {
+  await db.query(
+    `update conversations
+        set metadata = coalesce(metadata, '{}'::jsonb) - 'fluxos_pendentes'
+      where organization_id = $1 and id = $2`,
+    [args.organizationId, args.conversationId],
+  );
+}
+
 export async function finalizarFluxoDeAtendimento(
   db: pg.Pool,
   args: {
@@ -942,6 +1137,26 @@ export async function finalizarFluxoDeAtendimento(
   } catch {
     // best-effort: a conclusão se repete no próximo turno.
   }
+
+  // O DADO COLETADO SOBREVIVE AO FIM DO FLUXO. Sem isto, o que o cliente
+  // respondeu (ex.: CNH) vivia só em `contact_flow_data`; ao CONCLUIR o fluxo,
+  // `carregarEstadoDeAtendimento` volta null, o bloco de estado para de mostrar
+  // o valor e o agente repergunta (medido ao vivo 2026-09-29: "preciso que me
+  // informe se você possui CNH" depois de o cliente já ter dito sim). Grava no
+  // contato, que é a fonte durável. Best-effort: falha aqui não derruba o turno.
+  try {
+    await persistirDadosDoContato(db, {
+      organizationId: args.organizationId,
+      contactId: estado.enrollment.contact_id,
+      valores: estado.valores,
+    });
+  } catch (err) {
+    logger.warn("[fluxo] persistir os dados coletados no contato falhou — o turno segue", {
+      enrollment_id: estado.enrollment.id,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+
   void registrarEventoDoFluxo(db, {
     organizationId: args.organizationId,
     enrollmentId: estado.enrollment.id,
@@ -1032,11 +1247,10 @@ export async function finalizarFluxoDeAtendimento(
  * Financiamento não abria em "prefiro financiar"). Rodar uma vez por contato é
  * o suficiente: os valores de `contact_flow_data` persistem entre execuções.
  */
-export async function escolherFluxoPeloGatilho(
+async function carregarFluxosComGatilhos(
   db: pg.Pool,
-  args: { organizationId: string; texto: string | null; contactId?: string },
-): Promise<{ id: string; nome: string } | null> {
-  if (!args.texto) return null;
+  args: { organizationId: string; contactId?: string },
+): Promise<FluxoComGatilhos[]> {
   const { rows } = await db.query<{ id: string; nome: string; graph: unknown }>(
     `select p.id, p.name as nome, v.graph
        from followup_flow_pointers p
@@ -1070,8 +1284,31 @@ export async function escolherFluxoPeloGatilho(
     const gatilhos = parsed.data.settings?.gatilhos ?? [];
     if (gatilhos.length > 0) fluxos.push({ id: row.id, nome: row.nome, gatilhos });
   }
+  return fluxos;
+}
+
+export async function escolherFluxoPeloGatilho(
+  db: pg.Pool,
+  args: { organizationId: string; texto: string | null; contactId?: string },
+): Promise<{ id: string; nome: string } | null> {
+  if (!args.texto) return null;
+  const fluxos = await carregarFluxosComGatilhos(db, args);
   const melhor = melhorFluxoPorGatilho(fluxos, args.texto);
   return melhor === null ? null : { id: melhor.id, nome: melhor.nome };
+}
+
+/**
+ * TODOS os fluxos acionados pela mensagem, na ordem citada — base da FILA de
+ * processos. Diferente de `escolherFluxoPeloGatilho` (o "melhor" só), aqui
+ * interessa a sequência: "troca e financiar" → [Troca, Financiamento].
+ */
+export async function escolherFluxosPeloGatilho(
+  db: pg.Pool,
+  args: { organizationId: string; texto: string | null; contactId?: string },
+): Promise<Array<{ id: string; nome: string }>> {
+  if (!args.texto) return [];
+  const fluxos = await carregarFluxosComGatilhos(db, args);
+  return fluxosPorGatilho(fluxos, args.texto);
 }
 
 /**

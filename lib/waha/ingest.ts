@@ -31,6 +31,7 @@ import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
+import { extrairCitacaoWaha } from "@/lib/waha/citacao";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
 import type { WahaEnvelope, WahaPayload } from "@/lib/waha/envelope";
@@ -603,6 +604,45 @@ async function mensagemIngeridaPorExternalId(
   return data ?? null;
 }
 
+/**
+ * Resolve a mensagem CITADA (resposta "em cima") para o id LOCAL, dentro da
+ * MESMA conversa. O `stanzaId` do Baileys é o id "bare" (`3EB0…`): o envio grava
+ * esse bare em `external_id`, e o inbound grava o composto
+ * (`{fromMe}_{chatId}_{bare}`) — por isso procuramos a igualdade E o sufixo
+ * `_<bare>`. Sem casar, devolve `null` (a citação ainda vira texto em metadata).
+ *
+ * Best-effort: falha de leitura não derruba a entrada; a mensagem entra sem
+ * `reply_to_message_id`, como antes desta mudança.
+ */
+async function resolverMensagemCitada(
+  admin: Admin,
+  organizationId: string,
+  conversationId: string,
+  stanzaId: string | null,
+): Promise<string | null> {
+  if (!stanzaId) return null;
+  const bare = bareWaMessageId(stanzaId);
+  if (bare === "") return null;
+  const { data, error } = await admin
+    .from("messages")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("conversation_id", conversationId)
+    .or(`external_id.eq.${bare},external_id.like.%_${bare}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn("waha.ingest: não resolvi a mensagem citada", {
+      organization_id: organizationId,
+      conversation_id: conversationId,
+      detail: error.message,
+    });
+    return null;
+  }
+  return data?.id ?? null;
+}
+
 async function handleInbound(
   admin: Admin,
   session: Session,
@@ -694,6 +734,14 @@ async function handleInbound(
     return;
   }
 
+  // Citação ("responder em cima"): guarda o id local da citada e o texto dela em
+  // metadata, para o motor saber a QUAL moto o cliente se referiu quando a
+  // mensagem sozinha não diz (ex.: "Gostei dessa").
+  const citacao = extrairCitacaoWaha(p._data?.message);
+  const citadaMessageId = citacao
+    ? await resolverMensagemCitada(admin, session.organization_id, conversationId, citacao.stanzaId)
+    : null;
+
   const now = new Date().toISOString();
   const { data: insertedMessage, error: insertErr } = await admin
     .from("messages")
@@ -713,7 +761,20 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      reply_to_message_id: citadaMessageId,
+      metadata: {
+        raw_type: p.type,
+        ack_name: p.ackName,
+        ...(citacao
+          ? {
+              citacao: {
+                stanza_id: citacao.stanzaId,
+                participant: citacao.participant,
+                texto: citacao.texto,
+              },
+            }
+          : {}),
+      },
     })
     .select("id")
     .maybeSingle();

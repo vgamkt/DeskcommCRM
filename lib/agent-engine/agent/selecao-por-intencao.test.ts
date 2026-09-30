@@ -5,6 +5,7 @@ import type { CatalogoMapeamento } from '@/lib/external-db/catalogo';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 import {
   casaPerfil,
+  filtrarPorExigencias,
   filtrarPorHipoteses,
   pedePrecoSemValor,
   perfilDaIA,
@@ -675,5 +676,106 @@ describe('categoria composta (ex.: "Adventure / Trilha") casa por CONTEÚDO', ()
     });
     expect(r.motos.map((m) => m.nome)).toContain('HONDA XRE 190');
     expect(r.motos.map((m) => m.nome)).not.toContain('HONDA Biz 125');
+  });
+});
+
+describe('C-106: filtro ESTRITO por exigidos + faixa + ordem por preço', () => {
+  const LOJA: MotoDoCatalogo[] = [
+    moto('HONDA CBX 250', { categoria: 'Naked, Street', cilindrada: '249', marca: 'HONDA', preco: '9990' }),
+    moto('HONDA CB 300', { categoria: 'Street', cilindrada: '300', marca: 'HONDA', preco: '14990' }),
+    moto('YAMAHA YS Fazer 250', { categoria: 'Street', cilindrada: '249', marca: 'YAMAHA', preco: '17990' }),
+    moto('BMW G 310 R', { categoria: 'Roadster', cilindrada: '313', marca: 'BMW', preco: '22990' }),
+    moto('HONDA Biz 125', { categoria: 'Scooter', cilindrada: '125', marca: 'HONDA', preco: '14500' }),
+  ];
+
+  it('exigidos marca+cilindrada só deixa a Honda ~250 (tolerância)', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'tem uma cb 250?',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: LOJA,
+      mapeamento: MAPEAMENTO,
+      quantidade: 5,
+      filtrarPorComparacao: true,
+      hipoteses: [{ nome: 'CBX 250', marca: 'HONDA', cilindrada: '249' }],
+      faixas: {},
+      exigidos: ['marca', 'cilindrada'],
+    });
+    const nomes = r.motos.map((m) => m.nome);
+    expect(nomes).toContain('HONDA CBX 250');
+    expect(nomes).not.toContain('YAMAHA YS Fazer 250');
+    expect(nomes).not.toContain('BMW G 310 R');
+    expect(nomes).not.toContain('HONDA Biz 125');
+  });
+
+  it('faixa de preço com limite vira obrigatória e ordena do mais próximo do teto', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma moto até 15 mil',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: LOJA,
+      mapeamento: MAPEAMENTO,
+      quantidade: 5,
+      filtrarPorComparacao: true,
+      hipoteses: [{ preco: '15000' }],
+      faixas: { preco: { max: 15000 } },
+      enviarTodasQueCasam: false,
+    });
+    expect(r.motos.length).toBeGreaterThan(0);
+    expect(r.motos.every((m) => Number(m.preco) <= 15000)).toBe(true);
+    // Mais próximo de 15.000 primeiro (14.990), não a mais barata (9.990).
+    expect(r.motos[0]!.nome).toBe('HONDA CB 300');
+  });
+
+  it('filtrarPorExigencias: exige TODAS as colunas (AND)', () => {
+    const passou = filtrarPorExigencias(
+      LOJA,
+      ['marca', 'cilindrada'],
+      [{ marca: 'HONDA', cilindrada: '249' }],
+      {},
+      30,
+    );
+    // Honda E cc ~249 (±30% ⇒ 174–324): CBX 250 e CB 300 entram; Yamaha/BMW/Biz não.
+    expect(passou.map((m) => m.nome)).toEqual(['HONDA CBX 250', 'HONDA CB 300']);
+  });
+
+  it('criteriosDinamicos DESLIGADO ignora a faixa e volta ao OR (permite acima do teto)', () => {
+    const entrada = {
+      termoBase: 'quero uma moto até 15 mil',
+      criterios: {} as Record<string, string>,
+      intencao: 'pedido' as const,
+      motoAtual: null,
+      candidatos: LOJA,
+      mapeamento: MAPEAMENTO,
+      quantidade: 5,
+      filtrarPorComparacao: true,
+      hipoteses: [{ preco: '15000' }],
+      faixas: { preco: { max: 15000 } },
+    };
+    const ligado = selecionarPorIntencao(entrada);
+    const desligado = selecionarPorIntencao({ ...entrada, criteriosDinamicos: false });
+    expect(ligado.motos.every((m) => Number(m.preco) <= 15000)).toBe(true);
+    expect(desligado.motos.some((m) => Number(m.preco) > 15000)).toBe(true);
+  });
+
+  it('casadas expõe as que passaram (para a fila do "quer ver mais")', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'gosto de Honda',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: LOJA,
+      mapeamento: MAPEAMENTO,
+      quantidade: 2,
+      filtrarPorComparacao: true,
+      hipoteses: [{ marca: 'HONDA' }],
+      faixas: {},
+      exigidos: ['marca'],
+    });
+    expect(r.casadas.length).toBe(3);
+    expect(r.motos.length).toBe(2);
+    expect(r.temMaisOpcoes).toBe(true);
   });
 });

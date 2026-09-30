@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type pg from "pg";
 
 import type { FlowEdge, FlowGraph, FlowNode } from "./graph-schema";
-import { finalizarFluxoDeAtendimento, mapearChecklist, melhorFluxoPorGatilho, montarNotaDeConclusao, processarInboundDoFluxo, renderBlocoDeAtendimento, situacaoDoChecklist, valoresConhecidosDoContato, carregarEstadoDeAtendimento, escolherFluxoPeloGatilho, type ChecklistDeAtendimento, type EstadoDeAtendimento } from "./atendimento";
+import { finalizarFluxoDeAtendimento, mapearChecklist, melhorFluxoPorGatilho, montarNotaDeConclusao, persistirDadosDoContato, lerFluxosPendentes, salvarFluxosPendentes, limparFluxosPendentes, enfileirarFluxo, fluxosPorGatilho, processarInboundDoFluxo, renderBlocoDeAtendimento, situacaoDoChecklist, valoresConhecidosDoContato, carregarEstadoDeAtendimento, escolherFluxoPeloGatilho, normalizarNomeDeFluxo, escolherFluxoPorNome, type ChecklistDeAtendimento, type EstadoDeAtendimento } from "./atendimento";
 
 function no(node: Partial<FlowNode> & Pick<FlowNode, "id" | "type" | "config">): FlowNode {
   return { label: node.id, position: { x: 0, y: 0 }, ...node } as FlowNode;
@@ -375,6 +375,26 @@ describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)
     );
   });
 
+  it("sem `name`, o `display_name` do WhatsApp vale como nome conhecido", () => {
+    // O nome que o WhatsApp entrega no primeiro contato mora em `display_name`,
+    // não em `name`. Enquanto esta função lia só `name`, o fluxo reperguntava o
+    // nome de quem chegou com perfil do WhatsApp (medido ao vivo: saudou
+    // "Vander" e perguntou "Como você se chama?").
+    expect(
+      valoresConhecidosDoContato({ name: null, display_name: "Vander", custom_fields: {} }).nome,
+    ).toBe("Vander");
+  });
+
+  it("`name` (dito pelo cliente) vence o `display_name` (perfil do WhatsApp)", () => {
+    expect(
+      valoresConhecidosDoContato({
+        name: "Vanderlei Souza",
+        display_name: "Vander",
+        custom_fields: {},
+      }).nome,
+    ).toBe("Vanderlei Souza");
+  });
+
   it("null/array/objeto vazio devolvem {}", () => {
     expect(valoresConhecidosDoContato(null)).toEqual({});
     expect(valoresConhecidosDoContato(undefined)).toEqual({});
@@ -382,9 +402,124 @@ describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)
   });
 });
 
+describe("persistirDadosDoContato — dado coletado sobrevive ao fim do fluxo", () => {
+  it("grava só campos de cadastro, normaliza cnh e descarta chaves do fluxo/vazias", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    await persistirDadosDoContato({ query } as unknown as pg.Pool, {
+      organizationId: "org",
+      contactId: "ct",
+      valores: {
+        cnh: "true",
+        cidade: "São José dos Campos",
+        nome: "",
+        cpf: "123",
+        moto_troca: "cg 125",
+      },
+    });
+    expect(query).toHaveBeenCalledTimes(1);
+    const params = query.mock.calls[0]![1] as unknown[];
+    expect(JSON.parse(String(params[2]))).toEqual({
+      cidade: "São José dos Campos",
+      cnh: true,
+      cpf: "123",
+    });
+  });
+
+  it("sem campo de cadastro → não toca no banco", async () => {
+    const query = vi.fn();
+    await persistirDadosDoContato({ query } as unknown as pg.Pool, {
+      organizationId: "org",
+      contactId: "ct",
+      valores: { moto_troca: "cg 125", troca_ano: "2015" },
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+});
+
+describe("fila de fluxos pendentes", () => {
+  const pool = (query: ReturnType<typeof vi.fn>) => ({ query } as unknown as pg.Pool);
+
+  it("enfileirar: preserva a ordem e não duplica", () => {
+    let fila = enfileirarFluxo([], { pointer_id: "troca", nome: "Troca" });
+    fila = enfileirarFluxo(fila, { pointer_id: "fin", nome: "Financiamento" });
+    fila = enfileirarFluxo(fila, { pointer_id: "troca", nome: "Troca" });
+    expect(fila.map((f) => f.pointer_id)).toEqual(["troca", "fin"]);
+  });
+
+  it("fluxosPorGatilho: devolve na ordem citada ('troca e financiar')", () => {
+    const fluxos = [
+      { id: "fin", nome: "Financiamento", gatilhos: ["financiar", "parcelar"] },
+      { id: "troca", nome: "Troca", gatilhos: ["na troca", "dar minha moto"] },
+    ];
+    expect(fluxosPorGatilho(fluxos, "quero dar minha moto na troca e financiar o resto").map((f) => f.id)).toEqual([
+      "troca",
+      "fin",
+    ]);
+    expect(fluxosPorGatilho(fluxos, "bom dia")).toEqual([]);
+  });
+
+  it("ler: lista vazia quando não há fila ou o shape é inválido", async () => {
+    const vazio = vi.fn(async () => ({ rows: [{ pendentes: null }] }));
+    expect(
+      await lerFluxosPendentes(pool(vazio), { organizationId: "org", conversationId: "cv" }),
+    ).toEqual([]);
+    const misto = vi.fn(async () => ({
+      rows: [{ pendentes: [{ nome: "sem id" }, { pointer_id: "p3", nome: "Troca" }] }],
+    }));
+    expect(
+      await lerFluxosPendentes(pool(misto), { organizationId: "org", conversationId: "cv" }),
+    ).toEqual([{ pointer_id: "p3", nome: "Troca" }]);
+  });
+
+  it("salvar: grava o array jsonb da fila", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    await salvarFluxosPendentes(pool(query), {
+      organizationId: "org",
+      conversationId: "cv",
+      pendentes: [{ pointer_id: "p3", nome: "Troca" }],
+    });
+    const params = query.mock.calls[0]![1] as unknown[];
+    expect(JSON.parse(String(params[2]))).toEqual([{ pointer_id: "p3", nome: "Troca" }]);
+  });
+
+  it("limpar: remove a chave da fila", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
+    await limparFluxosPendentes(pool(query), { organizationId: "org", conversationId: "cv" });
+    expect(String((query.mock.calls[0]![0] as string))).toContain("- 'fluxos_pendentes'");
+  });
+});
+
+describe("escolherFluxoPorNome — nome do fluxo tolerante (não trava o modelo)", () => {
+  const ativos = [
+    { id: "f1", nome: "Qualificação" },
+    { id: "f2", nome: "Financiamento" },
+    { id: "f3", nome: "Troca" },
+    { id: "f4", nome: "Venda ou Consignação" },
+  ];
+
+  it("casa exato ignorando caixa e acento", () => {
+    expect(escolherFluxoPorNome(ativos, "qualificacao")?.id).toBe("f1");
+    expect(escolherFluxoPorNome(ativos, "Financiamento")?.id).toBe("f2");
+  });
+
+  it("casa por nome parcial único ('troca de moto' → Troca)", () => {
+    expect(escolherFluxoPorNome(ativos, "troca de moto")?.id).toBe("f3");
+    expect(escolherFluxoPorNome(ativos, "venda")?.id).toBe("f4");
+  });
+
+  it("ambíguo ou inexistente → null (o chamador devolve a lista)", () => {
+    expect(escolherFluxoPorNome(ativos, "xyz")).toBeNull();
+    expect(escolherFluxoPorNome(ativos, "")).toBeNull();
+  });
+
+  it("normaliza espaços e acentos", () => {
+    expect(normalizarNomeDeFluxo("  Venda   ou Consignação ")).toBe("venda ou consignacao");
+  });
+});
+
 describe("carregarEstadoDeAtendimento — pendências consideram o contato, não só o fluxo", () => {
   function poolFake(opts: {
-    contact: { name: string | null; custom_fields: unknown };
+    contact: { name: string | null; display_name?: string | null; custom_fields: unknown };
     flowData?: Array<{ field_key: string; value: string | null; attempts: number }>;
   }) {
     const query = async (sql: string) => {
@@ -420,7 +555,9 @@ describe("carregarEstadoDeAtendimento — pendências consideram o contato, não
         };
       }
       if (/from contact_flow_data/.test(sql)) return { rows: opts.flowData ?? [] };
-      if (/select name, custom_fields from contacts/.test(sql)) return { rows: [opts.contact] };
+      if (/select name, display_name, custom_fields from contacts/.test(sql)) {
+        return { rows: [opts.contact] };
+      }
       return { rows: [] };
     };
     return { query } as unknown as pg.Pool;
@@ -435,6 +572,21 @@ describe("carregarEstadoDeAtendimento — pendências consideram o contato, não
     expect(estado!.valores).toEqual({ nome: "Vander", cidade: "Campinas", cnh: "sim" });
     expect(estado!.situacao.pendentes).toHaveLength(0);
     expect(estado!.situacao.completo).toBe(true);
+  });
+
+  it("contato com só display_name (perfil do WhatsApp) não tem o nome reperguntado", async () => {
+    const estado = await carregarEstadoDeAtendimento(
+      poolFake({
+        contact: {
+          name: null,
+          display_name: "Vander",
+          custom_fields: { cidade: "sao paulo", cnh: true },
+        },
+      }),
+      { organizationId: "org", contactId: "ct-1" },
+    );
+    expect(estado!.valores.nome).toBe("Vander");
+    expect(estado!.situacao.pendentes).toHaveLength(0);
   });
 
   it("o valor do FLUXO vence o custom_field; chave estranha é ignorada", async () => {

@@ -174,6 +174,19 @@ const schema = z.object({
   VERCEL_AI_GATEWAY_URL: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
+  // Transcrição de áudio do WhatsApp (ponto "Ouvir o áudio do cliente").
+  // Endpoint compatível com `POST /v1/audio/transcriptions` da OpenAI.
+  //
+  // VAZIOS = o áudio reusa o MESMO provedor do chat quando ele for OpenRouter
+  // (STT da própria OpenRouter, com a chave que o chat já usa — sem conta nem
+  // chave nova) ou OpenAI (`api.openai.com` + `whisper-1`). Fora desses, cai na
+  // credencial OpenAI da org > `OPENAI_API_KEY`. Preencher TRANSCRIPTION_API_KEY
+  // aponta para OUTRO serviço compatível (Groq, self-host…), com a chave DESSE
+  // serviço. Lido por `workers/media-derive-worker.ts`; ver também
+  // `lib/messaging/media/transcription.ts`.
+  TRANSCRIPTION_API_KEY: z.string().optional().default(""),
+  TRANSCRIPTION_BASE_URL: z.string().optional().default(""),
+  TRANSCRIPTION_MODEL: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron

@@ -69,7 +69,15 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
   })),
 }));
 
-import { deriveMessageMedia } from "@/workers/media-derive-worker";
+import {
+  GROQ_TRANSCRIPTION_BASE,
+  GROQ_TRANSCRIPTION_MODEL,
+  OPENROUTER_TRANSCRIPTION_BASE,
+  OPENROUTER_TRANSCRIPTION_MODEL,
+  deriveMessageMedia,
+  destinoDaTranscricao,
+  destinoExplicitoDaTranscricao,
+} from "@/workers/media-derive-worker";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 
 function eventRow(attempts = 0) {
@@ -124,5 +132,66 @@ describe("deriveMessageMedia", () => {
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ media_derived_status: "failed" }),
     );
+  });
+});
+
+describe("destinoDaTranscricao — o áudio tem caminho próprio, paralelo ao chat", () => {
+  it("OpenRouter reusa a MESMA chave e o STT da OpenRouter (modelo padrão)", () => {
+    expect(destinoDaTranscricao({ provedor: "openrouter", chave: "sk-or-v1-do-chat" })).toEqual({
+      apiKey: "sk-or-v1-do-chat",
+      baseUrl: OPENROUTER_TRANSCRIPTION_BASE,
+      model: OPENROUTER_TRANSCRIPTION_MODEL,
+    });
+  });
+
+  it("OpenRouter respeita um modelo de STT alternativo", () => {
+    const d = destinoDaTranscricao({
+      provedor: "openrouter",
+      chave: "sk-or-v1-do-chat",
+      model: "openai/whisper-large-v3",
+    });
+    expect(d?.model).toBe("openai/whisper-large-v3");
+    expect(d?.baseUrl).toBe(OPENROUTER_TRANSCRIPTION_BASE);
+  });
+
+  it("Groq usa o endpoint OpenAI-compatível dela e whisper-large-v3-turbo", () => {
+    expect(destinoDaTranscricao({ provedor: "groq", chave: "gsk_x" })).toEqual({
+      apiKey: "gsk_x",
+      baseUrl: GROQ_TRANSCRIPTION_BASE,
+      model: GROQ_TRANSCRIPTION_MODEL,
+    });
+  });
+
+  it("OpenAI usa api.openai.com + whisper-1 (base/model ausentes = default)", () => {
+    expect(destinoDaTranscricao({ provedor: "openai", chave: "sk-openai" })).toEqual({
+      apiKey: "sk-openai",
+    });
+  });
+
+  it("provedor sem transcrição compatível (anthropic/google) → null", () => {
+    expect(destinoDaTranscricao({ provedor: "anthropic", chave: "sk-ant" })).toBeNull();
+    expect(destinoDaTranscricao({ provedor: "google", chave: "gk" })).toBeNull();
+  });
+});
+
+describe("destinoExplicitoDaTranscricao — o override do .env vence tudo", () => {
+  it("sem chave explícita → null (o chamador resolve pela credencial da org)", () => {
+    expect(destinoExplicitoDaTranscricao({})).toBeNull();
+    expect(destinoExplicitoDaTranscricao({ apiKey: "   " })).toBeNull();
+    expect(destinoExplicitoDaTranscricao({ apiKey: "", baseUrl: "https://x" })).toBeNull();
+  });
+
+  it("chave explícita leva base e modelo (ex.: Groq)", () => {
+    expect(
+      destinoExplicitoDaTranscricao({
+        apiKey: "gsk_groq",
+        baseUrl: "https://api.groq.com/openai",
+        model: "whisper-large-v3-turbo",
+      }),
+    ).toEqual({
+      apiKey: "gsk_groq",
+      baseUrl: "https://api.groq.com/openai",
+      model: "whisper-large-v3-turbo",
+    });
   });
 });

@@ -341,6 +341,26 @@ export function colunasDaIA(m: CatalogoMapeamento): string[] {
   return semReferencia(base, m);
 }
 
+/**
+ * C-107 (decisão do dono, 2026-09-29): os CAMPOS DE BUSCA do agente.
+ *
+ * Autoridade = o checkbox **"Critério da IA"**. No modo dinâmico (`dinamico`),
+ * é SÓ isso que o motor e o prompt usam para procurar/filtrar. Fora do modo
+ * dinâmico, preserva o comportamento antigo: soma "Envio" quando o interruptor
+ * "enviar todas que casam" está ligado (`enviarTodas`).
+ *
+ * `cilindrada`, `preco`, `marca`, `categoria`… são todos "campos" — a busca é
+ * genérica; o que o dono marca é o que vale.
+ */
+export function camposDeBusca(
+  m: CatalogoMapeamento,
+  opcoes?: { dinamico?: boolean; enviarTodas?: boolean },
+): string[] {
+  const criterio = criteriosDaIA(m);
+  if (opcoes?.dinamico !== false) return criterio;
+  return [...new Set([...(opcoes?.enviarTodas ? colunasDeEnvio(m) : []), ...criterio])];
+}
+
 /** Colunas que a IA pode usar como filtro na consulta ampla. */
 export function criteriosDaIA(m: CatalogoMapeamento): string[] {
   const config = configEfetiva(m);
@@ -372,6 +392,37 @@ export function colunasDeEnvio(m: CatalogoMapeamento): string[] {
 /** A coluna de REFERÊNCIA de similares (ex.: `moto_similar`), ou null. */
 export function colunaDeSimilares(m: CatalogoMapeamento): string | null {
   return m.colSimilares ?? null;
+}
+
+/**
+ * A coluna de DESCRIÇÃO do catálogo (texto livre sobre a moto), se houver.
+ *
+ * Não é um papel fixo — é uma coluna comum (`descricao`, `detalhes`,
+ * `observacoes`…). Serve para o motor buscar as qualidades REAIS da moto EM FOCO
+ * (apresentação e objeções) sem trazer a descrição de TODAS as motos. Puro.
+ */
+const NOMES_DE_DESCRICAO = [
+  'descricao',
+  'descricao_completa',
+  'descricao_do_produto',
+  'detalhes',
+  'detalhe',
+  'observacoes',
+  'observacao',
+] as const;
+
+export function colunaDescricao(m: CatalogoMapeamento): string | null {
+  const colunas = configEfetiva(m).map((c) => c.coluna);
+  for (const alvo of NOMES_DE_DESCRICAO) {
+    const achou = colunas.find((c) => normalizarColuna(c) === alvo);
+    if (achou !== undefined) return achou;
+  }
+  // "começa com descri": pega `descricao_completa`, `descricao_do_produto` que
+  // não casaram exato. Não é "contém" para não capturar `cod_descricao` sem querer.
+  for (const c of colunas) {
+    if (normalizarColuna(c).startsWith('descri')) return c;
+  }
+  return null;
 }
 
 /** Um campo exibido na legenda: a coluna real e o papel (rótulo), se houver. */

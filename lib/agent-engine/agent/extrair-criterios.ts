@@ -26,6 +26,8 @@
  */
 import type pg from 'pg';
 
+import { detectarPapelColuna } from '@/lib/external-db/catalogo';
+
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
@@ -65,11 +67,31 @@ export interface CriteriosExtraidos {
    * em "quero Naked"). O motor prioriza por ela. `null` = sem destaque.
    */
   principal: string | null;
+  /**
+   * C-106: colunas que o cliente REQUER (por dedução inteligente, incluindo a
+   * MARCA deduzida do modelo — "CB 250" → marca Honda). Vira FILTRO
+   * OBRIGATÓRIO: a moto precisa atender TODAS. Vazio = pedido vago → o motor cai
+   * no comportamento genérico (OR sobre as colunas de critério configuradas).
+   */
+  exigidos: string[];
 }
 
 /** Formato vazio (nunca lança). */
 export function criteriosVazios(): CriteriosExtraidos {
-  return { intencao: null, criterios: {}, hipoteses: [], faixas: {}, principal: null };
+  return { intencao: null, criterios: {}, hipoteses: [], faixas: {}, principal: null, exigidos: [] };
+}
+
+/**
+ * Colunas que a IA NUNCA pode preencher (regra do dono, 2026-09-28): o ANO é
+ * exclusivo do catálogo — a IA não deve inferir nem inventar ano em hipótese
+ * alguma. Sem esta trava, ela preenchia `ano` nas hipóteses mesmo sem o cliente
+ * citar; como o casamento numérico usa tolerância percentual (±30%), "ano" virava
+ * um match universal (2008 ± 602 anos) e o filtro aprovava o catálogo inteiro
+ * (medido: "CB 250" → 21 motos). A detecção é por PAPEL para valer com qualquer
+ * nome de coluna (`ano`, `ano_modelo`, `ano_fabricacao`).
+ */
+function ehColunaDeAno(coluna: string): boolean {
+  return detectarPapelColuna(coluna) === 'ano';
 }
 
 /** Quantas motos do estoque entram no prompt (evita estourar o contexto). */
@@ -98,6 +120,7 @@ export function buildCriteriosPrompt(
   colunas: readonly string[],
   valores?: Record<string, readonly string[]>,
   estoque?: readonly MotoDoCatalogo[],
+  bloquearAno = true,
 ): string {
   const lista = colunas
     .map((c) => {
@@ -119,6 +142,7 @@ export function buildCriteriosPrompt(
     : (colunas[0] ?? 'categoria');
   const exemplo = JSON.stringify({
     intencao: 'pedido',
+    exigidos: [],
     principal: principalExemplo,
     hipoteses: [hipoteseExemplo],
     faixas: {},
@@ -140,19 +164,28 @@ export function buildCriteriosPrompt(
     '- "pedido": o cliente pede/quer uma moto (por nome, marca, cilindrada, estilo…).',
     '- "alternativa": o cliente está falando de uma moto e quer algo DIFERENTE dela (ex.: achou caro, quer outra cor/ano/marca, quer mais barata).',
     'Devolva os blocos:',
+    '- "exigidos": SOMENTE as colunas que o cliente DECLAROU EXPLICITAMENTE — o motor vai OBRIGAR cada uma. NÃO ponha aqui o que você apenas DEDUZIU. Ex.: "quero uma Honda"→["marca"]; "quero uma vermelha"→["cor"]; "quero um scooter"→["categoria"]; "quero uma moto de 2024"→["ano"]; "quero 300"→["cilindrada"]; "abaixo de 20 mil"→["preco"]. Mensagem vaga ("quero uma moto", saudação) → "exigidos": [].',
     '- "principal": a coluna que o cliente MAIS enfatizou, entre as colunas de critério (ex.: "preco" em "quero uma barata"; "categoria" em "quero uma Naked"; "cilindrada" em "quero uma 300"). Se não houver destaque, use null.',
-    '- "hipoteses": lista de configurações concretas prováveis, com os VALORES EXATOS citados ou deduzidos do pedido (ex.: {"nome":"CB 250","marca":"HONDA","categoria":"Naked","cilindrada":"250","ano":"2020"}). Inclua variações plausíveis (o cliente pode ter errado a cilindrada/modelo).',
-    '- "faixas": SOMENTE intervalos que o cliente DEU EXPLICITAMENTE (ex.: "até 15 mil" → {"preco":{"min":0,"max":15000}}; "de 2018 a 2022" → {"ano":{"min":2018,"max":2022}}). Se o cliente NÃO citou um número/intervalo para uma coluna, NÃO crie faixa para ela — deixe "faixas": {}.',
+    '- "hipoteses": configurações PROVÁVEIS para achar PARECIDAS (NÃO obrigam). Deduza a MARCA a partir do MODELO (ex.: "CB 250"→HONDA; "Fazer"→YAMAHA; "XRE"→HONDA) e a categoria provável, mas isso serve para BUSCAR/ORDENAR semelhantes entre TODAS as marcas — NÃO vai em "exigidos". Ex.: {"nome":"CB 250","marca":"HONDA","categoria":"Naked","cilindrada":"250"}.',
+    '- "faixas": SOMENTE intervalos que o cliente DEU EXPLICITAMENTE (ex.: "até 15 mil" → {"preco":{"min":0,"max":15000}}). Se o cliente NÃO citou um número/intervalo para uma coluna, NÃO crie faixa para ela — deixe "faixas": {}.',
     'REGRAS DE PRECISÃO (obrigatórias):',
-    '1) NUNCA invente faixa. Só preencha "faixas" com o que o cliente disse ou com limite decorrente do modelo que ELE citou.',
-    '2) Se o cliente citou UM valor (ex.: "uma 300", "ano 2018", "uns 15 mil"), coloque esse valor em "hipoteses" daquela coluna — NÃO monte faixa. O sistema calcula a margem.',
-    '3) Para "mais nova"/"mais antiga"/"mais barata"/"mais cara", use "menor"/"maior" em "criterios".',
-    '4) Ano: só preencha quando o cliente citar o ano ou algo que o determine (ex.: "modelo novo", "a partir de 2020"). Não deduza ano de um modelo sem o cliente indicar.',
-    'REGRA DE OURO do casamento: uma moto NÃO precisa bater em tudo. Ela deve ser oferecida se bater em PELO MENOS UMA coluna (categoria OU preço OU cilindrada OU marca OU ano…), e sobe de prioridade quanto MAIS colunas bater e se bater no "principal". NUNCA descarte por causa de uma coluna que não bate.',
+    '1) NUNCA invente faixa nem valor. Só use o que o cliente disse ou o que decorre do modelo que ELE citou.',
+    '2) Se o cliente citou UM NÚMERO (ex.: "uma 300", "uns 15 mil", "de 2024"), coloque esse valor na coluna certa E essa coluna entra em "exigidos". NÃO monte faixa — o sistema calcula a margem (números: ±30%; ano: exato).',
+    '3) "exigidos" = só o que o cliente FALOU — e NUNCA coloque "nome" em "exigidos": o MODELO exato é casado pelo próprio sistema. O que você DEDUZ (inclusive a MARCA pelo modelo) NÃO entra em "exigidos" — vai em "hipoteses" e serve para TRAZER/ORDENAR as parecidas de QUALQUER marca.',
+    '5) Exemplo-chave: "vc tem uma CB 250?" → o cliente citou o número 250, então "exigidos": ["cilindrada"] (com 250); a marca HONDA, deduzida de "CB", vai só em "hipoteses". Assim vêm as ~250 de QUALQUER marca (Honda primeiro).',
+    ...(bloquearAno
+      ? [
+          '4) O cliente NÃO citou ano: NUNCA deduza nem preencha a coluna "ano" (nem em hipoteses/faixas/principal/exigidos).',
+        ]
+      : [
+          '4) O cliente citou um ANO X: use SOMENTE X na coluna "ano" (em "exigidos" E nas hipóteses) — NÃO inclua outros anos.',
+        ]),
+    'REGRA DO CASAMENTO: as colunas em "exigidos" são OBRIGATÓRIAS (a moto atende TODAS). "hipoteses"/"faixas" servem para TRAZER PARECIDAS de qualquer marca e para ORDENAR (as que mais batem primeiro). Números (cilindrada, preço) valem com margem de ±30%; o ANO, quando citado, vale EXATO. Se "exigidos" estiver vazio, o motor busca as parecidas pelas colunas de critério.',
     'Colunas de critério:',
     lista,
-    'IMPORTANTE: use SOMENTE estas colunas e valores que façam sentido para o ESTOQUE. NUNCA copie',
-    'a moto atual da conversa como se fosse o pedido do cliente.',
+    'IMPORTANTE: você pode BUSCAR/FILTRAR SOMENTE pelas colunas listadas acima — são os "campos de',
+    'busca" que a loja marcou. NÃO use nenhuma outra coluna, nem invente campo. Use só valores que',
+    'façam sentido para o ESTOQUE. NUNCA copie a moto atual da conversa como se fosse o pedido do cliente.',
     estoqueBlock,
     '',
     `EXEMPLO de resposta (formato exato, preenchido): ${exemplo}`,
@@ -160,7 +193,7 @@ export function buildCriteriosPrompt(
     'Mensagem do cliente:',
     mensagem,
     '',
-    'Agora responda com o JSON preenchido (mesmo formato do exemplo): "intencao", "principal", "hipoteses" e "faixas".',
+    'Agora responda com o JSON preenchido (mesmo formato do exemplo): "intencao", "exigidos", "principal", "hipoteses" e "faixas".',
     'NUNCA devolva vazio: se não tiver certeza do modelo, inclua VÁRIAS "hipoteses" plausíveis (com valores reais do estoque). Só use "faixas" quando o cliente deu o número.',
     JSON_INSTRUCTION,
   ].join('\n');
@@ -206,8 +239,15 @@ function parseFaixas(bruto: unknown, colunasPermitidas: readonly string[]): Faix
 export function parseCriterios(
   text: string,
   colunasPermitidas: readonly string[],
+  bloquearAno = true,
 ): CriteriosExtraidos {
   const vazio = criteriosVazios();
+  // Trava dura (default): ANO nunca é aceito, mesmo que um chamador liste a coluna.
+  // Com `bloquearAno: false` (interruptor do agente desligado), o ano volta a ser
+  // aceito como qualquer coluna.
+  const permitidas = bloquearAno
+    ? colunasPermitidas.filter((coluna) => !ehColunaDeAno(coluna))
+    : [...colunasPermitidas];
   const inicio = text.indexOf('{');
   const fim = text.lastIndexOf('}');
   if (inicio === -1 || fim <= inicio) return vazio;
@@ -232,7 +272,7 @@ export function parseCriterios(
   const criterios: Record<string, string> = {};
   for (const [coluna, valor] of Object.entries(brutoCriterios)) {
     if (coluna === 'intencao' || coluna === 'hipoteses' || coluna === 'faixas') continue;
-    if (!colunasPermitidas.includes(coluna)) continue;
+    if (!permitidas.includes(coluna)) continue;
     if (typeof valor === 'string' && valor.trim() !== '') criterios[coluna] = valor.trim();
     else if (typeof valor === 'number' && Number.isFinite(valor)) criterios[coluna] = String(valor);
   }
@@ -244,7 +284,7 @@ export function parseCriterios(
       if (typeof item !== 'object' || item === null) continue;
       const hip: HipoteseDeMoto = {};
       for (const [coluna, valor] of Object.entries(item as Record<string, unknown>)) {
-        if (!colunasPermitidas.includes(coluna)) continue;
+        if (!permitidas.includes(coluna)) continue;
         if (typeof valor === 'string' && valor.trim() !== '') hip[coluna] = valor.trim();
         else if (typeof valor === 'number' && Number.isFinite(valor)) hip[coluna] = String(valor);
       }
@@ -255,16 +295,28 @@ export function parseCriterios(
   // C-096: coluna principal (só se for uma coluna permitida).
   const principalBruto = obj.principal;
   const principal =
-    typeof principalBruto === 'string' && colunasPermitidas.includes(principalBruto.trim())
+    typeof principalBruto === 'string' && permitidas.includes(principalBruto.trim())
       ? principalBruto.trim()
       : null;
+
+  // C-106: exigidos = colunas obrigatórias (só as permitidas; sem anexar faixas
+  // aqui — a seleção trata "faixa com limite" como obrigatória também).
+  const exigidos: string[] = [];
+  if (Array.isArray(obj.exigidos)) {
+    for (const item of obj.exigidos) {
+      if (typeof item !== 'string') continue;
+      const col = item.trim();
+      if (permitidas.includes(col) && !exigidos.includes(col)) exigidos.push(col);
+    }
+  }
 
   return {
     intencao,
     criterios,
     hipoteses,
-    faixas: parseFaixas(obj.faixas, colunasPermitidas),
+    faixas: parseFaixas(obj.faixas, permitidas),
     principal,
+    exigidos,
   };
 }
 
@@ -293,10 +345,21 @@ export async function extrairCriterios(
     valores?: Record<string, readonly string[]>;
     /** Motos reais do estoque (colunas "Enviar à IA") — a IA escolhe entre elas. */
     estoque?: readonly MotoDoCatalogo[];
+    /**
+     * Bloquear o ANO para a IA (default true = regra do dono). Com `false`
+     * (interruptor do agente desligado), a coluna de ano volta à lista permitida.
+     */
+    bloquearAno?: boolean;
   },
   deps: ExtrairCriteriosDeps,
 ): Promise<CriteriosExtraidos> {
-  if (input.colunas.length === 0 || input.mensagem.trim() === '') {
+  const bloquearAno = input.bloquearAno !== false;
+  // A IA nunca fala de ANO quando bloqueado (regra do dono): a coluna sai da lista
+  // permitida ANTES de montar o prompt e ANTES de parsear — nem chega a ser oferecida.
+  const colunas = bloquearAno
+    ? input.colunas.filter((coluna) => !ehColunaDeAno(coluna))
+    : [...input.colunas];
+  if (colunas.length === 0 || input.mensagem.trim() === '') {
     return criteriosVazios();
   }
   const call = deps.runModelCall ?? runModelCall;
@@ -318,16 +381,17 @@ export async function extrairCriterios(
             role: 'user',
             content: buildCriteriosPrompt(
               input.mensagem,
-              input.colunas,
+              colunas,
               input.valores,
               input.estoque,
+              bloquearAno,
             ),
           },
         ],
       },
       { log: deps.log },
     );
-    return parseCriterios(result.text, input.colunas);
+    return parseCriterios(result.text, colunas, bloquearAno);
   } catch (err) {
     deps.log.warn('extrair-criterios: falha — turno segue sem critérios', {
       error: err instanceof Error ? err.message : String(err),

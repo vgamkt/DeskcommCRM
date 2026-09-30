@@ -186,7 +186,12 @@ describe("validador como fonte única da gravação (auditoria 2026-09-19)", () 
 describe("send_message nunca manda bolha em branco (achado 2026-09-19)", () => {
   it("o execute recusa corpo vazio antes de enviar", () => {
     const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
-    expect(src).toMatch(/if \(body\.trim\(\) === '' && \(media_urls \?\? \[\]\)\.length === 0 && media_url === undefined\) \{/);
+    // C-107: quando o cliente fala de preço sem valor, o corpo é a PERGUNTA
+    // determinística e a recusa de corpo vazio não se aplica — daí o
+    // `!precoSemValorTurno &&` à frente.
+    expect(src).toMatch(
+      /if \(!precoSemValorTurno && body\.trim\(\) === '' && \(media_urls \?\? \[\]\)\.length === 0 && media_url === undefined\) \{/,
+    );
     expect(src).toMatch(/code: 'corpo_vazio'/);
   });
 });

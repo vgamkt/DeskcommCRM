@@ -321,12 +321,18 @@ function bloqueiaEscolha(texto: string): boolean {
  * `textoDoModelo` = o que o agente escreveu no turno (diz qual moto, quando ele
  * entendeu a escolha); `textoDoCliente` = a mensagem inbound do turno. Devolve
  * `undefined` quando não há escolha clara (nenhuma, ou ambígua) — nunca chuta.
+ *
+ * `textoCitado` = o texto da mensagem que o cliente RESPONDEU "em cima" (ex.: a
+ * foto/legenda de uma moto). "Gostei dessa" não nomeia moto, mas a citada nomeia:
+ * por isso o nome é procurado nos DOIS textos. O sinal positivo/pergunta continua
+ * vindo só da fala do cliente — a legenda citada não é a fala dele.
  */
 export function motoEscolhidaPeloCliente(
   textoDoModelo: string,
   textoDoCliente: string,
   catalogo: readonly MotoDoCatalogo[],
   jaDetalhadas: readonly string[],
+  textoCitado = '',
 ): MotoDoCatalogo | undefined {
   if (catalogo.length === 0) return undefined;
   // Pergunta/objeção não é escolha — barra ANTES de qualquer casamento (inclusive
@@ -348,7 +354,8 @@ export function motoEscolhidaPeloCliente(
   // senão ano único, senão cor única.
   const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
   if (candidatas.length === 0) return undefined;
-  const citadasCliente = citadasMaximais(textoDoCliente, candidatas);
+  const textoParaNome = textoCitado === '' ? textoDoCliente : `${textoDoCliente} ${textoCitado}`;
+  const citadasCliente = citadasMaximais(textoParaNome, candidatas);
   if (citadasCliente.length === 1) return citadasCliente[0];
   if (citadasCliente.length > 1) return undefined;
 

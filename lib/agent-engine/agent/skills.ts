@@ -47,6 +47,21 @@ export const MAX_SKILL_BODY_LINES = 200;
 export const skillMatcherSchema = z.strictObject({
   any_keywords: z.array(z.string().min(1).max(120)).min(1).max(50),
   probe_keywords: z.array(z.string().min(1).max(120)).max(50).optional(),
+  /**
+   * EXCLUSÃO: se ALGUMA destas casar na MENSAGEM ATUAL, a skill NÃO é injetada
+   * este turno — mesmo que `any_keywords` tenha casado.
+   *
+   * Existe para resolver CONFLITO entre skills de gatilho amplo. Medido ao vivo
+   * (2026-09-30): `catalogo-apresentacao` casa com quase tudo (tem "moto", "tem",
+   * "ver", "preço"…) e, numa OBJEÇÃO ("achei caro, essa moto está rodada?"), era
+   * injetada JUNTO de `objecao-preco` — a de catálogo mandava OFERECER opções e a
+   * de objeção mandava persuadir; o modelo ficava no genérico e despejava motos.
+   *
+   * É EXCLUSÃO, e não remoção de `any_keywords`, de propósito: assim a skill
+   * continua disparando em TODOS os casos em que já funcionava (nada se perde);
+   * ela só cede lugar quando a situação é de outra skill.
+   */
+  unless_keywords: z.array(z.string().min(1).max(120)).max(50).optional(),
 });
 export type SkillMatcher = z.infer<typeof skillMatcherSchema>;
 
@@ -246,15 +261,25 @@ export interface SkillMatchResult {
  * `probe_keywords` casando SEM hard-match = near-miss → candidato ao golden. Sinal vazio
  * (ex.: follow-up sem inbound) ⇒ nada casa, nada vira candidato.
  */
-export function matchSkills(skills: readonly LoadedSkill[], signal: string): SkillMatchResult {
+export function matchSkills(
+  skills: readonly LoadedSkill[],
+  signal: string,
+  mensagemAtual = '',
+): SkillMatchResult {
   const norm = normalize(signal);
+  const atual = normalize(mensagemAtual);
   const matched: LoadedSkill[] = [];
   const missCandidates: SkillMissCandidate[] = [];
   if (norm.trim() === '') {
     return { matched, missCandidates };
   }
   const hit = (keywords: readonly string[]): boolean => keywords.some((k) => norm.includes(normalize(k)));
+  // Exclusão é medida na MENSAGEM ATUAL (não na janela recente): uma objeção de
+  // turnos atrás não pode silenciar a skill num turno novo que não é objeção.
+  const excluida = (keywords: readonly string[] | undefined): boolean =>
+    keywords !== undefined && keywords.some((k) => atual.includes(normalize(k)));
   for (const skill of skills) {
+    if (excluida(skill.matcher.unless_keywords)) continue;
     if (hit(skill.matcher.any_keywords)) {
       matched.push(skill);
     } else if (skill.matcher.probe_keywords !== undefined && hit(skill.matcher.probe_keywords)) {

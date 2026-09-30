@@ -355,49 +355,56 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
           </DialogDescription>
         </DialogHeader>
 
-        {/* LEGENDA — explica os controles para quem não é técnico. */}
+        {/* LEGENDA — explica os controles para quem não é técnico, com exemplos. */}
         <details className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs">
           <summary className="cursor-pointer font-medium">
-            {t("Como preencher (Nome · Foto · Similares · IA · Critério · Mostrar · Comparar · Envio · Ordem)")}
+            {t("Como preencher — o que cada quadradinho faz (com exemplos)")}
           </summary>
           <div className="mt-2 space-y-2 text-muted-foreground">
             <p>
-              <span className="font-medium text-foreground">{t("Nome da moto")}</span> {t("— a coluna que identifica e busca a moto (obrigatória).")}
+              {t("Pense no agente como uma vendedora: ela anota numa “fichinha” o que o cliente quer e compara com as motos do seu estoque. Os controles abaixo dizem o que ela pode ler e o que pode usar para separar as motos parecidas.")}
+            </p>
+            <p className="rounded-md bg-background/60 p-2">
+              {t("Importante: “Critério” e “Envio” são como duas tomadas da mesma lâmpada — se QUALQUER uma estiver ligada, o agente usa aquele dado. Para proibir um dado, desligue as duas.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">{t("Foto")}</span> {t("— a coluna com a URL da imagem enviada.")}
+              <span className="font-medium text-foreground">{t("Nome da moto")}</span>{" "}
+              {t("— o campo que identifica a moto. É por ele que o agente busca e mostra a moto (obrigatório).")}
+            </p>
+            <p>
+              <span className="font-medium text-foreground">{t("Foto")}</span>{" "}
+              {t("— o campo com o endereço (URL) da imagem que vai no WhatsApp.")}
             </p>
             <p>
               <span className="font-medium text-foreground">{t("Motos similares (referência)")}</span>{" "}
-              {t("— uma coluna que lista motos parecidas (ex.:")} <span className="font-mono">moto_similar</span>
-              {t("). Quando o cliente pede uma moto que não temos, o motor procura o pedido nessa coluna e oferece a")}{" "}
-              <b>{t("moto real")}</b> {t("que a cita. É usada")} <b>{t("só pelo motor")}</b>
-              {t(": a IA nunca vê esses nomes.")}
+              {t("— um campo que lista motos parecidas (ex.: moto_similar). Quando o cliente pede uma moto que não temos, o motor usa essa lista para achar a moto real parecida. Só o motor usa; o agente nunca vê esses nomes.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">{t("Enviar à IA")}</span> {t("— a IA vê o valor desta coluna (contexto). Menos colunas = menos tokens.")}
+              <span className="font-medium text-foreground">{t("Enviar à IA")}</span>{" "}
+              {t("— pode LER. A vendedora vê esse dado para entender o cliente, mas não o usa para separar as motos. Exemplo: ligar “ano” aqui só deixa ela ler o ano.")}
             </p>
             <p>
               <span className="font-medium text-foreground">{t("Critério da IA")}</span>{" "}
-              {t("— a IA pode usar esta coluna para montar o filtro quando não achar o pedido. (Diferente de")}{" "}
-              {t("\"Enviar à IA\": aqui ela pode filtrar por ela.)")}
+              {t("— pode USAR. É a chave principal: a vendedora pode usar esse dado para escolher as motos parecidas. Exemplo: com “marca” ligada, “quero Honda” traz as Hondas.")}
             </p>
             <p>
-              <span className="font-medium text-foreground">{t("Mostrar")}</span> {t("— o valor aparece no texto que vai junto com a foto.")}
+              <span className="font-medium text-foreground">{t("Mostrar")}</span>{" "}
+              {t("— aparece no texto. O dado sai escrito embaixo da foto. Exemplo: marcar “preço” mostra “Preço: R$ …” na legenda.")}
             </p>
             <p>
               <span className="font-medium text-foreground">{t("Comparar")}</span>{" "}
-              {t("— o motor usa esta coluna para ordenar as motos semelhantes (número → mais próximo; texto → mais parecido).")}
+              {t("— só organiza. Coloca as motos mais parecidas primeiro; não tira nem põe moto. Exemplo: “preço” aqui deixa as de preço mais próximo na frente.")}
             </p>
             <p>
               <span className="font-medium text-foreground">{t("Envio")}</span>{" "}
-              {t("— coluna de casamento do modo “Enviar todas que casam” (interruptor na tela do agente). Quando ligado, o motor envia TODAS as motos que casarem estas colunas com o pedido do cliente, sem limite e sem perguntar “quer mais?”. Sem nenhuma marcada, usa as colunas de “Critério da IA”.")}
+              {t("— a segunda chave do “Critério”. Só vale quando o agente está no modo “enviar todas as que casam”. Serve para mandar tudo o que combina com esses campos. Na dúvida, deixe igual ao “Critério”.")}
             </p>
             <p>
               <span className="font-medium text-foreground">{t("Ordem")}</span>{" "}
-              {t("— prioridade (1 = mais importante). Colunas de")} <b>{t("Ordem 1")}</b>{" "}
-              {t("também compõem o nome (ex.:")} <span className="font-mono">nome</span> +{" "}
-              <span className="font-mono">versao</span> = " Biz 125 FLEX").
+              {t("— prioridade: 1 = mais importante. Os campos de Ordem 1 também montam o nome da moto (exemplo: nome + versão = “Biz 125 FLEX”).")}
+            </p>
+            <p className="rounded-md bg-background/60 p-2">
+              {t("Exceção: o agente NUNCA usa o ANO para comparar (o ano é decisão da loja — já está bloqueado).")}
             </p>
           </div>
         </details>
@@ -540,13 +547,13 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
 
         <div className="flex max-h-[42vh] flex-col gap-2 overflow-y-auto rounded-md border border-border/60 p-3">
           <div className="grid grid-cols-[3rem_3rem_3.5rem_3.5rem_3.5rem_1fr_3.5rem] items-center gap-2 text-xs font-semibold text-muted-foreground">
-            <span title={t("Enviar o valor para a IA (contexto)")}>IA</span>
-            <span title={t("A IA pode usar como filtro")}>{t("Critério")}</span>
-            <span title={t("Aparece no texto junto da foto")}>{t("Mostrar")}</span>
-            <span title={t("O motor ordena as semelhantes por esta coluna")}>{t("Comparar")}</span>
-            <span title={t("Coluna de casamento do modo “Enviar todas que casam”")}>{t("Envio")}</span>
+            <span title={t("Pode LER: o agente vê este dado, mas não o usa para separar as motos.")}>IA</span>
+            <span title={t("Pode USAR: o agente escolhe as motos parecidas por este dado — é a chave principal.")}>{t("Critério")}</span>
+            <span title={t("Aparece escrito embaixo da foto.")}>{t("Mostrar")}</span>
+            <span title={t("Só organiza: mostra as mais parecidas primeiro (não tira nem põe moto).")}>{t("Comparar")}</span>
+            <span title={t("Segunda chave do “Critério”, para o modo “enviar todas as que casam”.")}>{t("Envio")}</span>
             <span>{t("Coluna")}</span>
-            <span title={t("Prioridade (1 = mais importante)")}>{t("Ordem")}</span>
+            <span title={t("Prioridade: 1 = mais importante; Ordem 1 também monta o nome.")}>{t("Ordem")}</span>
           </div>
           {linhas.map((linha, i) => (
             <div
@@ -557,35 +564,35 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.ia}
-                title={t("Enviar o valor desta coluna para a IA")}
+                title={t("Pode LER: o agente vê este dado, mas não o usa para separar as motos.")}
                 onChange={(e) => atualizar(i, { ia: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.criterio}
-                title={t("A IA pode usar esta coluna como filtro")}
+                title={t("Pode USAR: o agente escolhe as motos parecidas por este dado — é a chave principal.")}
                 onChange={(e) => atualizar(i, { criterio: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.mostrar}
-                title={t("Exibir este valor no texto que vai junto com a foto")}
+                title={t("Aparece escrito embaixo da foto.")}
                 onChange={(e) => atualizar(i, { mostrar: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.comparar}
-                title={t("Usar esta coluna para ordenar as motos semelhantes")}
+                title={t("Só organiza: mostra as mais parecidas primeiro (não tira nem põe moto).")}
                 onChange={(e) => atualizar(i, { comparar: e.target.checked })}
               />
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.envio}
-                title={t("Coluna de casamento quando o agente está no modo “enviar todas que casam”")}
+                title={t("Segunda chave do “Critério”, para o modo “enviar todas as que casam”.")}
                 onChange={(e) => atualizar(i, { envio: e.target.checked })}
               />
               <span className="truncate font-mono text-xs" title={linha.coluna}>

@@ -83,6 +83,16 @@ export const PROVEDORES = [
     ondePegarAChave: "https://openrouter.ai/keys",
     prefixoDaChave: "sk-or-…",
   },
+  {
+    id: "groq",
+    rotulo: "Groq",
+    quandoUsar:
+      "Transcrição de áudio (Whisper) rápida e barata, com plano gratuito — a primeira opção para ouvir os áudios do WhatsApp, com a OpenRouter como reserva.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://console.groq.com/keys",
+    prefixoDaChave: "gsk_…",
+  },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
 // e `Provider` viraria `string`, deixando o compilador aceitar qualquer texto

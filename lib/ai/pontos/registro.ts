@@ -331,6 +331,19 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "Dado errado entra no cadastro do cliente (ex.: o modelo grava a resposta na pergunta errada) ou o cliente fica sem a pergunta seguinte.",
     registraEm: "llm_calls",
   },
+  {
+    id: "flow_intent",
+    rotulo: "Decidir qual fluxo iniciar",
+    oQueFaz:
+      "Lê a mensagem do cliente e decide se ela deve INICIAR um fluxo de atendimento (Qualificação, Troca, Financiamento…) e qual — o regex de palavra-gatilho continua como reserva.",
+    papel: "entender",
+    // Só classificação: não cria lead nem move o funil, então não exige tools.
+    exige: {},
+    emissor: "lib/agent-engine/agent/flow-intent.ts",
+    sintomaDeFalha:
+      "O fluxo certo não inicia (ou inicia o errado) e o roteiro de perguntas do processo do cliente não roda.",
+    registraEm: "llm_calls",
+  },
 
   // ────────────────────────── Proteger a operação ──────────────────────────
   {

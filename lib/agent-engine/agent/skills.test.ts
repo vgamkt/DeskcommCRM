@@ -1,5 +1,36 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadSkills, recentInboundSignal } from './skills';
+import { loadSkills, matchSkills, recentInboundSignal, type LoadedSkill } from './skills';
+
+function skill(name: string, matcher: LoadedSkill['matcher']): LoadedSkill {
+  return { versionId: name, name, description: '', body: '', matcher, manifest: [] };
+}
+
+describe('matchSkills — unless_keywords (exclusão de conflito)', () => {
+  const catalogo = skill('catalogo', {
+    any_keywords: ['moto', 'opcoes', 'tem'],
+    unless_keywords: ['caro', 'desconto'],
+  });
+  const objecao = skill('objecao', { any_keywords: ['caro'] });
+
+  it('a skill de catálogo NÃO entra quando a mensagem atual é objeção', () => {
+    const r = matchSkills(
+      [catalogo, objecao],
+      'gostei dessa\nachei caro essa moto',
+      'achei caro essa moto',
+    );
+    expect(r.matched.map((s) => s.name)).toEqual(['objecao']);
+  });
+
+  it('a skill de catálogo volta a entrar quando a mensagem NÃO é a excluída', () => {
+    const r = matchSkills([catalogo, objecao], 'quero ver motos', 'quero ver motos');
+    expect(r.matched.map((s) => s.name)).toEqual(['catalogo']);
+  });
+
+  it('sem mensagem atual, nada é excluído (retrocompatível)', () => {
+    const r = matchSkills([catalogo], 'achei caro essa moto', '');
+    expect(r.matched.map((s) => s.name)).toEqual(['catalogo']);
+  });
+});
 
 describe('loadSkills', () => {
   it('loadSkills expõe versionId de cada skill', async () => {

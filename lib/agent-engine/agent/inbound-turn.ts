@@ -183,14 +183,14 @@ import {
 } from './objecao-de-valor';
 import { extrairCriterios } from './extrair-criterios';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
-import { carregarCatalogoDoBanco, mesclarMotos } from './catalogo-do-banco';
-import { casaPerfil, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
+import { casaPerfil, mencionaMoto, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { turnoEhDeCatalogo } from './turno-de-catalogo';
 import {
+  camposDeBusca,
   carregarCatalogoMapeamento,
   colunaDeSimilares,
   colunasDoCatalogo,
-  colunasDeEnvio,
-  criteriosDaIA,
   legendaParaExibicao,
   renderBlocoCatalogo,
 } from '@/lib/external-db/catalogo';
@@ -216,10 +216,16 @@ import { gravarDadosDeterministicos } from './dados-do-lead';
 import {
   campoPorChave,
   carregarEstadoDeAtendimento,
+  enfileirarFluxo,
   escolherFluxoPeloGatilho,
+  escolherFluxoPorNome,
+  escolherFluxosPeloGatilho,
   finalizarFluxoDeAtendimento,
   iniciarFluxoDeAtendimento,
+  lerFluxosPendentes,
+  limparFluxosPendentes,
   listarFluxosDeAtendimentoAtivos,
+  salvarFluxosPendentes,
   processarInboundDoFluxo,
   registrarDadoDoFluxo,
   registrarEventoDoFluxo,
@@ -234,6 +240,7 @@ import {
   valorBateComTipo,
 } from '@/lib/followup/captura-do-fluxo';
 import { validarRespostaDoFluxo } from './flow-validate';
+import { escolherFluxoPorIA } from './flow-intent';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -550,6 +557,17 @@ export const MAX_VETOS_DE_MULETA = 2;
 export const MAX_VETOS_DE_FALSO_VAZIO = 2;
 
 /**
+ * C-107 (decisão do dono, 2026-09-29): pergunta de ORÇAMENTO determinística.
+ * Quando o cliente fala de preço SEM citar valor ("quero uma moto barata") e não
+ * há moto atual, o motor NÃO apresenta catálogo e envia ESTA pergunta — o texto
+ * do modelo é ignorado neste caso (medido ao vivo: ele dizia "separei estas...").
+ * Sem resposta dele, o turno seguinte cai nas mais baratas (regra D5).
+ */
+export const PERGUNTA_DE_ORCAMENTO =
+  'Claro! Para eu te mostrar as opções certas, qual valor você tem em mente? ' +
+  'Se preferir, me diga uma faixa (ex.: "até 15 mil").';
+
+/**
  * Teto de mensagens FÍSICAS enviadas ao lead por turno quando `knobs.maxSendsPerTurn`
  * está ausente (testes) — produção sempre recebe o knob do env (MAX_SENDS_PER_TURN).
  *
@@ -609,6 +627,31 @@ export async function loadInboundBodyForJob(
   );
   const row = result.rows[0];
   return row === undefined ? null : (row.body ?? '');
+}
+
+/**
+ * O texto da mensagem CITADA (resposta "em cima") que este turno responde —
+ * lido de `metadata.citacao.texto`, gravado na ingestão do WAHA. Existe porque
+ * "Gostei dessa" não nomeia moto; a mensagem que o cliente respondeu (a
+ * foto/legenda) nomeia. `null` quando não há citação. Best-effort (nunca lança
+ * por falta da coluna/linha — o turno segue como antes).
+ */
+export async function loadInboundQuoteForJob(
+  db: Queryable,
+  input: { tenantId: string; conversationId: string; inboundMessageId: string },
+): Promise<string | null> {
+  const result = await db.query<{ citacao_texto: string | null }>(
+    `select metadata->'citacao'->>'texto' as citacao_texto
+       from messages
+      where organization_id = $1
+        and conversation_id = $2
+        and id = $3
+        and direction = 'inbound'
+      limit 1`,
+    [input.tenantId, input.conversationId, input.inboundMessageId],
+  );
+  const texto = result.rows[0]?.citacao_texto;
+  return texto !== null && texto !== undefined && texto.trim() !== '' ? texto : null;
 }
 
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
@@ -2130,6 +2173,16 @@ async function executarTurnoDoAgente(
           conversationId: input.conversationId,
           inboundMessageId: input.inboundMessageId,
         });
+  // Texto da mensagem CITADA ("responder em cima") — usado pela detecção de
+  // escolha quando a fala do cliente não nomeia a moto ("Gostei dessa").
+  const currentInboundQuote =
+    input.inboundMessageId === undefined
+      ? null
+      : await loadInboundQuoteForJob(pool, {
+          tenantId,
+          conversationId: input.conversationId,
+          inboundMessageId: input.inboundMessageId,
+        }).catch(() => null);
 
   // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
   // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
@@ -2148,34 +2201,99 @@ async function executarTurnoDoAgente(
   // resposta, um gravador.
   let validadorDecidiuNesteTurno = false;
   let validadorGravouNesteTurno = false;
-  if (
-    !preview &&
-    atendimento === null &&
-    liveJob().kind === 'inbound_turn' &&
-    input.inboundMessageId !== undefined
-  ) {
+  if (!preview && liveJob().kind === 'inbound_turn' && input.inboundMessageId !== undefined) {
     try {
-      const alvo = await escolherFluxoPeloGatilho(pool, {
+      // TODOS os fluxos que a mensagem aciona, na ORDEM citada. O cliente pode
+      // pedir mais de um processo na mesma frase ("dar a moto na troca e
+      // financiar o restante") — a fila preserva a ordem.
+      const acionados = await escolherFluxosPeloGatilho(pool, {
         organizationId: tenantId,
         texto: currentInboundText,
         contactId: leadId,
       });
-      if (alvo !== null) {
-        await iniciarFluxoDeAtendimento(pool, {
+      if (atendimento !== null) {
+        // JÁ HÁ FLUXO ATIVO. Não dá para iniciar o segundo agora (o índice
+        // `idx_followup_enrollments_one_live` admite um enrollment vivo por
+        // contato), então os OUTROS processos pedidos entram na FILA e iniciam
+        // quando o atual concluir. Capturar não justifica chamada de modelo.
+        const pointerAtivo = atendimento.enrollment.pointer_id;
+        const outros = acionados.filter((f) => f.id !== pointerAtivo);
+        if (outros.length > 0) {
+          const fila = await lerFluxosPendentes(pool, {
+            organizationId: tenantId,
+            conversationId: input.conversationId,
+          });
+          let nova = fila;
+          for (const f of outros) nova = enfileirarFluxo(nova, { pointer_id: f.id, nome: f.nome });
+          if (nova.length !== fila.length) {
+            await salvarFluxosPendentes(pool, {
+              organizationId: tenantId,
+              conversationId: input.conversationId,
+              pendentes: nova,
+            }).catch(() => {});
+          }
+        }
+      } else {
+        // SEM FLUXO ATIVO: inicia UM (IA > gatilho > fila) e mantém o RESTO na
+        // fila para os próximos turnos. C-108: a IA primeiro (entende CONTEÚDO e
+        // não atropela a conversa de motos); sem ela, o gatilho por palavra; sem
+        // ele, a intenção guardada de um fluxo pedido antes.
+        let alvo: { id: string; nome: string } | null = await escolherFluxoPorIA(
+          pool,
+          deps.llmCfg,
+          {
+            organizationId: tenantId,
+            contactId: leadId,
+            texto: currentInboundText,
+            model: agentConfig?.model ?? '',
+            provider: agentConfig?.provider ?? null,
+            jobId: liveJob().id,
+          },
+          { log: runLog },
+        );
+        if (alvo === null && acionados.length > 0) alvo = acionados[0]!;
+
+        const filaAtual = await lerFluxosPendentes(pool, {
           organizationId: tenantId,
-          contactId: leadId,
-          flowPointerId: alvo.id,
-        }).catch(() => {});
-        atendimento = await carregarEstadoDeAtendimento(pool, {
-          organizationId: tenantId,
-          contactId: leadId,
+          conversationId: input.conversationId,
         });
-        // A mensagem que ACIONOU o fluxo é o gatilho, não resposta às perguntas
-        // que ainda nem foram feitas. Medido ao vivo (2026-09-18): a frase
-        // "quero dar minha moto na troca" foi gravada como resposta de
-        // `moto_troca` e de `troca_ano`. Sem processar captura/registro neste
-        // turno, a abertura só inicia e o modelo responde.
-        fluxoIniciadoNesteTurno = atendimento !== null;
+        let fila = filaAtual;
+        for (const f of acionados) fila = enfileirarFluxo(fila, { pointer_id: f.id, nome: f.nome });
+        if (alvo === null && fila.length > 0) {
+          alvo = { id: fila[0]!.pointer_id, nome: fila[0]!.nome };
+        }
+        if (alvo !== null) {
+          const restante = fila.filter((f) => f.pointer_id !== alvo.id);
+          await iniciarFluxoDeAtendimento(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            flowPointerId: alvo.id,
+          }).catch(() => {});
+          atendimento = await carregarEstadoDeAtendimento(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+          });
+          // A mensagem que ACIONOU o fluxo é o gatilho, não resposta às perguntas
+          // que ainda nem foram feitas. Medido ao vivo (2026-09-18): a frase
+          // "quero dar minha moto na troca" foi gravada como resposta de
+          // `moto_troca` e de `troca_ano`. Sem processar captura/registro neste
+          // turno, a abertura só inicia e o modelo responde.
+          fluxoIniciadoNesteTurno = atendimento !== null;
+          if (atendimento !== null) {
+            if (restante.length > 0) {
+              await salvarFluxosPendentes(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+                pendentes: restante,
+              }).catch(() => {});
+            } else {
+              await limparFluxosPendentes(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+              }).catch(() => {});
+            }
+          }
+        }
       }
     } catch (err) {
       runLog.warn('não consegui avaliar o gatilho do fluxo de atendimento', {
@@ -2654,6 +2772,9 @@ async function executarTurnoDoAgente(
   let faixasDoTurno: FaixasDoPedido = {};
   // C-096: coluna que o cliente enfatizou (o motor prioriza por ela).
   let principalDoTurno: string | null = null;
+  // C-106: colunas que o cliente REQUER (dedução da IA, incl. marca do modelo).
+  // Viram filtro ESTRITO na seleção; vazio ⇒ genérico.
+  let exigidosDoTurno: string[] = [];
   // Intenção classificada pela pergunta dirigida: 'pedido' | 'alternativa' | null.
   let intencaoDoTurno: 'pedido' | 'alternativa' | null = null;
   // TRAVA anti-loop: a pergunta dirigida à IA roda NO MÁXIMO UMA VEZ por turno.
@@ -2710,6 +2831,19 @@ async function executarTurnoDoAgente(
     catalogoDaConversa.escolhida ??
     catalogoDaConversa.referencia ??
     (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
+  // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
+  // (ex.: "quero uma moto barata") e não há moto atual → a ação do turno é
+  // PERGUNTAR o orçamento, NÃO apresentar catálogo. Determinístico: só a instrução
+  // de prompt não segurava — o motor apresentava por cima (medido ao vivo).
+  const precoSemValorTurno =
+    currentInboundText !== null &&
+    currentInboundText.trim() !== '' &&
+    motoAtualDaConversa === null &&
+    pedePrecoSemValor(currentInboundText);
+  // C-107: o cliente citou um ANO explicitamente (ex.: "quero uma moto de 2024")?
+  // Nesse caso o bloqueio do ano é suspenso SÓ neste turno — o ano vira obrigatório.
+  const clienteCitouAno =
+    currentInboundText !== null && /\b(19|20)\d{2}\b/.test(currentInboundText);
   // TRAVA DE DECISÃO: a moto escolhida NESTE turno (detectada no send_message) —
   // gravada junto do catálogo da conversa para valer nos turnos seguintes.
   let escolhaDetectadaNesteTurno: MotoDoCatalogo | null = null;
@@ -2828,7 +2962,10 @@ async function executarTurnoDoAgente(
   // conversa sobre motos continua e a skill não pode "cair" quando o cliente
   // responde a escolha ("A 2025"), senão as fotos da moto escolhida não saem.
   const skillSignal = recentInboundSignal(effectiveContext.messages);
-  const skillMatch = matchSkills(skills, skillSignal);
+  // `currentInboundText` é a MENSAGEM ATUAL: usada só para a EXCLUSÃO
+  // (`unless_keywords`) — uma objeção do turno não deixa a skill de catálogo
+  // entrar junto da de objeção (conflito medido ao vivo 2026-09-30).
+  const skillMatch = matchSkills(skills, skillSignal, currentInboundText ?? '');
   // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
   // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
   // por keyword vence, e a mesma skill não entra duas vezes. A skill da
@@ -3129,13 +3266,17 @@ async function executarTurnoDoAgente(
         const ativos = await listarFluxosDeAtendimentoAtivos(pool, tenantId);
         let alvo: { id: string; nome: string } | null = null;
         if (fluxo) {
-          alvo = ativos.find((f) => f.nome.toLowerCase() === fluxo.trim().toLowerCase()) ?? null;
+          // Nome do fluxo tolerante a grafia: "troca de moto"/"Troca" resolve.
+          // Antes era `===` exato e o modelo repetia a mesma chamada até o breaker.
+          alvo = escolherFluxoPorNome(ativos, fluxo);
           if (alvo === null) {
             return {
               ok: false,
               error: {
                 code: 'fluxo_nao_encontrado',
-                message: `Não existe fluxo de atendimento ativo "${fluxo}".`,
+                message:
+                  `Não existe fluxo de atendimento ativo "${fluxo}". ` +
+                  `Fluxos ativos: ${ativos.map((f) => f.nome).join(', ') || 'nenhum'}.`,
                 fluxos: ativos.map((f) => f.nome),
               },
             };
@@ -3143,14 +3284,30 @@ async function executarTurnoDoAgente(
         } else if (ativos.length === 1) {
           alvo = ativos[0]!;
         } else {
-          return {
-            ok: false,
-            error: {
-              code: 'fluxo_ambiguo',
-              message: 'Há mais de um fluxo de atendimento ativo; diga qual.',
-              fluxos: ativos.map((f) => f.nome),
-            },
-          };
+          // O modelo omitiu o nome e há mais de um fluxo: tenta casar pelo ASSUNTO
+          // da mensagem (mesma régua determinística do gatilho). Sem casar, devolve
+          // a ambiguidade com a lista — e o erro diz para nomear, em vez de deixar
+          // o modelo repetir a chamada idêntica.
+          const porGatilho = await escolherFluxoPeloGatilho(pool, {
+            organizationId: tenantId,
+            texto: currentInboundText,
+            contactId: leadId,
+          });
+          if (porGatilho !== null) {
+            alvo = ativos.find((f) => f.id === porGatilho.id) ?? null;
+          }
+          if (alvo === null) {
+            return {
+              ok: false,
+              error: {
+                code: 'fluxo_ambiguo',
+                message: `Há mais de um fluxo de atendimento ativo (${ativos
+                  .map((f) => f.nome)
+                  .join(', ')}); chame de novo dizendo QUAL, pelo nome exato.`,
+                fluxos: ativos.map((f) => f.nome),
+              },
+            };
+          }
         }
         let enrollmentId: string | null;
         try {
@@ -3451,7 +3608,8 @@ async function executarTurnoDoAgente(
         // min(1) no argumento, mas um `\n`/espaço passa e vira vazio depois do
         // trim/gates. Recusar aqui devolve ao modelo para reescrever — nunca
         // manda bolha em branco.
-        if (body.trim() === '' && (media_urls ?? []).length === 0 && media_url === undefined) {
+        // C-107: preço sem valor → o corpo é a PERGUNTA determinística; não barra.
+        if (!precoSemValorTurno && body.trim() === '' && (media_urls ?? []).length === 0 && media_url === undefined) {
           return {
             ok: false,
             error: {
@@ -3463,14 +3621,17 @@ async function executarTurnoDoAgente(
         }
         // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
         // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
-        const fotosDeclaradas = [
-          ...new Set(
-            [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
-              .flatMap((u) => String(u).split('|'))
-              .map((s) => s.trim())
-              .filter((s) => /^https?:\/\//i.test(s)),
-          ),
-        ];
+        // C-107: preço sem valor → nenhuma foto sai neste turno (só a pergunta).
+        const fotosDeclaradas = precoSemValorTurno
+          ? []
+          : [
+              ...new Set(
+                [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
+                  .flatMap((u) => String(u).split('|'))
+                  .map((s) => s.trim())
+                  .filter((s) => /^https?:\/\//i.test(s)),
+              ),
+            ];
         // FOTO QUE O MODELO ESQUECEU (formato do dono, 2026-09-19): se ele NÃO
         // mandou mídia mas citou no texto motos que `crm_query_external_data`
         // devolveu neste turno, o motor manda o TEXTO dele (mensagem inicial +
@@ -3518,19 +3679,32 @@ async function executarTurnoDoAgente(
                 mensagemDoJob ?? '',
                 catalogoEfetivo,
                 catalogoDaConversa.detalhadas,
+                currentInboundQuote ?? '',
               )
             : undefined;
         if (escolhidaNesteTurno !== undefined) {
           motoDetalhadaNome = escolhidaNesteTurno.nome;
           escolhaDetectadaNesteTurno = escolhidaNesteTurno;
         }
+        // ─── TRAVA: só é turno de catálogo com SINAL de moto NESTE turno ───────
+        // A condição antiga entrava com `motoAtual !== null` (memória da conversa)
+        // e varria o estoque em QUALQUER turno. Medido ao vivo (2026-09-29): um
+        // áudio "Onde fica a loja?" recebeu 5 motos porque o cliente já havia
+        // escolhido uma antes. Ver `turno-de-catalogo.ts` para a régua completa.
+        const turnoDeCatalogo = turnoEhDeCatalogo({
+          catalogoConsultadoNoTurno: catalogoDoTurno.length > 0,
+          ofereceuSimilaresPelaFerramenta: ofereceuSimilaresNesteTurno,
+          pediuOutraMoto,
+          temMotoAtual: motoAtualDaConversa !== null,
+          mensagem: mensagemDoJob ?? '',
+        });
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
           // alternativas (usado para gravar a moto de referência).
           motosConsultadasPeloModelo = [...catalogoDoTurno];
-          if (fotosDeclaradas.length > 0) return [];
-          // Já apresentou as fotos automáticas neste turno? Não repete.
-          if (jaApresentouAutomatico) return [];
+          // C-107: preço sem valor → NÃO apresentar catálogo. A ação é PERGUNTAR o
+          // orçamento (skill). Sem este gate, o motor apresentava por cima do modelo.
+          if (precoSemValorTurno) return [];
           // Campos da legenda configurados pelo dono (C-067): colunas marcadas
           // com "Mostrar", por nome, com o papel para o rótulo. Vazio = deixa o
           // motor usar o comportamento antigo (ano/cor/km/preço).
@@ -3539,6 +3713,13 @@ async function executarTurnoDoAgente(
               ? legendaParaExibicao(catalogoMapeamento)
               : undefined;
           // ESCOLHA determinística → as fotos DELA (quantidade da tela).
+          //
+          // ⚠️ VEM ANTES do `fotosDeclaradas`: quando o cliente ESCOLHEU uma moto,
+          // as fotos DELA vencem — mesmo que o modelo tenha declarado `media_urls`
+          // (ele às vezes manda a foto da moto ERRADA; medido ao vivo 2026-09-30:
+          // cliente citou a CB 300 F Twister e o modelo mandou 3 fotos da CBX 250).
+          // A citação/mensagem já resolvem a escolha no motor; aqui garantimos que a
+          // moto certa vá com TODAS as fotos dela.
           if (escolhidaNesteTurno !== undefined) {
             motosOferecidasNesteTurno = [escolhidaNesteTurno];
             // C-086: `fotos_moto_escolhida` da tela (0 = TODAS as fotos da moto).
@@ -3548,6 +3729,9 @@ async function executarTurnoDoAgente(
               legendaConfig,
             );
           }
+          if (fotosDeclaradas.length > 0) return [];
+          // Já apresentou as fotos automáticas neste turno? Não repete.
+          if (jaApresentouAutomatico) return [];
 
           // (2) APRESENTAÇÃO / ALTERNATIVA: a flag da tela manda na escolha das
           // semelhantes. Roda quando o modelo consultou o catálogo NESTE turno OU
@@ -3562,7 +3746,7 @@ async function executarTurnoDoAgente(
           if (
             mapeamento !== null &&
             mapeamento.similaridadeDeterministica === true &&
-            (catalogoDoTurno.length > 0 || motoAtual !== null)
+            turnoDeCatalogo
           ) {
             const termoBase = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
             const msgCliente = mensagemDoJob ?? body;
@@ -3613,17 +3797,13 @@ async function executarTurnoDoAgente(
                 (motoAtual !== null && querAlternativa(msgCliente)));
             // A ferramenta de semelhantes já decidiu — não precisa classificar.
             if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
-              // C-090/C-098: com "enviar todas que casam" ligado, o casamento usa
-              // as colunas "Critério de envio"; somamos as de "Critério da IA"
-              // (ex.: `ano`) para a IA poder classificar por elas também.
-              const colunasCriterio = [
-                ...new Set([
-                  ...(agentConfig?.catalogConfig?.enviar_todas_que_casam === true
-                    ? colunasDeEnvio(mapeamento)
-                    : []),
-                  ...criteriosDaIA(mapeamento),
-                ]),
-              ];
+              // C-107: os CAMPOS DE BUSCA = "Critério da IA" (autoridade). No modo
+              // dinâmico é só isso; fora dele, preserva o antigo (soma "Envio"
+              // quando "enviar todas que casam" está ligado).
+              const colunasCriterio = camposDeBusca(mapeamento, {
+                dinamico: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
+                enviarTodas: agentConfig?.catalogConfig?.enviar_todas_que_casam === true,
+              });
               if (colunasCriterio.length > 0) {
                 extraiuCriteriosNesteTurno = true;
                 // O ESTOQUE enviado à IA: o catálogo do turno e/ou o guardado da
@@ -3655,6 +3835,10 @@ async function executarTurnoDoAgente(
                     // As motos reais do estoque vão no prompt: a IA diz quais têm
                     // configuração parecida com o que o cliente quis.
                     estoque: estoqueParaIA,
+                    // C-105/C-106: interruptor "Nunca usar o ANO" (default bloqueado).
+                    // C-107: se o CLIENTE citou o ano, libera o ano SÓ neste turno.
+                    bloquearAno:
+                      agentConfig?.catalogConfig?.bloquear_ano_ia !== false && !clienteCitouAno,
                   },
                   { log: runLog },
                 );
@@ -3662,6 +3846,7 @@ async function executarTurnoDoAgente(
                   intencao: extraidos.intencao,
                   criterios: extraidos.criterios,
                   principal: extraidos.principal,
+                  exigidos: extraidos.exigidos,
                   hipoteses: extraidos.hipoteses,
                   faixas: extraidos.faixas,
                 });
@@ -3672,6 +3857,21 @@ async function executarTurnoDoAgente(
                 hipotesesDoTurno = extraidos.hipoteses;
                 faixasDoTurno = extraidos.faixas;
                 principalDoTurno = extraidos.principal;
+                exigidosDoTurno = extraidos.exigidos;
+                // C-107: o cliente citou um ANO? Ele é OBRIGATÓRIO e EXATO — o
+                // motor lê o ano da MENSAGEM (determinístico) e trava a faixa, em
+                // vez de confiar na IA (que variava para 2025/2026). A coluna `ano`
+                // só está liberada neste turno quando o cliente citou o ano.
+                if (clienteCitouAno && currentInboundText !== null) {
+                  const anos = [...currentInboundText.matchAll(/\b(19|20)\d{2}\b/g)].map((mm) =>
+                    Number(mm[0]),
+                  );
+                  const ano = anos[0];
+                  if (ano !== undefined && Number.isFinite(ano)) {
+                    faixasDoTurno = { ...faixasDoTurno, ano: { min: ano, max: ano } };
+                    if (!exigidosDoTurno.includes('ano')) exigidosDoTurno = [...exigidosDoTurno, 'ano'];
+                  }
+                }
               }
             }
             // Candidatos: o catálogo consultado pelo modelo neste turno. No modo
@@ -3679,21 +3879,21 @@ async function executarTurnoDoAgente(
             // motor lê o banco externo e junta o catálogo guardado da conversa —
             // é o que faz "Achei caro" achar as mais baratas mesmo sem a IA
             // consultar. Falha da leitura ⇒ fica com o guardado (fallback).
-            let candidatos = catalogoDoTurno;
-            if (
-              catalogoDoTurno.length === 0 &&
-              (intencaoDoTurno === 'alternativa' ||
-                Object.keys(criteriosDoTurno).length > 0 ||
-                ofereceuSimilaresNesteTurno)
-            ) {
-              const doBanco = await carregarCatalogoDoBanco(
-                deps.crmCfg.supabase,
-                tenantId,
-                mapeamento,
-                colunasCatalogo ?? colunasDoCatalogo(mapeamento),
-              );
-              candidatos = mesclarMotos(doBanco, catalogoDaConversa.motos);
-            }
+            // C-107: os CANDIDATOS vêm do MOTOR (estoque do banco externo), não só
+            // da consulta do modelo — senão o resultado depende do que a IA
+            // consultou (medido ao vivo: "CB 250" trouxe só CB 300 porque a
+            // consulta do modelo filtrou). O catálogo do turno entra por cima
+            // (pode ter colunas mais completas); o banco é a base determinística.
+            const doBanco = await carregarCatalogoDoBanco(
+              deps.crmCfg.supabase,
+              tenantId,
+              mapeamento,
+              colunasCatalogo ?? colunasDoCatalogo(mapeamento),
+            );
+            let candidatos = mesclarMotos(catalogoDoTurno, doBanco);
+            // Rede de segurança: leitura do banco falhou → usa o guardado da conversa
+            // (comportamento antigo), em vez de ficar sem candidatos.
+            if (doBanco.length === 0) candidatos = mesclarMotos(candidatos, catalogoDaConversa.motos);
             // Regra do dono (2026-09-25): MODELO que EXISTE → todas as unidades
             // que casam (toggle A `especificacao_mostra_todas`); modelo que NÃO
             // existe → N alternativas (toggle B `usar_limite_quantidade`).
@@ -3709,6 +3909,23 @@ async function executarTurnoDoAgente(
             // Fonte ÚNICA da quantidade: a config do AGENTE (`ai_agents.config.
             // catalog`), não mais o `catalog_mappings`.
             const cfgCatalogo = agentConfig?.catalogConfig;
+            // C-106: interruptor do agente (default LIGADO). Desligado = volta ao
+            // OR + "enviar todas que casam" (comportamento antigo).
+            const criteriosDinamicos = cfgCatalogo?.criterios_dinamicos !== false;
+            // C-106: modo ESTRITO quando o cliente exigiu algo (colunas ou faixa
+            // com limite). Nele, "enviar todas que casam" NÃO vale: pagina em
+            // `similares_qtd` e a fila responde ao "quer ver mais?".
+            const modoEstrito =
+              criteriosDinamicos &&
+              (exigidosDoTurno.length > 0 ||
+                Object.values(faixasDoTurno).some((f) => {
+                  const o = f as { min?: unknown; max?: unknown } | null;
+                  return (
+                    o !== null &&
+                    typeof o === 'object' &&
+                    (typeof o.min === 'number' || typeof o.max === 'number')
+                  );
+                }));
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
@@ -3728,12 +3945,18 @@ async function executarTurnoDoAgente(
               filtrarPorComparacao: !pedidoDeModeloExistente && intencaoDoTurno !== 'alternativa',
               toleranciaPct: cfgCatalogo?.tolerancia_preco_pct ?? 30,
               // C-090: interruptor "enviar todas as motos que casam" (config do
-              // agente). Ligado → manda tudo que casou, sem teto/paginação.
-              enviarTodasQueCasam: cfgCatalogo?.enviar_todas_que_casam === true,
+              // agente). Ligado → manda tudo que casou, sem teto/paginação. C-106:
+              // NÃO se aplica no modo estrito (o dono quis paginar e perguntar).
+              enviarTodasQueCasam:
+                cfgCatalogo?.enviar_todas_que_casam === true && !modoEstrito,
               // C-092: "não completar quando faltar" — envia só as que casam.
               naoCompletarFaltando: cfgCatalogo?.nao_completar_faltando === true,
               // C-096: atributo principal (bônus no casamento + 1º no ranking).
               principal: principalDoTurno,
+              // C-106: colunas que o cliente REQUER (filtro estrito).
+              exigidos: exigidosDoTurno,
+              // C-106: interruptor do agente (desligado = OR antigo).
+              criteriosDinamicos,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no
@@ -3751,19 +3974,34 @@ async function executarTurnoDoAgente(
                 const jaEnviadas = new Set(selecao.motos.map((m) => m.nome));
                 const perfil = selecao.perfil;
                 const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
-                const perfilSet = {
-                  marcas: new Set(perfil.marcas),
-                  categorias: new Set(perfil.categorias),
-                };
-                const mesmoPerfil = pendentesBrutos.filter((m) =>
-                  casaPerfil(m, perfilSet),
+                // C-106: as que CASARAM e ainda não foram enviadas vão PRIMEIRO na
+                // fila do "quer ver mais?" — depois o mesmo perfil e, por fim, as
+                // demais. Sem isto, o "mais opções" mostrava moto que nem casou.
+                const casadasNaoEnviadas = selecao.casadas.filter(
+                  (m) => !jaEnviadas.has(m.nome),
                 );
-                const demais = pendentesBrutos.filter((m) => !mesmoPerfil.includes(m));
-                opcoesParaSalvar = {
-                  marcas: perfil.marcas,
-                  categorias: perfil.categorias,
-                  pendentes: [...mesmoPerfil, ...demais],
-                };
+                if (modoEstrito) {
+                  // C-106: no estrito, o "mais opções" são SÓ as casadas restantes.
+                  opcoesParaSalvar = {
+                    marcas: perfil.marcas,
+                    categorias: perfil.categorias,
+                    pendentes: casadasNaoEnviadas,
+                  };
+                } else {
+                  const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
+                  const perfilSet = {
+                    marcas: new Set(perfil.marcas),
+                    categorias: new Set(perfil.categorias),
+                  };
+                  const restantes = pendentesBrutos.filter((m) => !casadasSet.has(m.nome));
+                  const mesmoPerfil = restantes.filter((m) => casaPerfil(m, perfilSet));
+                  const demais = restantes.filter((m) => !mesmoPerfil.includes(m));
+                  opcoesParaSalvar = {
+                    marcas: perfil.marcas,
+                    categorias: perfil.categorias,
+                    pendentes: [...casadasNaoEnviadas, ...mesmoPerfil, ...demais],
+                  };
+                }
               } else {
                 opcoesParaSalvar = null;
               }
@@ -4032,7 +4270,9 @@ async function executarTurnoDoAgente(
             leadId,
             jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
-            body,
+            // C-107: preço sem valor → o corpo enviado é a PERGUNTA de orçamento
+            // (o texto do modelo, que insistia em "separei opções", é ignorado).
+            body: precoSemValorTurno ? PERGUNTA_DE_ORCAMENTO : body,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -5025,10 +5265,55 @@ async function executarTurnoDoAgente(
     // turnos conversacionais (inbound, follow-up e resposta a caso), então um
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
+    // ── DESCRIÇÃO DA MOTO EM FOCO (apresentação e objeções) ──────────────────
+    // A escolha pode ser deduzida JÁ pela mensagem do cliente (antes de o modelo
+    // escrever), então a descrição vale no PRÓPRIO turno da escolha. Busca só a
+    // moto em foco (escolhida/referência/pré-escolha) e só quando o turno fala
+    // dela — nunca a descrição de várias motos. Sem coluna de descrição, nada é
+    // buscado (`carregarDescricaoDaMoto` devolve null sem tocar o banco).
+    const preEscolhaDescricao =
+      catalogoDaConversa.motos.length > 0
+        ? motoEscolhidaPeloCliente(
+            '',
+            currentInboundText ?? '',
+            catalogoDaConversa.motos,
+            catalogoDaConversa.detalhadas,
+            currentInboundQuote ?? '',
+          )
+        : undefined;
+    const motoEmFoco = preEscolhaDescricao ?? motoAtualDaConversa;
+    const turnoFalaDaMoto =
+      preEscolhaDescricao !== undefined ||
+      ehObjecaoTurno ||
+      mencionaMoto(currentInboundText ?? '') ||
+      querAlternativa(currentInboundText ?? '');
+    let descricaoDaMoto: { nome: string; texto: string } | null = null;
+    if (turnoFalaDaMoto && motoEmFoco !== null && catalogoMapeamento !== null) {
+      const texto = await carregarDescricaoDaMoto(
+        deps.crmCfg.supabase,
+        tenantId,
+        catalogoMapeamento,
+        motoEmFoco,
+      );
+      if (texto !== null) descricaoDaMoto = { nome: motoEmFoco.nome, texto };
+    }
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
+      // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
+      // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
+      // isto, o modelo chutava a moto (medido ao vivo 2026-09-30: escolheu CBX
+      // 250 quando o cliente citou a CB 300 F Twister).
+      currentInboundQuote !== null && currentInboundQuote.trim() !== ''
+        ? `## O cliente respondeu a esta mensagem sua\n"${currentInboundQuote.trim()}"\nQuando a resposta dele for curta ("essa", "gostei dessa"), é a ESTA moto/assunto que ele se refere.`
+        : '',
+      // ── ESCOLHA JÁ IDENTIFICADA (pela citação/mensagem) ───────────────────
+      // O MOTOR resolve antes do modelo escrever, para ele confirmar a moto
+      // CERTA (e não chutar outra). No turno seguinte vira "escolhida".
+      preEscolhaDescricao !== undefined
+        ? `## Escolha do cliente (já identificada)\nO cliente escolheu ESTA moto: ${preEscolhaDescricao.nome}. Confirme exatamente ESTA moto (não outra) e conduza o fechamento; NÃO ofereça outras.`
+        : '',
       // Catálogo configurado pela tela: tabela e colunas REAIS (migration 0244).
       // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
       // prefixo fixo da persona.
@@ -5040,6 +5325,8 @@ async function executarTurnoDoAgente(
         contact: effectiveContext.contact,
         escolhida: catalogoDaConversa.escolhida,
         valoresDoFluxo: fluxoAtendimento?.valores ?? {},
+        motoEmFoco,
+        descricaoDaMoto,
       }),
       fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
       // C-071: fase da OBJEÇÃO DE VALOR (só quando a mensagem é uma objeção).

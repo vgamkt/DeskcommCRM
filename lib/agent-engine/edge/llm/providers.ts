@@ -42,6 +42,11 @@ const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
  * `familia/modelo`, o mesmo dos nossos, sem tradução no meio.
  */
 export const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
+/**
+ * A Groq também fala a API da OpenAI (chat/completions e audio/transcriptions),
+ * então `@ai-sdk/openai` conversa com ela sem dependência nova.
+ */
+export const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1';
 
 /**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
@@ -119,6 +124,13 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
       // /responses e recebia a página do chat), enquanto gpt-4o/4.1 passavam
       // por sorte do roteamento. `.chat()` fixa o formato que a OpenRouter
       // realmente serve, para qualquer família de modelo.
+      return provider.chat(modelId);
+    },
+    // Groq é OpenAI-compatível (mesmo `/chat/completions`): `createOpenAI` com o
+    // endpoint dela serve, e o `.chat()` fixa o formato como na OpenRouter.
+    groq: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? GROQ_ENDPOINT;
+      const provider = createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) });
       return provider.chat(modelId);
     },
   };

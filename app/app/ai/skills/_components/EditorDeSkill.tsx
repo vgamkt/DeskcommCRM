@@ -55,6 +55,9 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
   const [keywords, setKeywords] = useState("");
   const [corpo, setCorpo] = useState("");
   const [probe, setProbe] = useState<string[] | undefined>(undefined);
+  // Preservado SEM edição na tela: a exclusão (`unless_keywords`) é ajustada por
+  // quem mantém a skill; a tela não a pode APAGAR num salvar comum.
+  const [unless, setUnless] = useState<string[] | undefined>(undefined);
 
   useEffect(() => {
     const s = skill.data;
@@ -63,6 +66,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
     setKeywords(s.matcher.any_keywords.join(", "));
     setCorpo(s.body);
     setProbe(s.matcher.probe_keywords);
+    setUnless(s.matcher.unless_keywords);
   }, [aberto, skill.data]);
 
   const linhas = contarLinhas(corpo);
@@ -92,7 +96,11 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
         body: {
           description: descricao.trim(),
           body: corpo,
-          matcher: { any_keywords: anyKeywords, ...(probe ? { probe_keywords: probe } : {}) },
+          matcher: {
+            any_keywords: anyKeywords,
+            ...(probe ? { probe_keywords: probe } : {}),
+            ...(unless ? { unless_keywords: unless } : {}),
+          },
         },
       },
       {

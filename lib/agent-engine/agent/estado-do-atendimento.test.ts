@@ -45,6 +45,42 @@ describe('renderBlocoDeEstado', () => {
     expect(bloco).toContain('NÃO pergunte de novo');
   });
 
+  it('injeta a moto EM FOCO quando ainda não há escolha travada; a escolhida vence', () => {
+    const semEscolha = renderBlocoDeEstado({
+      contact: { name: null, custom_fields: {} },
+      escolhida: null,
+      motoEmFoco: TWISTER,
+    });
+    expect(semEscolha).toContain('Moto em foco nesta conversa: CB 300 F Twister');
+
+    const comEscolha = renderBlocoDeEstado({
+      contact: { name: null, custom_fields: {} },
+      escolhida: TWISTER,
+      motoEmFoco: TWISTER,
+    });
+    expect(comEscolha).toContain('Moto escolhida pelo cliente');
+    expect(comEscolha).not.toContain('Moto em foco nesta conversa');
+  });
+
+  it('declara a descrição da moto em foco (apresentação/objeção) — e some sem ela', () => {
+    const comDescricao = renderBlocoDeEstado({
+      contact: { name: 'Vander', custom_fields: {} },
+      escolhida: TWISTER,
+      descricaoDaMoto: {
+        nome: 'CB 300 F Twister',
+        texto: 'Única dona, revisões em dia, pneus novos.',
+      },
+    });
+    expect(comDescricao).toContain('Descrição da moto EM FOCO');
+    expect(comDescricao).toContain('Única dona, revisões em dia, pneus novos.');
+
+    const semDescricao = renderBlocoDeEstado({
+      contact: { name: null, custom_fields: {} },
+      escolhida: TWISTER,
+    });
+    expect(semDescricao).not.toContain('Descrição da moto EM FOCO');
+  });
+
   it('inclui o já respondido no fluxo', () => {
     const bloco = renderBlocoDeEstado({
       contact: { name: null, custom_fields: {} },

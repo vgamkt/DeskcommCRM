@@ -16,7 +16,7 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
-import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { transcricaoEmCadeia } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -131,28 +131,58 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
     }
 
-    // A transcrição é SEMPRE do Whisper (api.openai.com), então precisa de uma
-    // chave OpenAI — não da chave do provedor de chat da org. O comentário
-    // antigo já dizia isso ("senão exige credencial openai dedicada"), mas o
-    // código passava `llm.apiKey` direto: numa org com Anthropic, a chave da
-    // Anthropic era enviada para a OpenAI e voltava 401 em toda tentativa
-    // (visto nesta VPS: media.derive_requested preso com transcription_401,
-    // e o cliente ouvindo "não consigo ouvir áudio" com a chave certa no .env).
-    let openaiKey: string | null = null;
-    if (llm.provider === "openai") {
-      openaiKey = llm.apiKey;
-    } else {
+    // A transcrição de áudio é um caminho PRÓPRIO e PARALELO ao chat: ela nunca
+    // usa o modelo de conversa da organização (o Gemini via OpenRouter segue
+    // intacto). Fala com um endpoint compatível `/v1/audio/transcriptions`.
+    //
+    // Ordem de resolução:
+    //   1. TRANSCRIPTION_* explícito no .env — outro serviço compatível (Groq,
+    //      self-host…); exige a chave DESSE serviço. Ver lib/env.ts.
+    //   2. Credencial OpenRouter da org (BYOK) > `OPENROUTER_API_KEY` → STT da
+    //      PRÓPRIA OpenRouter, com a MESMA chave/conta do chat. Nada de conta
+    //      nova nem saldo na OpenAI; modelo `openai/whisper-large-v3-turbo`.
+    //   3. Credencial OpenAI da org (BYOK) > `OPENAI_API_KEY` → `api.openai.com`
+    //      + `whisper-1`.
+    // Sem nenhuma delas: sem transcrição (o aviso da Central explica).
+    //
+    // ⚠️ POR QUE OPENROUTER VEM PRIMEIRO, e por que NÃO se lê
+    // `settings.llm.provider`: medido nesta VPS, a organização tinha
+    // `settings.llm.provider='openai'` (semente do instalador) enquanto TODOS os
+    // `ai_purpose_bindings` — inclusive `visao_de_imagem` — e o agente publicado
+    // rodavam em OpenRouter. Seguir `settings.llm.provider` mandava o áudio para
+    // a OpenAI sem saldo (`429 insufficient_quota`) e o agente dizia "não
+    // consigo ouvir o áudio" mesmo com a chave OpenRouter certa e ativa. Reusar
+    // a chave OpenRouter existente é o caminho que já paga o chat.
+    //
+    // ⚠️ Crédito esgotado na OpenAI chega como HTTP 429 (`insufficient_quota`,
+    // code `credit_balance_exhausted`): a chave é válida (`/v1/models` responde
+    // 200) e mesmo assim a transcrição recusa.
+    //
+    // A transcrição roda em CADEIA (fallback): a ordem padrão é GRoq → OpenRouter
+    // → OpenAI. Assim o plano gratuito do Groq atende o volume normal e, quando
+    // ele estoura (429), a OpenRouter assume sem o cliente ficar sem resposta.
+    // `TRANSCRIPTION_API_KEY` explícito continua na frente de tudo.
+    const modeloTranscricao = process.env.TRANSCRIPTION_MODEL;
+    const destinos: DestinoDaTranscricao[] = [];
+    const explicito = destinoExplicitoDaTranscricao({
+      apiKey: process.env.TRANSCRIPTION_API_KEY,
+      baseUrl: process.env.TRANSCRIPTION_BASE_URL,
+      model: modeloTranscricao,
+    });
+    if (explicito !== null) destinos.push(explicito);
+    for (const provedor of ["groq", "openrouter", "openai"] as const) {
       try {
-        const oa = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
-          provider: "openai",
+        const cred = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+          provider: provedor,
         });
-        openaiKey = oa.apiKey;
+        const d = destinoDaTranscricao({ provedor, chave: cred.apiKey, model: modeloTranscricao });
+        if (d !== null) destinos.push(d);
       } catch {
-        openaiKey = null; // sem credencial e sem OPENAI_API_KEY: áudio fica sem transcrição
+        // sem credencial desse provedor: tenta o próximo
       }
     }
 
-    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin);
+    const deps = buildDeriveDeps(llm, destinos, row.organization_id, admin);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
     await admin.from("messages")
@@ -198,9 +228,81 @@ async function lerBindingDoPonto(
   return (data as { provider: string; model_id: string; credential_id: string | null } | null) ?? null;
 }
 
+/** Base do endpoint de STT da OpenRouter (`+ /v1/audio/transcriptions`). */
+export const OPENROUTER_TRANSCRIPTION_BASE = "https://openrouter.ai/api";
+/** Modelo Whisper padrão quando o áudio vai pela OpenRouter. */
+export const OPENROUTER_TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo";
+/** Base do endpoint de STT da Groq (OpenAI-compatível, plano gratuito). */
+export const GROQ_TRANSCRIPTION_BASE = "https://api.groq.com/openai";
+/** Modelo Whisper padrão quando o áudio vai pela Groq. */
+export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo";
+
+export interface DestinoDaTranscricao {
+  apiKey: string;
+  baseUrl?: string;
+  model?: string;
+}
+
+/**
+ * Override EXPLÍCITO do `.env` (`TRANSCRIPTION_*`). Puro. `null` quando não há
+ * `TRANSCRIPTION_API_KEY` — o chamador então resolve por credencial da org.
+ */
+export function destinoExplicitoDaTranscricao(input: {
+  apiKey?: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+}): DestinoDaTranscricao | null {
+  const apiKey = input.apiKey?.trim() ?? "";
+  if (apiKey === "") return null;
+  const baseUrl = input.baseUrl?.trim() ?? "";
+  const model = input.model?.trim() ?? "";
+  return {
+    apiKey,
+    ...(baseUrl !== "" ? { baseUrl } : {}),
+    ...(model !== "" ? { model } : {}),
+  };
+}
+
+/**
+ * Destino a partir de um provedor JÁ resolvido (chave em mãos). Puro, sem banco
+ * e sem rede, para poder ser provado sozinho. `null` = provedor sem transcrição
+ * compatível (o chamador tenta o próximo).
+ *
+ * OpenRouter tem endpoint STT próprio (`/v1/audio/transcriptions`, Whisper) com
+ * a mesma chave do chat; OpenAI é o padrão histórico (`api.openai.com`).
+ */
+export function destinoDaTranscricao(input: {
+  provedor: string;
+  chave: string;
+  model?: string | null;
+}): DestinoDaTranscricao | null {
+  const model = input.model?.trim() ?? "";
+  if (input.provedor === "groq") {
+    return {
+      apiKey: input.chave,
+      baseUrl: GROQ_TRANSCRIPTION_BASE,
+      model: model !== "" ? model : GROQ_TRANSCRIPTION_MODEL,
+    };
+  }
+  if (input.provedor === "openrouter") {
+    return {
+      apiKey: input.chave,
+      baseUrl: OPENROUTER_TRANSCRIPTION_BASE,
+      model: model !== "" ? model : OPENROUTER_TRANSCRIPTION_MODEL,
+    };
+  }
+  if (input.provedor === "openai") {
+    return {
+      apiKey: input.chave,
+      ...(model !== "" ? { model } : {}),
+    };
+  }
+  return null;
+}
+
 function buildDeriveDeps(
   llm: { provider: string; apiKey: string; defaultModel: string | null },
-  openaiKey: string | null,
+  destinos: readonly DestinoDaTranscricao[],
   orgId: string,
   admin: ReturnType<typeof createAdminClient>,
 ): DeriveDeps {
@@ -282,18 +384,23 @@ function buildDeriveDeps(
     });
     return res.text;
   };
-  // Sem chave OpenAI não há como transcrever: devolver string vazia é honesto
-  // (o derivado fica vazio e o marcador "[áudio]" continua valendo) e evita o
-  // loop de 401 que retentava a cada drain.
-  const transcriber: DeriveDeps["transcriber"] = openaiKey
-    ? apiTranscriptionProvider({ apiKey: openaiKey })
-    : {
+  // Sem destino de transcrição não há como transcrever: devolver string vazia é
+  // honesto (o derivado fica vazio e o marcador "[áudio]" continua valendo) e
+  // evita o loop de 401 que retentava a cada drain.
+  const transcriber: DeriveDeps["transcriber"] =
+    destinos.length > 0
+      ? transcricaoEmCadeia(destinos)
+      : {
         transcribe: async () => {
           // Mesma razão da visão: devolver "" fazia o agente responder ao áudio
           // como se ele não existisse. O aviso é o que dá ao operador a chance
           // de cadastrar a chave — sem ele, o sintoma é indistinguível de "o
           // agente é ruim".
-          await avisarMidiaNaoLida(orgId, "áudio", "falta uma chave da OpenAI para transcrever");
+          await avisarMidiaNaoLida(
+            orgId,
+            "áudio",
+            "falta uma chave para transcrever o áudio (OpenAI ou outro serviço compatível)",
+          );
           return MARCADOR_NAO_LIDA;
         },
       };

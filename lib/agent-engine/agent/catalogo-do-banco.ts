@@ -20,8 +20,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { abrirAcesso } from '@/lib/external-db/acesso';
 import {
   colunaDeSimilares,
+  colunaDescricao,
   colunasDeComparacao,
   colunasDeEnvio,
+  colunasDoNome,
   colunasParaConsulta,
   criteriosDaIA,
   type CatalogoMapeamento,
@@ -111,5 +113,77 @@ export async function carregarCatalogoDoBanco(
     );
   } catch {
     return [];
+  }
+}
+
+/**
+ * Lê a DESCRIÇÃO de UMA moto do banco externo, pela coluna de descrição do
+ * mapeamento (ex.: `descricao`). É uma leitura pontual (1 linha, 1 coluna) feita
+ * só quando há uma moto EM FOCO — apresentação ou objeção — para o modelo falar
+ * das qualidades REAIS dela sem trazer a descrição de TODAS as motos.
+ *
+ * Sem coluna de descrição configurada, devolve `null` sem tocar o banco. Nunca
+ * lança: falha de conexão/leitura devolve `null` e o turno segue sem ela.
+ */
+export async function carregarDescricaoDaMoto(
+  admin: SupabaseClient,
+  tenantId: string,
+  mapeamento: CatalogoMapeamento,
+  moto: { nome: string; valores?: Record<string, string> },
+): Promise<string | null> {
+  const coluna = colunaDescricao(mapeamento);
+  if (coluna === null) return null;
+
+  // ⚠️ IDENTIDADE CRUA, NÃO o nome exibido. O nome exibido é COMPOSTO
+  // (ex.: "HONDA CB 300 F Twister" = marca "HONDA" + nome "CB 300" + versão
+  // "F Twister"), então filtrar `nome contem "HONDA CB 300 F Twister"` NUNCA
+  // casa — a coluna `nome` do banco guarda só "CB 300" (a marca é outra coluna).
+  // Usa os valores CRUS que vieram na leitura: `nome` (contém) + as demais
+  // colunas que compõem o nome (ex.: `versao`) por igualdade.
+  const nomeCru = (moto.valores?.[mapeamento.colNome] ?? moto.nome).trim();
+  if (nomeCru === '') return null;
+
+  const filtros: PedidoDeLeitura['filtros'] = [
+    { coluna: mapeamento.colNome, operador: mapeamento.buscaOperador, valor: nomeCru },
+  ];
+  for (const col of colunasDoNome(mapeamento)) {
+    if (col === mapeamento.colNome) continue;
+    const v = moto.valores?.[col];
+    if (typeof v === 'string' && v.trim() !== '') {
+      filtros.push({ coluna: col, operador: 'eq', valor: v.trim() });
+    }
+  }
+
+  try {
+    const acesso = await abrirAcesso(admin, tenantId, mapeamento.connectionId);
+    if (!acesso.ok) return null;
+
+    const permitidas = await colunasDaTabela(
+      acesso.pool,
+      mapeamento.schemaName,
+      mapeamento.tableName,
+    );
+    if (permitidas === null || !permitidas.has(coluna) || !permitidas.has(mapeamento.colNome)) {
+      return null;
+    }
+    // Filtro em coluna que não existe na tabela real derruba a leitura — remove.
+    const filtrosValidos = filtros.filter((f) => permitidas.has(f.coluna));
+
+    const pedido: PedidoDeLeitura = {
+      schema: mapeamento.schemaName,
+      tabela: mapeamento.tableName,
+      colunas: [coluna],
+      filtros: filtrosValidos,
+      limite: 1,
+      offset: 0,
+    };
+    const resultado = await lerTabela(acesso.pool, pedido, permitidas, {
+      limiteMax: acesso.conexao.maxRows,
+    });
+    const linha = resultado.linhas[0] as Record<string, unknown> | undefined;
+    const valor = linha?.[coluna];
+    return typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null;
+  } catch {
+    return null;
   }
 }

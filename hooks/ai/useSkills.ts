@@ -23,6 +23,8 @@ export interface SkillsState {
 export interface SkillMatcher {
   any_keywords: string[];
   probe_keywords?: string[];
+  /** Exclusão: se casar na mensagem atual, a skill não entra neste turno. */
+  unless_keywords?: string[];
 }
 
 /** Corpo completo de uma skill instalada, para o editor. */

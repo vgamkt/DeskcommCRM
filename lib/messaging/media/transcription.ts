@@ -31,8 +31,11 @@ export function apiTranscriptionProvider(
   creds: TranscriptionCreds,
   fetchImpl: typeof fetch = fetch,
 ): TranscriptionProvider {
-  const base = creds.baseUrl ?? DEFAULT_BASE;
-  const model = creds.model ?? DEFAULT_MODEL;
+  // `replace` tira a barra final: um `baseUrl` colado do painel como
+  // `https://host/v1/` produzia `https://host/v1//v1/audio/transcriptions`.
+  // Vazio (não-nulo) também cai no padrão, como todas as env opcionais do repo.
+  const base = (creds.baseUrl?.trim() || DEFAULT_BASE).replace(/\/+$/, "");
+  const model = creds.model?.trim() || DEFAULT_MODEL;
   return {
     async transcribe(audio, mime) {
       const form = new FormData();
@@ -50,6 +53,35 @@ export function apiTranscriptionProvider(
       if (!res.ok) throw new Error(`transcription_${res.status}`);
       const json = (await res.json()) as { text?: string };
       return json.text ?? "";
+    },
+  };
+}
+
+/**
+ * Transcrição com CADEIA de provedores: tenta o primeiro; se falhar (ex.: o
+ * plano gratuito do Groq acabou e voltou 429), tenta o próximo; e assim por
+ * diante. Só propaga o erro quando TODOS falham — e propaga o erro do ÚLTIMO,
+ * que é o mais próximo de "ninguém conseguiu".
+ *
+ * `creds` vazio devolve um provider que sempre falha com `transcription_sem_provedor`
+ * (o chamador decide o aviso ao operador; aqui não inventamos texto).
+ */
+export function transcricaoEmCadeia(
+  creds: readonly TranscriptionCreds[],
+  fetchImpl: typeof fetch = fetch,
+): TranscriptionProvider {
+  const provedores = creds.map((c) => apiTranscriptionProvider(c, fetchImpl));
+  return {
+    async transcribe(audio, mime) {
+      let ultimo: unknown = null;
+      for (const p of provedores) {
+        try {
+          return await p.transcribe(audio, mime);
+        } catch (err) {
+          ultimo = err;
+        }
+      }
+      throw ultimo instanceof Error ? ultimo : new Error("transcription_sem_provedor");
     },
   };
 }

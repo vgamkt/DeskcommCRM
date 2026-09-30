@@ -80,6 +80,37 @@ describe('motoEscolhidaPeloCliente', () => {
       'CB 300',
     );
   });
+
+  it('resposta EM CIMA: a moto vem do texto CITADO (não da fala curta)', () => {
+    // "Gostei dessa" sozinho não nomeia nada; a mensagem citada (legenda da foto)
+    // nomeia a Twister. Antes, a citada era ignorada e o motor assumia a última.
+    const escolhida = motoEscolhidaPeloCliente(
+      'Ótimo! Essa é uma excelente moto.',
+      'Gostei dessa',
+      CATALOGO,
+      [],
+      'CB 300 F Twister\nCor: Vermelho\nPreço: R$ 28.990,00',
+    );
+    expect(escolhida?.nome).toBe('CB 300 F Twister');
+  });
+
+  it('resposta EM CIMA sem moto no citado continua sem escolha (nunca chuta)', () => {
+    expect(
+      motoEscolhidaPeloCliente('', 'essa mesmo', CATALOGO, [], 'Qual delas te interessou?'),
+    ).toBeUndefined();
+  });
+
+  it('o sinal/pergunta continua vindo só da fala do cliente (legenda citada não bloqueia)', () => {
+    // A legenda citada tem "Preço" — se contasse como fala, viraria objeção.
+    const escolhida = motoEscolhidaPeloCliente(
+      '',
+      'gostei dessa',
+      CATALOGO,
+      [],
+      'CB 300 F Twister\nCor: Vermelho\nPreço: R$ 28.990,00',
+    );
+    expect(escolhida?.nome).toBe('CB 300 F Twister');
+  });
 });
 
 describe('carregarCatalogoDaConversa', () => {

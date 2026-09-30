@@ -24,6 +24,18 @@ export interface EstadoDoAtendimentoInput {
   escolhida: MotoDoCatalogo | null;
   /** Campos já respondidos no fluxo de atendimento (contact_flow_data). */
   valoresDoFluxo?: Record<string, string>;
+  /**
+   * Moto EM FOCO da conversa (referência/única) quando ainda NÃO há escolha
+   * travada. Persistida por conversa e injetada em TODO turno — o agente sabe
+   * de qual moto se fala sem depender de lembrar do histórico.
+   */
+  motoEmFoco?: MotoDoCatalogo | null;
+  /**
+   * DESCRIÇÃO real da moto EM FOCO (escolhida/referência), quando houver coluna
+   * de descrição. Serve para o agente falar das QUALIDADES reais daquela moto —
+   * na apresentação e ao responder objeções sobre ela — sem descrição de outras.
+   */
+  descricaoDaMoto?: { nome: string; texto: string } | null;
 }
 
 function texto(valor: unknown): string | null {
@@ -49,6 +61,24 @@ export function renderBlocoDeEstado(input: EstadoDoAtendimentoInput): string {
     linhas.push(
       `- Moto escolhida pelo cliente: ${input.escolhida.nome}${detalhe ? ` (${detalhe})` : ''}. ` +
         'NÃO ofereça outras motos nem reabra a escolha — conduza ao fechamento (forma de pagamento e o que falta).',
+    );
+  } else if (input.motoEmFoco !== null && input.motoEmFoco !== undefined) {
+    // Sem escolha travada, mas há uma moto EM FOCO (o cliente pediu/consultou uma
+    // específica): o agente fala DELA. Persistida por conversa, injetada sempre.
+    const detalhe = [input.motoEmFoco.ano, input.motoEmFoco.cor].filter(Boolean).join(', ');
+    linhas.push(
+      `- Moto em foco nesta conversa: ${input.motoEmFoco.nome}${detalhe ? ` (${detalhe})` : ''}. ` +
+        'Quando o assunto for moto, é DELA que se fala (troque o foco só se o cliente demonstrar interesse em outra).',
+    );
+  }
+
+  // Descrição da moto em foco: dados REAIS para falar das qualidades dela na
+  // apresentação e em objeções — sem listar a descrição de outras motos.
+  const descricao = input.descricaoDaMoto;
+  if (descricao !== null && descricao !== undefined && descricao.texto.trim() !== '') {
+    linhas.push(
+      `- Descrição da moto EM FOCO (${descricao.nome}) — use as QUALIDADES reais dela ao falar/defender ` +
+        `ESTA moto (apresentação e objeções); nunca aplique a outras motos nem invente: ${descricao.texto.trim()}`,
     );
   }
 

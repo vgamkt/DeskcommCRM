@@ -22,6 +22,7 @@
 import {
   colunaDeSimilares,
   colunasDeComparacao,
+  detectarPapelColuna,
   type CatalogoMapeamento,
 } from '@/lib/external-db/catalogo';
 
@@ -110,6 +111,19 @@ export interface EntradaSelecaoPorIntencao {
    * O motor prioriza por ela no casamento/ordenação. `null` = sem destaque.
    */
   principal?: string | null;
+  /**
+   * C-106: colunas que o cliente REQUER (por dedução inteligente). Quando há
+   * alguma, o filtro é ESTRITO (a moto precisa casar TODAS). Faixas com limite
+   * (ex.: `preco.max`) também entram como exigência, mesmo sem listagem aqui.
+   * Vazio ⇒ comportamento genérico (OR pontuado), como antes.
+   */
+  exigidos?: readonly string[];
+  /**
+   * C-106 (interruptor do agente): LIGADO (default) = `exigidos` e faixas com
+   * limite viram filtro ESTRITO (AND) e o preço ordena pelo teto. DESLIGADO =
+   * ignora `exigidos`/teto e volta ao OR pontuado (comportamento antigo).
+   */
+  criteriosDinamicos?: boolean;
 }
 
 export interface ResultadoSelecaoPorIntencao {
@@ -122,6 +136,11 @@ export interface ResultadoSelecaoPorIntencao {
   temMaisOpcoes: boolean;
   /** Perfil interpretado pela IA (marcas/categorias) — para a fila de opções. */
   perfil: { marcas: string[]; categorias: string[] };
+  /**
+   * C-106: as motos que CASARAM (filtradas), na ordem de prioridade. O turno usa
+   * para pôr as casadas-ainda-não-enviadas na frente da fila do "quer ver mais?".
+   */
+  casadas: MotoDoCatalogo[];
 }
 
 /** Perfil interpretado pela IA: marcas e categorias das hipóteses + faixas. */
@@ -193,10 +212,59 @@ function casaColuna(moto: MotoDoCatalogo, coluna: string, alvo: string, toleranc
   const alvoNum = valorNumerico(alvo);
   const celulaNum = valorNumerico(celula);
   if (alvoNum !== null && celulaNum !== null) {
+    // C-107: o ANO vale EXATO (não ±30% — 30% de 2024 seria 607 anos, o defeito
+    // que aprovava o catálogo inteiro). Cilindrada/preço seguem com margem.
+    if (detectarPapelColuna(coluna) === 'ano') return celulaNum === alvoNum;
     const margem = Math.max(1, (Math.abs(alvoNum) * toleranciaPct) / 100);
     return Math.abs(celulaNum - alvoNum) <= margem;
   }
   return normalizarNomeDeMoto(celula).includes(normalizarNomeDeMoto(alvo));
+}
+
+/**
+ * C-106: a moto casa UMA coluna EXIGIDA? Faixa (com limite) tem prioridade;
+ * senão, qualquer valor de hipótese para aquela coluna (número ±tolerância;
+ * texto = contém). Sem nenhum dado da coluna em hipóteses/faixas, a coluna NÃO
+ * restringe (true) — não se descarta por falta de dado.
+ */
+function casaColunaExigida(
+  moto: MotoDoCatalogo,
+  coluna: string,
+  hipoteses: readonly HipoteseDeMoto[],
+  faixas: FaixasDoPedido,
+  toleranciaPct: number,
+): boolean {
+  const faixa = faixas[coluna] as { min?: unknown; max?: unknown } | undefined;
+  if (
+    faixa !== null &&
+    typeof faixa === 'object' &&
+    (typeof faixa.min === 'number' || typeof faixa.max === 'number')
+  ) {
+    return casaFaixaColuna(moto, coluna, faixa);
+  }
+  const valores = hipoteses
+    .map((h) => h[coluna])
+    .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+  if (valores.length === 0) return true;
+  return valores.some((v) => casaColuna(moto, coluna, v, toleranciaPct));
+}
+
+/**
+ * C-106: filtro ESTRITO — a moto só entra se casar TODAS as colunas exigidas
+ * (o que o cliente deixou claro, incl. a marca deduzida do modelo, e as faixas
+ * com limite). Lista vazia de exigidas ⇒ lista vazia (o chamador cai no genérico).
+ */
+export function filtrarPorExigencias(
+  candidatos: readonly MotoDoCatalogo[],
+  exigidos: readonly string[],
+  hipoteses: readonly HipoteseDeMoto[],
+  faixas: FaixasDoPedido,
+  toleranciaPct: number,
+): MotoDoCatalogo[] {
+  if (exigidos.length === 0) return [];
+  return candidatos.filter((moto) =>
+    exigidos.every((coluna) => casaColunaExigida(moto, coluna, hipoteses, faixas, toleranciaPct)),
+  );
 }
 
 /** A coluna numérica da moto está dentro da faixa {min,max}? */
@@ -358,26 +426,65 @@ export function selecionarPorIntencao(
   let filtrados = 0;
   let preferidos: Set<MotoDoCatalogo> | null = null;
   const perfil = perfilDaIA(input.hipoteses ?? [], input.faixas ?? {});
+  // C-106: colunas OBRIGATÓRIAS = as que o cliente exigiu + as que têm faixa com
+  // limite (ex.: "até 20 mil"). Havendo alguma, o filtro é ESTRITO (AND); senão,
+  // genérico (OR pontuado). Tolerância única para o casamento numérico.
+  const tolerancia = input.toleranciaPct ?? 30;
+  // C-106: com o interruptor DESLIGADO, `exigidos` e faixas não obrigam nada —
+  // volta ao OR pontuado (comportamento antigo).
+  const criteriosDinamicos = input.criteriosDinamicos !== false;
+  const faixasComLimite = !criteriosDinamicos
+    ? []
+    : Object.entries(input.faixas ?? {})
+        .filter(([, f]) => {
+          const o = f as { min?: unknown; max?: unknown } | null;
+          return (
+            o !== null &&
+            typeof o === 'object' &&
+            (typeof o.min === 'number' || typeof o.max === 'number')
+          );
+        })
+        .map(([coluna]) => coluna);
+  const exigencias = !criteriosDinamicos
+    ? []
+    : [...new Set([...(input.exigidos ?? []), ...faixasComLimite])];
+  let casadas: MotoDoCatalogo[] = [];
+  // `estrito` = havia exigência E ela casou algo. Diferente de "caiu no genérico
+  // porque o estrito zerou" — só no primeiro não se completa com perfil alheio.
+  let estrito = false;
   if (
     input.filtrarPorComparacao === true &&
     !alternativo &&
-    ((input.hipoteses?.length ?? 0) > 0 || Object.keys(input.faixas ?? {}).length > 0)
+    (exigencias.length > 0 ||
+      (input.hipoteses?.length ?? 0) > 0 ||
+      Object.keys(input.faixas ?? {}).length > 0)
   ) {
-    const passou = filtrarPorHipoteses(
-      candidatos,
-      input.hipoteses ?? [],
-      input.faixas ?? {},
-      // Tolerância de cilindrada/preço para casar hipótese × moto real.
-      input.toleranciaPct ?? 30,
-      // C-096: coluna principal (o que o cliente enfatizou) — bônus no casamento.
-      input.principal ?? null,
-    );
-    if (passou.length > 0) {
-      preferidos = new Set(passou);
-      filtrados = passou.length;
+    if (exigencias.length > 0) {
+      casadas = filtrarPorExigencias(
+        candidatos,
+        exigencias,
+        input.hipoteses ?? [],
+        input.faixas ?? {},
+        tolerancia,
+      );
+      estrito = casadas.length > 0;
+    }
+    // Estrtio zerou (ou não havia exigência): cai no genérico (OR pontuado) —
+    // nunca responde vazio por causa de um pedido que não casou.
+    if (casadas.length === 0) {
+      casadas = filtrarPorHipoteses(
+        candidatos,
+        input.hipoteses ?? [],
+        input.faixas ?? {},
+        tolerancia,
+        input.principal ?? null,
+      );
+    }
+    if (casadas.length > 0) {
+      preferidos = new Set(casadas);
+      filtrados = casadas.length;
     }
   }
-
   const extras = Object.values(criterios)
     .map(String)
     .filter((s) => s.trim() !== '')
@@ -392,6 +499,13 @@ export function selecionarPorIntencao(
     principal !== null && principal !== ''
       ? [principal, ...criteriosColunas.filter((c) => c !== principal)]
       : criteriosColunas;
+  // C-106: no modo ESTRITO com teto de preço ("até X"), o preço é o 1º critério
+  // de ordem — as motos mais PRÓXIMAS do teto primeiro (decrescente até o limite),
+  // como pediu o dono. "barata" sem valor não chega aqui (o turno pergunta antes).
+  const colunasRankingFinal =
+    !alternativo && faixasComLimite.includes('preco')
+      ? ['preco', ...colunasRanking.filter((c) => c !== 'preco')]
+      : colunasRanking;
 
   // Teto: `todasSeEspecificacao` (modelo existe) OU `aplicarLimite: false`
   // (toggle B desligado) abrem o teto e devolvem TODAS as candidatas. C-090: o
@@ -408,7 +522,7 @@ export function selecionarPorIntencao(
   const quantidadeBase = semTeto ? Math.max(basePreferida.length, 1) : quantidade;
   const motos = escolherComReferencia(termoFinal, basePreferida, {
     quantidade: quantidadeBase,
-    criteriosColunas: colunasRanking,
+    criteriosColunas: colunasRankingFinal,
     // No modo ALTERNATIVA a reserva por `moto_similar` NÃO se aplica: o cliente
     // não está pedindo uma moto pelo nome, e casar o termo (que inclui a objeção
     // e a âncora) contra as referências traria "reservas" espúrias (medido ao
@@ -427,6 +541,9 @@ export function selecionarPorIntencao(
   if (
     preferidos !== null &&
     !semTeto &&
+    // C-106: no modo ESTRITO não se completa com perfil alheio — as casadas são
+    // a resposta; o resto das CASADAS vai para a fila do "quer ver mais?".
+    !estrito &&
     input.naoCompletarFaltando !== true &&
     motos.length < quantidade
   ) {
@@ -437,7 +554,7 @@ export function selecionarPorIntencao(
     if (complemento.length > 0) {
       const resto = escolherComReferencia(termoFinal, complemento, {
         quantidade: quantidade - motos.length,
-        criteriosColunas: colunasRanking,
+        criteriosColunas: colunasRankingFinal,
         colunaSimilares: colunaDeSimilares(input.mapeamento),
         ...(Object.keys(preferencias).length > 0 ? { preferencias } : {}),
       });
@@ -445,9 +562,12 @@ export function selecionarPorIntencao(
     }
   }
   // Sobrou moto parecida fora do corte? O turno usa isto para perguntar ao cliente
-  // se quer ver mais opções (regra do dono, 2026-09-26).
+  // se quer ver mais opções (regra do dono, 2026-09-26). C-106: no modo estrito, o
+  // "mais opções" são as CASADAS que não couberam na página.
   const temMaisOpcoes =
-    preferidos !== null && !semTeto && candidatos.length > motos.length;
+    preferidos !== null &&
+    !semTeto &&
+    (estrito ? casadas.length > motos.length : candidatos.length > motos.length);
   return {
     motos,
     preferencias,
@@ -455,6 +575,7 @@ export function selecionarPorIntencao(
     filtrados,
     temMaisOpcoes,
     perfil: { marcas: [...perfil.marcas], categorias: [...perfil.categorias] },
+    casadas,
   };
 }
 
@@ -512,18 +633,29 @@ export function pedePrecoSemValor(mensagem: string): boolean {
   return !temNumero;
 }
 
+/** Verbo de pedido/interesse explícito — sozinho NÃO é pedido de moto. */
+const VERBO_DE_PEDIDO =
+  /\b(quero|queria|quer|procur\w*|preciso|busc\w*|buscar|tem|tens|teria|mostr\w*|ver|ve|gostaria|interess\w*|indic\w*|suger\w*|opcoes|opcao|disponivel|disponiveis|comprar|adquirir)\b/;
+
+/** Termo de moto / atributo / categoria presente na mensagem. */
+const TERMO_DE_MOTO =
+  /\b(moto|motos|modelo|modelos|cilindrada|cc|categoria|naked|street|scooter|trail|adventure|trilha|sport|esportiv\w*|custom|roadster|touring|seminova\w*|honda|yamaha|suzuki|bajaj|bmw|kawasaki|biz|factor|titan|fan|cg|cb|cbx|xre|xtz|crosser|fazer|dominar|v-?strom|boulevard|xmax|neo|twister|tener\w*)\b/;
+
+/**
+ * A mensagem CITA/CONSULTA uma moto (termo concreto: marca, modelo, categoria…)?
+ *
+ * Diferente de `querMoto`: "quero financiar" tem verbo de pedido mas NENHUM termo
+ * de moto — é pedido de PROCESSO, não de catálogo. Este é o sinal que a trava
+ * `turnoEhDeCatalogo` usa para não despejar motos em pedido de financiamento.
+ */
+export function mencionaMoto(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  return TERMO_DE_MOTO.test(n);
+}
+
 export function querMoto(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
-  // Verbo de pedido/interesse explícito.
-  const verbo =
-    /\b(quero|queria|quer|procur\w*|preciso|busc\w*|buscar|tem|tens|teria|mostr\w*|ver|ve|gostaria|interess\w*|indic\w*|suger\w*|opcoes|opcao|disponivel|disponiveis|comprar|adquirir)\b/.test(
-      n,
-    );
-  // Termo de moto / atributo / categoria.
-  const termo =
-    /\b(moto|motos|modelo|modelos|cilindrada|cc|categoria|naked|street|scooter|trail|adventure|trilha|sport|esportiv\w*|custom|roadster|touring|seminova\w*|honda|yamaha|suzuki|bajaj|bmw|kawasaki|biz|factor|titan|fan|cg|cb|cbx|xre|xtz|crosser|fazer|dominar|v-?strom|boulevard|xmax|neo|twister|tener\w*)\b/.test(
-      n,
-    );
-  return verbo || termo;
+  return VERBO_DE_PEDIDO.test(n) || TERMO_DE_MOTO.test(n);
 }

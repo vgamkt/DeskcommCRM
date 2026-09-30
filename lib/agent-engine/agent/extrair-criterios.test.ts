@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCriteriosPrompt, criteriosVazios, parseCriterios } from './extrair-criterios';
+import {
+  buildCriteriosPrompt,
+  criteriosVazios,
+  extrairCriterios,
+  parseCriterios,
+} from './extrair-criterios';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 
 describe('buildCriteriosPrompt', () => {
@@ -96,5 +101,75 @@ describe('parseCriterios', () => {
     expect(parseCriterios('sem json', COLS)).toEqual(criteriosVazios());
     expect(parseCriterios('{"criterios": {"categoria": ""}}', COLS).criterios).toEqual({});
     expect(parseCriterios('{"hipoteses": "x", "faixas": 3}', COLS)).toEqual(criteriosVazios());
+  });
+});
+
+describe('ANO é proibido para a IA (regra do dono, 2026-09-28)', () => {
+  const COLS_COM_ANO = ['nome', 'marca', 'categoria', 'ano', 'cilindrada', 'preco'];
+
+  it('parseCriterios descarta ano de hipóteses, faixas e principal', () => {
+    const r = parseCriterios(
+      JSON.stringify({
+        intencao: 'pedido',
+        principal: 'ano',
+        hipoteses: [{ nome: 'CB 250', marca: 'HONDA', ano: '2008', cilindrada: '250' }],
+        faixas: { ano: { min: 2000, max: 2020 }, cilindrada: { min: 200, max: 300 } },
+      }),
+      COLS_COM_ANO,
+    );
+    expect(r.hipoteses).toEqual([{ nome: 'CB 250', marca: 'HONDA', cilindrada: '250' }]);
+    expect(r.faixas).toEqual({ cilindrada: { min: 200, max: 300 } });
+    expect(r.principal).toBeNull();
+  });
+
+  it('bloquearAno=false deixa o ano passar (interruptor do agente desligado)', () => {
+    const r = parseCriterios(
+      '{"hipoteses":[{"marca":"HONDA","ano":"2008","cilindrada":"250"}],"exigidos":["ano"]}',
+      ['marca', 'ano', 'cilindrada'],
+      false,
+    );
+    expect(r.hipoteses).toEqual([{ marca: 'HONDA', ano: '2008', cilindrada: '250' }]);
+    expect(r.exigidos).toEqual(['ano']);
+  });
+
+  it('lê "exigidos" e ignora colunas não permitidas e ano (C-106)', () => {
+    const r = parseCriterios(
+      JSON.stringify({ exigidos: ['marca', 'ano', 'secreto', 'cilindrada', 'marca'] }),
+      ['marca', 'ano', 'cilindrada'],
+    );
+    // ano é proibido; secreto não é permitido; duplicata some.
+    expect(r.exigidos).toEqual(['marca', 'cilindrada']);
+    expect(parseCriterios('{}', ['marca']).exigidos).toEqual([]);
+  });
+
+  it('extrairCriterios não oferece ano no prompt e descarta o que o modelo devolver', async () => {
+    let promptVisto = '';
+    const fake = async (...args: unknown[]) => {
+      const req = args[2] as { messages: { content: string }[] };
+      promptVisto = req.messages[0]!.content;
+      return {
+        result: {
+          text: '{"intencao":"pedido","hipoteses":[{"nome":"CB 250","ano":"2008"}],"faixas":{"ano":{"min":2000,"max":2010}}}',
+        },
+      };
+    };
+    const r = await extrairCriterios(
+      {} as never,
+      {} as never,
+      {
+        tenantId: 't',
+        leadId: null,
+        jobId: null,
+        model: 'm',
+        mensagem: 'quero uma cb 250',
+        colunas: COLS_COM_ANO,
+      },
+      { log: { warn: () => {} } as never, runModelCall: fake as never },
+    );
+    // A coluna `ano` não é oferecida na lista de critério…
+    expect(promptVisto).not.toMatch(/^- ano\b/m);
+    // …e, mesmo devolvida, é descartada.
+    expect(r.hipoteses).toEqual([{ nome: 'CB 250' }]);
+    expect(r.faixas).toEqual({});
   });
 });

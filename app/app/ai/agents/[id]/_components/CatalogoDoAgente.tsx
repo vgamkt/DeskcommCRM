@@ -147,6 +147,40 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
         <Label>{t("Quantidade e escolha das motos")}</Label>
         <div className="flex items-center gap-2">
           <Switch
+            id="cat-criterios-dinamicos"
+            checked={cfg.criterios_dinamicos}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, criterios_dinamicos: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-criterios-dinamicos">
+            {t(
+              "Usar os critérios que o cliente indicar como obrigatórios (deduz tipo, preço e marca)",
+            )}
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Ligado: quando o cliente disser tipo/preço/marca, o motor obriga isso, manda as que batem e pergunta no fim se quer ver mais. Desligado: comportamento antigo (procura por semelhança e pode enviar todas as que casam).",
+          )}
+        </p>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-bloquear-ano"
+            checked={cfg.bloquear_ano_ia}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, bloquear_ano_ia: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-bloquear-ano">
+            {t("Nunca usar o ANO para comparar (deixar a IA sem o ano)")}
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Ligado: a IA nunca preenche o ano — o ano é decisão da loja. Desligado: o ano volta a ser usado como os outros campos (pelo checkbox “Critério”).",
+          )}
+        </p>
+        <div className="flex items-center gap-2">
+          <Switch
             id="cat-especificacao"
             checked={cfg.especificacao_mostra_todas}
             onCheckedChange={(v) => setCfg((c) => ({ ...c, especificacao_mostra_todas: v }))}

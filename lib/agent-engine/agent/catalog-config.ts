@@ -81,6 +81,23 @@ export const catalogConfigSchema = z
      * se N=8 e casaram 4, envia 4 — sem "lixo".
      */
     nao_completar_faltando: z.boolean().default(false),
+    /**
+     * C-106 (decisão do dono, 2026-09-28): interruptor "Usar os critérios que o
+     * cliente indicar como obrigatórios". LIGADO (default) = a IA deduz, por
+     * mensagem, o que o cliente REQUER (inclusive a marca pelo modelo) e o motor
+     * OBRIGA esses critérios (AND); sem indicação clara, cai no genérico. Faixas
+     * com limite ("até X") também viram obrigatórias e o preço ordena decrescente.
+     * DESLIGADO = comportamento antigo: OR pontuado + "enviar todas que casam".
+     */
+    criterios_dinamicos: z.boolean().default(true),
+    /**
+     * C-105/C-106 (decisão do dono, 2026-09-28): interruptor "Nunca usar o ANO
+     * para comparar". LIGADO (default) = a IA NUNCA preenche ano (nem em
+     * hipóteses/faixas/principal) — o ano é decisão da loja. DESLIGADO = o ano
+     * volta a ser um campo como os outros, controlado pelos checkboxes
+     * ("Critério"/"Envio") e sujeito à tolerância numérica.
+     */
+    bloquear_ano_ia: z.boolean().default(true),
   })
   .strict();
 

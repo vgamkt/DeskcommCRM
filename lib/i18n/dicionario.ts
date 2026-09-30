@@ -37,6 +37,75 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Nunca usar o ANO para comparar (deixar a IA sem o ano)": {
+    es: "Nunca usar el AÑO para comparar (dejar a la IA sin el año)",
+  },
+  "Ligado: a IA nunca preenche o ano — o ano é decisão da loja. Desligado: o ano volta a ser usado como os outros campos (pelo checkbox “Critério”).": {
+    es: "Activado: la IA nunca rellena el año — el año es decisión de la tienda. Desactivado: el año vuelve a usarse como los demás campos (por la casilla “Criterio”).",
+  },
+  "Usar os critérios que o cliente indicar como obrigatórios (deduz tipo, preço e marca)": {
+    es: "Usar como obligatorios los criterios que el cliente indique (deduce tipo, precio y marca)",
+  },
+  "Ligado: quando o cliente disser tipo/preço/marca, o motor obriga isso, manda as que batem e pergunta no fim se quer ver mais. Desligado: comportamento antigo (procura por semelhança e pode enviar todas as que casam).": {
+    es: "Activado: cuando el cliente diga tipo/precio/marca, el motor lo obliga, envía las que coinciden y pregunta al final si quiere ver más. Desactivado: comportamiento anterior (busca por similitud y puede enviar todas las que coinciden).",
+  },
+  "Como preencher — o que cada quadradinho faz (com exemplos)": {
+    es: "Cómo rellenar — qué hace cada casilla (con ejemplos)",
+  },
+  "Pense no agente como uma vendedora: ela anota numa “fichinha” o que o cliente quer e compara com as motos do seu estoque. Os controles abaixo dizem o que ela pode ler e o que pode usar para separar as motos parecidas.": {
+    es: "Piensa en el agente como una vendedora: anota en una “ficha” lo que quiere el cliente y lo compara con las motos de tu stock. Los controles de abajo dicen qué puede leer y qué puede usar para separar las motos parecidas.",
+  },
+  "Importante: “Critério” e “Envio” são como duas tomadas da mesma lâmpada — se QUALQUER uma estiver ligada, o agente usa aquele dado. Para proibir um dado, desligue as duas.": {
+    es: "Importante: “Criterio” y “Envío” son como dos enchufes de la misma lámpara: si CUALQUIERA está activo, el agente usa ese dato. Para prohibir un dato, desactiva los dos.",
+  },
+  "— o campo que identifica a moto. É por ele que o agente busca e mostra a moto (obrigatório).": {
+    es: "— el campo que identifica la moto. Es con él que el agente busca y muestra la moto (obligatorio).",
+  },
+  "— o campo com o endereço (URL) da imagem que vai no WhatsApp.": {
+    es: "— el campo con la dirección (URL) de la imagen que va a WhatsApp.",
+  },
+  "— um campo que lista motos parecidas (ex.: moto_similar). Quando o cliente pede uma moto que não temos, o motor usa essa lista para achar a moto real parecida. Só o motor usa; o agente nunca vê esses nomes.": {
+    es: "— un campo que lista motos parecidas (ej.: moto_similar). Cuando el cliente pide una moto que no tenemos, el motor usa esa lista para encontrar la moto real parecida. Solo la usa el motor; el agente nunca ve esos nombres.",
+  },
+  "— pode LER. A vendedora vê esse dado para entender o cliente, mas não o usa para separar as motos. Exemplo: ligar “ano” aqui só deixa ela ler o ano.": {
+    es: "— puede LEER. La vendedora ve ese dato para entender al cliente, pero no lo usa para separar las motos. Ejemplo: activar “año” aquí solo deja que lo lea.",
+  },
+  "— pode USAR. É a chave principal: a vendedora pode usar esse dado para escolher as motos parecidas. Exemplo: com “marca” ligada, “quero Honda” traz as Hondas.": {
+    es: "— puede USAR. Es la clave principal: la vendedora puede usar ese dato para elegir las motos parecidas. Ejemplo: con “marca” activa, “quiero Honda” trae las Honda.",
+  },
+  "— aparece no texto. O dado sai escrito embaixo da foto. Exemplo: marcar “preço” mostra “Preço: R$ …” na legenda.": {
+    es: "— aparece en el texto. El dato sale escrito debajo de la foto. Ejemplo: marcar “precio” muestra “Precio: R$ …” en la leyenda.",
+  },
+  "— só organiza. Coloca as motos mais parecidas primeiro; não tira nem põe moto. Exemplo: “preço” aqui deixa as de preço mais próximo na frente.": {
+    es: "— solo organiza. Pone las motos más parecidas primero; no quita ni agrega motos. Ejemplo: “precio” aquí deja delante las de precio más cercano.",
+  },
+  "— a segunda chave do “Critério”. Só vale quando o agente está no modo “enviar todas as que casam”. Serve para mandar tudo o que combina com esses campos. Na dúvida, deixe igual ao “Critério”.": {
+    es: "— el segundo enchufe del “Criterio”. Solo vale cuando el agente está en el modo “enviar todas las que coinciden”. Sirve para enviar todo lo que coincide con esos campos. En la duda, déjalo igual al “Criterio”.",
+  },
+  "— prioridade: 1 = mais importante. Os campos de Ordem 1 também montam o nome da moto (exemplo: nome + versão = “Biz 125 FLEX”).": {
+    es: "— prioridad: 1 = más importante. Los campos de Orden 1 también arman el nombre de la moto (ejemplo: nombre + versión = “Biz 125 FLEX”).",
+  },
+  "Exceção: o agente NUNCA usa o ANO para comparar (o ano é decisão da loja — já está bloqueado).": {
+    es: "Excepción: el agente NUNCA usa el AÑO para comparar (el año es decisión de la tienda — ya está bloqueado).",
+  },
+  "Pode LER: o agente vê este dado, mas não o usa para separar as motos.": {
+    es: "Puede LEER: el agente ve este dato, pero no lo usa para separar las motos.",
+  },
+  "Pode USAR: o agente escolhe as motos parecidas por este dado — é a chave principal.": {
+    es: "Puede USAR: el agente elige las motos parecidas por este dato — es la clave principal.",
+  },
+  "Aparece escrito embaixo da foto.": {
+    es: "Aparece escrito debajo de la foto.",
+  },
+  "Só organiza: mostra as mais parecidas primeiro (não tira nem põe moto).": {
+    es: "Solo organiza: muestra las más parecidas primero (no quita ni agrega motos).",
+  },
+  "Segunda chave do “Critério”, para o modo “enviar todas as que casam”.": {
+    es: "Segundo enchufe del “Criterio”, para el modo “enviar todas las que coinciden”.",
+  },
+  "Prioridade: 1 = mais importante; Ordem 1 também monta o nome.": {
+    es: "Prioridad: 1 = más importante; Orden 1 también arma el nombre.",
+  },
   "números de teste autorizados": { es: "números de prueba autorizados" },
   "1 número de teste autorizado": { es: "1 número de prueba autorizado" },
   "Nenhum número autorizado — a IA não responde ninguém neste canal.": {
