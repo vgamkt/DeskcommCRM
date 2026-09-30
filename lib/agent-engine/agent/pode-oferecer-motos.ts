@@ -15,9 +15,10 @@
  *   - pediu catálogo/moto/menos ("quero uma moto", "tem uma CB 300?");
  *   - pediu para ver MAIS opções ("quero ver mais", "tem outras?");
  *   - pediu algo DIFERENTE ("quero outra cor", "queria mais nova");
- *   - o MESMO tipo de objeção já foi tratado DUAS vezes → na 3ª vez oferece o que
- *     ataca o motivo (caro→mais barata, rodada→menos km, antiga→mais nova).
- *     Mudou o tipo de objeção → reinicia a contagem (mais duas tentativas).
+ *   - o MESMO tipo de objeção já foi tratado DUAS vezes → na 3ª vez o bot avisa o
+ *     responsável e PERGUNTA se o cliente quer ver opções parecidas; a oferta só
+ *     sai quando ele CONFIRMA (então oferece o que ataca o motivo: caro→mais
+ *     barata, rodada→menos km, antiga→mais nova). Mudou o tipo → reinicia.
  *
  * NÃO oferece quando:
  *   - é a 1ª ou a 2ª vez do tipo de objeção → persuade;
@@ -98,6 +99,11 @@ export interface SinaisDeOferta {
   estadoObjecaoAnterior: EstadoObjecao | null;
   /** O cliente pediu "ver outras" depois de já ter visto opções. */
   pediuOutraMoto: boolean;
+  /**
+   * Estávamos aguardando a CONFIRMAÇÃO do cliente (já perguntamos se ele quer ver
+   * opções parecidas) e ele confirmou. Só então a oferta pós-objeção sai.
+   */
+  confirmouVerOpcoes: boolean;
 }
 
 export interface DecisaoDeOferta {
@@ -124,17 +130,26 @@ export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
     return decisao(true, 'cliente_pediu_diferente', criterioDaObjecao(msg));
   }
 
-  // 3) Objeção: DUAS tentativas de persuasão POR TIPO; na 3ª vez do MESMO tipo,
-  //    libera a oferta. Mudou o tipo de objeção → reinicia a contagem.
+  // 3) Objeção: DUAS tentativas de persuasão POR TIPO e, na 3ª vez do MESMO tipo,
+  //    o bot AVISA o responsável e PERGUNTA antes de mostrar (NÃO oferece ainda).
+  //    Mudou o tipo de objeção → reinicia a contagem.
   if (ehObjecaoValor(msg)) {
     // Insistência em DESCONTO é caso de handoff (C-071), não de trocar de moto.
     if (ehPedidoDesconto(msg)) return decisao(false, 'insistencia_desconto_handoff');
     const a = s.estadoObjecaoAnterior;
     const mesmoTipo = a !== null && a.motivo === motivoDaObjecao(msg);
     if (mesmoTipo && a.tentativas >= 2) {
-      return decisao(true, 'objecao_persistente', criterioDaObjecao(msg));
+      // 3ª vez: pergunta antes (regra do dono) — sem motos neste turno.
+      return decisao(false, 'objecao_pedir_confirmacao');
     }
     return decisao(false, mesmoTipo ? 'objecao_tentativa_2' : 'objecao_tentativa_1');
+  }
+
+  // 3.1) Já perguntamos ("é só essa ou posso mostrar outras?") e o cliente
+  //      CONFIRMOU → agora sim a oferta sai, com o critério do motivo.
+  if (s.estadoObjecaoAnterior !== null && s.estadoObjecaoAnterior.tentativas >= 3 && s.confirmouVerOpcoes) {
+    const m = s.estadoObjecaoAnterior.motivo;
+    return decisao(true, 'cliente_confirmou_opcoes', m === 'outro' ? null : m);
   }
 
   // 4) Pedido de PROCESSO (financiar/trocar/consignar/vender) é FLUXO, não

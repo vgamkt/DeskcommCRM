@@ -12,11 +12,12 @@ alternativas quando a objeção insiste:
   rejeição de um ponto ("não gostei dessa cor") ou insistência depois da
   persuasão. O caso medido ao vivo — o cliente responde "De sao paulo" e recebe
   5 motos — não acontece mais.
-- **Objeção em três etapas, por TIPO:** o agente tenta quebrar a objeção DUAS
-  vezes; na TERCEIRA vez do MESMO tipo, avisa que vai consultar o responsável e
-  oferece opções que atacam o motivo (mais barata para preço, menos km para
-  rodagem, mais nova para ano). Se o tipo de objeção mudar, a contagem reinicia
-  (mais duas tentativas). Pedir desconto continua sendo encaminhamento ao
-  consultor, não troca de moto.
+- **Objeção em etapas, por TIPO:** o agente tenta quebrar a objeção DUAS vezes;
+  na TERCEIRA vez do MESMO tipo, avisa que vai consultar o responsável e
+  **pergunta** se o cliente quer ver opções parecidas (sem mandar motos) — só
+  mostra depois que ele **confirmar**. Se a objeção for de **preço**, pergunta
+  qual valor ele tem em mente e **nunca mostra moto acima dele**. Se o tipo de
+  objeção mudar, a contagem reinicia (mais duas tentativas). Pedir desconto
+  continua sendo encaminhamento ao consultor, não troca de moto.
 - **Uma só régua:** a mesma decisão vale para o motor e para as ferramentas da
   IA, então nenhum caminho oferece motos por fora.

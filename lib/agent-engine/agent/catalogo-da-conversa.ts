@@ -113,14 +113,26 @@ const MOTIVOS_OBJECAO = ['preco', 'km', 'ano', 'outro'] as const;
  */
 function normalizarEstadoObjecao(valor: unknown): EstadoObjecao | null {
   if (typeof valor !== 'object' || valor === null) return null;
-  const o = valor as { fase?: unknown; moto?: unknown; motivo?: unknown; tentativas?: unknown };
+  const o = valor as {
+    fase?: unknown;
+    moto?: unknown;
+    motivo?: unknown;
+    tentativas?: unknown;
+    valorProposta?: unknown;
+  };
   const moto = typeof o.moto === 'string' ? o.moto : '';
+  const valorProposta = typeof o.valorProposta === 'number' ? o.valorProposta : undefined;
   if (
     typeof o.motivo === 'string' &&
     (MOTIVOS_OBJECAO as readonly string[]).includes(o.motivo) &&
     typeof o.tentativas === 'number'
   ) {
-    return { moto, motivo: o.motivo as EstadoObjecao['motivo'], tentativas: o.tentativas };
+    return {
+      moto,
+      motivo: o.motivo as EstadoObjecao['motivo'],
+      tentativas: o.tentativas,
+      ...(valorProposta !== undefined ? { valorProposta } : {}),
+    };
   }
   if (typeof o.fase === 'string') {
     const tentativas =

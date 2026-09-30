@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   avancarObjecao,
+  clienteConfirmouVer,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
   faseDoTurno,
   motivoDaObjecao,
   renderBlocoObjecao,
+  valorCitado,
   type EstadoObjecao,
 } from './objecao-de-valor';
 
@@ -112,7 +114,35 @@ describe('motivoDaObjecao', () => {
   });
 });
 
-describe('faseDoTurno — 2 tentativas POR TIPO e, na 3ª, oferece', () => {
+describe('clienteConfirmouVer', () => {
+  it('reconhece confirmação', () => {
+    for (const m of ['sim', 'pode mostrar', 'pode mandar', 'quero ver', 'claro', 'manda', 'beleza']) {
+      expect(clienteConfirmouVer(m), m).toBe(true);
+    }
+  });
+  it('negação não confirma', () => {
+    for (const m of ['nao', 'é só essa', 'so essa mesmo', 'deixa', 'só tenho interesse nessa']) {
+      expect(clienteConfirmouVer(m), m).toBe(false);
+    }
+  });
+});
+
+describe('valorCitado', () => {
+  it('extrai valores em reais', () => {
+    expect(valorCitado('eu dou 27 nela')).toBe(27000);
+    expect(valorCitado('tenho 27 mil em mente')).toBe(27000);
+    expect(valorCitado('quero uma de ate 20 mil')).toBe(20000);
+    expect(valorCitado('uns 20k')).toBe(20000);
+    expect(valorCitado('R$ 25.000')).toBe(25000);
+    expect(valorCitado('25000')).toBe(25000);
+  });
+  it('não confunde com ano nem sem valor', () => {
+    expect(valorCitado('quero uma 2024')).toBeNull();
+    expect(valorCitado('bom dia')).toBeNull();
+  });
+});
+
+describe('faseDoTurno — 2 tentativas POR TIPO e, na 3ª, pergunta', () => {
   it('sem estado (ou tipo novo) → persuadir; 1 tentativa do tipo → persuadir2; 2+ → oferecer', () => {
     expect(faseDoTurno(null, 'preco', false)).toBe('persuadir');
     // Mudou o tipo → reinicia em persuadir.
@@ -155,12 +185,19 @@ describe('renderBlocoObjecao', () => {
     expect(b).toContain('NÃO ofereça outra moto');
   });
 
-  it('oferecer (3ª): avisar o responsável (sem transferir) e oferecer pelo motivo', () => {
+  it('oferecer (3ª): avisar o responsável e PERGUNTAR antes (NÃO mostrar motos)', () => {
     const b = renderBlocoObjecao('oferecer');
-    expect(b).toContain('OFERECER');
+    expect(b).toContain('PERGUNTAR');
     expect(b).toContain('responsável');
-    expect(b).toContain('NÃO chame `crm_request_human_handoff`');
-    expect(b).toContain('NUNCA pergunte se pode encaminhar');
+    expect(b).toContain('NÃO mostre motos');
+    expect(b).toContain('qual valor ele tem em mente');
+    expect(b).toContain('NÃO chame `crm_offer_similar_motos`');
+  });
+
+  it('mostrar: oferecer pelo motivo e respeitar o valor do cliente', () => {
+    const b = renderBlocoObjecao('mostrar');
+    expect(b).toContain('CONFIRMOU');
+    expect(b).toContain('SÓ opções DENTRO desse valor');
   });
 
   it('handoff: encaminhar sem oferecer motos nem perguntar', () => {

@@ -23,7 +23,11 @@ const obj = (motivo: MotivoObjecao, tentativas: number): EstadoObjecao => ({
 });
 
 function rodar(estado: Estado, mensagem: string) {
-  return podeOferecerMotos({ mensagem, ...estado } satisfies SinaisDeOferta);
+  return podeOferecerMotos({
+    mensagem,
+    ...estado,
+    confirmouVerOpcoes: false,
+  } satisfies SinaisDeOferta);
 }
 
 describe('simulação de conversa — quando pode oferecer motos', () => {
@@ -64,12 +68,22 @@ describe('simulação de conversa — quando pode oferecer motos', () => {
     });
     estado.estadoObjecaoAnterior = obj('preco', 2);
 
-    // 6) 3ª objeção do MESMO tipo → LIBERA, com o critério do motivo.
+    // 6) 3ª objeção do MESMO tipo → ainda NÃO mostra: o bot avisa o responsável e
+    //    PERGUNTA se ele quer ver opções (e, sendo preço, qual valor tem em mente).
     expect(rodar(estado, 'e continua caro mesmo')).toMatchObject({
-      pode: true,
-      motivo: 'objecao_persistente',
-      criterio: 'preco',
+      pode: false,
+      motivo: 'objecao_pedir_confirmacao',
     });
+    estado.estadoObjecaoAnterior = obj('preco', 3);
+
+    // 7) Cliente CONFIRMA que quer ver → agora a oferta sai, com o critério.
+    expect(
+      podeOferecerMotos({
+        ...estado,
+        mensagem: 'pode mostrar, sim',
+        confirmouVerOpcoes: true,
+      }),
+    ).toMatchObject({ pode: true, motivo: 'cliente_confirmou_opcoes', criterio: 'preco' });
 
     // 7) Mudou o MOTIVO (rodagem) → reinicia: volta a persuadir.
     expect(rodar(estado, 'agora achei muito rodada')).toMatchObject({

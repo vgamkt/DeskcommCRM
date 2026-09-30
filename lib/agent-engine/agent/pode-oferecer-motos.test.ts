@@ -15,6 +15,7 @@ function s(over: Partial<SinaisDeOferta> = {}): SinaisDeOferta {
     temEscolhaTravada: false,
     estadoObjecaoAnterior: null,
     pediuOutraMoto: false,
+    confirmouVerOpcoes: false,
     ...over,
   };
 }
@@ -83,13 +84,30 @@ describe('podeOferecerMotos — a régua única', () => {
     ).toMatchObject({ pode: false, motivo: 'objecao_tentativa_2' });
   });
 
-  it('OFERECE na 3ª do MESMO tipo — com o critério do motivo', () => {
+  it('na 3ª do MESMO tipo NÃO oferece ainda — pede confirmação (o bot pergunta)', () => {
     expect(
       podeOferecerMotos(s({ mensagem: 'mas continua cara', estadoObjecaoAnterior: OBJ('preco', 2) })),
-    ).toMatchObject({ pode: true, motivo: 'objecao_persistente', criterio: 'preco' });
+    ).toMatchObject({ pode: false, motivo: 'objecao_pedir_confirmacao' });
+  });
+
+  it('oferece SÓ depois de o cliente CONFIRMAR (já perguntamos) — com o critério do motivo', () => {
     expect(
-      podeOferecerMotos(s({ mensagem: 'essa moto esta muito rodada', estadoObjecaoAnterior: OBJ('km', 2) })),
-    ).toMatchObject({ pode: true, criterio: 'km' });
+      podeOferecerMotos(
+        s({ mensagem: 'pode mostrar', estadoObjecaoAnterior: OBJ('preco', 3), confirmouVerOpcoes: true }),
+      ),
+    ).toMatchObject({ pode: true, motivo: 'cliente_confirmou_opcoes', criterio: 'preco' });
+    // Confirmou, mas o motivo era outro → sem critério.
+    expect(
+      podeOferecerMotos(
+        s({ mensagem: 'sim', estadoObjecaoAnterior: OBJ('outro', 3), confirmouVerOpcoes: true }),
+      ),
+    ).toMatchObject({ pode: true, criterio: null });
+    // Sem confirmar (ainda na 3ª) → pergunta de novo, não mostra.
+    expect(
+      podeOferecerMotos(
+        s({ mensagem: 'e agora?', estadoObjecaoAnterior: OBJ('preco', 3), confirmouVerOpcoes: false }),
+      ),
+    ).toMatchObject({ pode: false });
   });
 
   it('MUDOU o tipo de objeção → reinicia a contagem (volta a persuadir)', () => {

@@ -175,12 +175,14 @@ import {
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import {
   avancarObjecao,
+  clienteConfirmouVer,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
   faseDoTurno,
   motivoDaObjecao,
   renderBlocoObjecao,
+  valorCitado,
   type EstadoObjecao,
   type FaseObjecao,
 } from './objecao-de-valor';
@@ -2836,6 +2838,20 @@ async function executarTurnoDoAgente(
     motivoObjecaoTurno !== null
       ? faseDoTurno(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno)
       : null;
+  // Já perguntamos ("é só essa ou posso mostrar outras?") na 3ª objeção e o
+  // cliente CONFIRMOU → só agora a oferta sai. Até confirmar, NÃO se mostra.
+  const confirmouOpcoes =
+    (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && clienteConfirmouVer(mensagemDoJob);
+  // Valor (R$) que o cliente citou NESTE turno — vira limite máximo da oferta de
+  // preço (evita mandar moto acima da proposta, ex.: 41 mil para quem deu 27 mil).
+  const valorPropostaTurno = ehObjecaoTurno ? valorCitado(mensagemDoJob) : null;
+  // Bloco do turno: a fase da objeção OU o "mostrar" (cliente confirmou a oferta).
+  const blocoObjecaoTurno =
+    ehObjecaoTurno && faseObjecaoTurno !== null
+      ? renderBlocoObjecao(faseObjecaoTurno)
+      : confirmouOpcoes
+        ? renderBlocoObjecao('mostrar')
+        : '';
   // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
   // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
   // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
@@ -2854,6 +2870,7 @@ async function executarTurnoDoAgente(
       temEscolhaTravada: catalogoDaConversa.escolhida !== null,
       estadoObjecaoAnterior: catalogoDaConversa.objecao,
       pediuOutraMoto: false,
+      confirmouVerOpcoes: confirmouOpcoes,
     } satisfies SinaisDeOferta);
   // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
   // (ex.: "quero uma moto barata") e não há moto atual → a ação do turno é
@@ -3800,6 +3817,7 @@ async function executarTurnoDoAgente(
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
           estadoObjecaoAnterior: catalogoDaConversa.objecao,
           pediuOutraMoto,
+          confirmouVerOpcoes: confirmouOpcoes,
         });
         const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
         // DIAGNÓSTICO: registra as ENTRADAS da régua neste turno — sem isto não há
@@ -3817,6 +3835,8 @@ async function executarTurnoDoAgente(
           ehObjecao: ehObjecaoValor(mensagemDoJob ?? ''),
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
           estadoObjecaoAnterior: catalogoDaConversa.objecao,
+          confirmouVerOpcoes: confirmouOpcoes,
+          valorProposta: valorPropostaTurno,
         });
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
@@ -4054,6 +4074,14 @@ async function executarTurnoDoAgente(
               const pref = preferenciaDoCriterio(decisaoOferta.criterio);
               if (coluna !== null && pref !== null) criteriosDoTurno[coluna] = pref;
             }
+            // LIMITE DE PREÇO: se o cliente informou um valor/proposta, a oferta NÃO
+            // passa dele (evita mandar moto de R$ 41 mil para quem propôs R$ 27 mil).
+            const valorLimite =
+              valorPropostaTurno ?? catalogoDaConversa.objecao?.valorProposta ?? null;
+            if (valorLimite !== null && mapeamento !== null) {
+              const colunaPreco = colunaDoPapel(mapeamento, 'preco');
+              if (colunaPreco !== null) faixasDoTurno = { ...faixasDoTurno, [colunaPreco]: { max: valorLimite } };
+            }
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
@@ -4209,7 +4237,12 @@ async function executarTurnoDoAgente(
                   moto: motoDaObjecao
                     ? normalizarNomeDeMoto(motoDaObjecao.valores?.nome ?? motoDaObjecao.nome)
                     : '',
-                  ...avancarObjecao(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno),
+                  ...avancarObjecao(
+                    catalogoDaConversa.objecao,
+                    motivoObjecaoTurno,
+                    descontoTurno,
+                    valorPropostaTurno,
+                  ),
                 }
               : undefined;
         if (
@@ -5457,8 +5490,9 @@ async function executarTurnoDoAgente(
         descricaoDaMoto,
       }),
       fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
-      // C-071: fase da OBJEÇÃO DE VALOR (só quando a mensagem é uma objeção).
-      faseObjecaoTurno !== null ? renderBlocoObjecao(faseObjecaoTurno) : '',
+      // C-071: bloco da OBJEÇÃO — a fase do turno OU o "mostrar" (o cliente já
+      // confirmou que quer ver as opções parecidas).
+      blocoObjecaoTurno,
       stageHintBlock,
       splitHint,
       // C-100: o cliente pede por preço SEM citar valor (ex.: "qual o preço?") e

@@ -18,7 +18,7 @@ import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 // Fase do TURNO. Duas tentativas de persuasão ('persuadir' → 'persuadir2') e, na
 // 3ª vez do MESMO tipo de objeção, 'oferecer' (libera alternativas com o aviso ao
 // responsável). 'handoff' quando o cliente insiste em desconto.
-export type FaseObjecao = 'persuadir' | 'persuadir2' | 'oferecer' | 'handoff';
+export type FaseObjecao = 'persuadir' | 'persuadir2' | 'oferecer' | 'mostrar' | 'handoff';
 
 /** O TIPO da objeção — a contagem é POR TIPO (mudou o tipo, reinicia em 1). */
 export type MotivoObjecao = 'preco' | 'km' | 'ano' | 'outro';
@@ -30,6 +30,8 @@ export interface EstadoObjecao {
   motivo: MotivoObjecao;
   /** Quantas vezes ESTE tipo de objeção já foi tratado (persistido). */
   tentativas: number;
+  /** Valor (R$) que o cliente propôs numa objeção de preço — limite da oferta. */
+  valorProposta?: number;
 }
 
 /**
@@ -72,12 +74,76 @@ export function avancarObjecao(
   anterior: EstadoObjecao | null,
   motivo: MotivoObjecao,
   desconto: boolean,
-): { motivo: MotivoObjecao; tentativas: number } {
+  valor?: number | null,
+): { motivo: MotivoObjecao; tentativas: number; valorProposta?: number } {
   if (desconto) {
-    return { motivo: anterior?.motivo ?? motivo, tentativas: anterior?.tentativas ?? 1 };
+    return {
+      motivo: anterior?.motivo ?? motivo,
+      tentativas: anterior?.tentativas ?? 1,
+      ...(anterior?.valorProposta !== undefined ? { valorProposta: anterior.valorProposta } : {}),
+    };
   }
-  if (anterior === null || anterior.motivo !== motivo) return { motivo, tentativas: 1 };
-  return { motivo, tentativas: anterior.tentativas + 1 };
+  if (anterior === null || anterior.motivo !== motivo) {
+    return { motivo, tentativas: 1, ...(valor ? { valorProposta: valor } : {}) };
+  }
+  const valorProposta = valor ?? anterior.valorProposta;
+  return { motivo, tentativas: anterior.tentativas + 1, ...(valorProposta ? { valorProposta } : {}) };
+}
+
+/**
+ * O cliente CONFIRMOU que quer ver as opções (resposta ao nosso pedido)? Só
+ * depois de confirmar é que a oferta sai (regra do dono, 2026-09-30). Negação
+ * explícita vence. Puro.
+ */
+export function clienteConfirmouVer(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  if (/\b(nao|nunca|deixa|dispensa|só essa|so essa|apenas essa|somente essa)\b/.test(n) && !/\bsim\b/.test(n)) {
+    return false;
+  }
+  return /\b(sim|pode|quero|manda|mande|mostra|mostrar|claro|bora|vamos|aceito|ok|beleza|isso|com certeza|por favor|vai|quero ver|pode mostrar|pode mandar)\b/.test(
+    n,
+  );
+}
+
+/**
+ * Extrai um VALOR em reais citado pelo cliente: "27 mil", "até 20 mil", "20k",
+ * "R$ 25.000", "25000". Ignora anos (1900–2100). Puro.
+ */
+export function valorCitado(mensagem: string): number | null {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return null;
+  // "27 mil" / "27mil"
+  let m = n.match(/\b(\d{1,3}(?:[.\s]\d{3})*|\d+)\s*mil\b/);
+  if (m) {
+    const v = parseInt(m[1]!.replace(/[.\s]/g, ''), 10);
+    if (Number.isFinite(v) && v >= 3) return v * 1000;
+  }
+  // Coloquial: "eu dou 27", "tenho 30", "pago 18" → milhares (contexto de moto).
+  m = n.match(/\b(dou|pago|tenho|faco|ofereco|proponho|chego|posso dar)\b[^\d]{0,8}(\d{2,3})\b/);
+  if (m) {
+    const v = parseInt(m[2]!, 10);
+    if (v >= 10) return v * 1000;
+  }
+  // "20k" / "20 k"
+  m = n.match(/\b(\d{2,3})\s*k\b/);
+  if (m) {
+    const v = parseInt(m[1]!, 10);
+    if (v >= 3) return v * 1000;
+  }
+  // "25.000" / "25 000"
+  m = n.match(/\b(\d{1,3}(?:[.\s]\d{3})+)\b/);
+  if (m) {
+    const v = parseInt(m[1]!.replace(/[.\s]/g, ''), 10);
+    if (Number.isFinite(v) && v >= 3000 && !(v >= 1900 && v <= 2100)) return v;
+  }
+  // "25000"
+  m = n.match(/\b(\d{4,6})\b/);
+  if (m) {
+    const v = parseInt(m[1]!, 10);
+    if (v >= 3000 && !(v >= 1900 && v <= 2100)) return v;
+  }
+  return null;
 }
 
 /**
@@ -179,14 +245,25 @@ export function renderBlocoObjecao(fase: FaseObjecao): string {
       '- Chame `crm_request_human_handoff` para encaminhar. NUNCA pergunte "posso encaminhar?".',
     ].join('\n');
   }
-  // 'oferecer' (e 'checar' legado): terceira objeção → avisa o responsável e oferece.
+  if (fase === 'mostrar') {
+    return [
+      '## Objeção — o cliente CONFIRMOU: oferecer opções',
+      'O cliente disse que QUER ver outras opções. Neste turno a oferta está LIBERADA:',
+      '- Ofereça, de forma calorosa e confiante, alternativas que ataquem EXATAMENTE o que ele reclamou: preço/parcela → MAIS EM CONTA; rodagem → menos km; ano → mais nova.',
+      '- Se ele INFORMOU um valor/proposta de preço, mostre SÓ opções DENTRO desse valor — NUNCA acima do que ele falou.',
+      '- O sistema busca e ENVIA as fotos (com legenda) junto do seu texto: anuncie em `body` que vai mostrar, SEM listar nomes.',
+      '- NUNCA pergunte se pode encaminhar.',
+    ].join('\n');
+  }
+  // 'oferecer' (3ª objeção): NÃO mostra ainda — informa o responsável e PERGUNTA.
   return [
-    '## Objeção — passo final: AVISAR o responsável e OFERECER opções que atacam o motivo',
-    'Você já tentou convencer DUAS vezes e o cliente continua na objeção. Neste turno a oferta está LIBERADA:',
-    '- PRIMEIRO diga, em UMA linha acolhedora, que vai PEDIR AO RESPONSÁVEL para ver o que pode ser feito nessa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É só um AVISO — NÃO chame `crm_request_human_handoff` e NÃO pare de atender.',
-    '- DEPOIS ofereça, de forma calorosa e confiante, alternativas que ataquem EXATAMENTE o que ele reclamou: preço/parcela → opções MAIS EM CONTA; rodagem → menos km; ano → mais nova.',
-    '- VARIE as palavras, nunca repita a mesma frase. O sistema busca e ENVIA as opções (foto + legenda) junto do seu texto: anuncie em `body` que vai mostrar, SEM listar nomes.',
-    '- Se ele quiser ESSA moto do jeito que está ("é essa", "tem como melhorar o valor?") → informe que vai pedir ao responsável a análise e chame `crm_request_human_handoff`.',
-    '- NUNCA pergunte se pode encaminhar a conversa.',
+    '## Objeção — última tentativa: avisar o responsável e PERGUNTAR antes de mostrar',
+    'Você já tentou convencer DUAS vezes e o cliente continua na objeção. Neste turno NÃO mostre motos:',
+    '- Diga, em UMA linha acolhedora, que vai PEDIR AO RESPONSÁVEL para ver o que pode ser feito nessa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É só um AVISO — NÃO chame `crm_request_human_handoff` e NÃO pare de atender.',
+    '- DEPOIS, sem enviar fotos, pergunte se é SÓ essa moto que ele tem interesse OU se você pode mostrar opções parecidas com VALORES E CONDIÇÕES diferentes.',
+    '- Se a objeção for de PREÇO, pergunte TAMBÉM qual valor ele tem em mente (a proposta dele) — "Me diz uma coisa: qual valor você tem em mente? Assim eu já te mostro o que cabe."',
+    '- NÃO chame `crm_offer_similar_motos` e NÃO envie fotos neste turno. Aguarde a resposta.',
+    '- Se ele quiser ESSA moto do jeito que está ("é essa", "não troco") → aí chame `crm_request_human_handoff`.',
+    '- NUNCA pergunte "posso encaminhar?".',
   ].join('\n');
 }
