@@ -48,6 +48,32 @@ describe('ehObjecaoValor', () => {
   });
 });
 
+describe('ehPedidoDiferente — "outra coisa" NÃO é "outra moto"', () => {
+  it('é pedido de moto diferente', () => {
+    for (const frase of [
+      'quero outra moto',
+      'tem outra?',
+      'me mostra outra opcao',
+      'quero uma mais nova',
+      'quero uma mais barata',
+    ]) {
+      expect(ehPedidoDiferente(frase), frase).toBe(true);
+    }
+  });
+
+  it('NÃO é pedido de moto (regressão ao vivo: oferecia motos)', () => {
+    for (const frase of [
+      'vi mais barato em outra loja',
+      'outro dia eu passo aí',
+      'tem outra loja em outra cidade?',
+      'outra forma de pagamento',
+      'quero ver outra coisa',
+    ]) {
+      expect(ehPedidoDiferente(frase), frase).toBe(false);
+    }
+  });
+});
+
 describe('ehPedidoDesconto', () => {
   it('reconhece pedido DIRETO de desconto/condição melhor', () => {
     for (const frase of [

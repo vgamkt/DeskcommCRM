@@ -176,6 +176,7 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import {
   ehObjecaoValor,
   ehPedidoDesconto,
+  ehPedidoDiferente,
   proximaFase,
   renderBlocoObjecao,
   type EstadoObjecao,
@@ -3725,8 +3726,11 @@ async function executarTurnoDoAgente(
         // decisão e reapresenta. Calculado ANTES da detecção para que o texto do
         // modelo (que costuma citar as novas motos) não seja lido como escolha.
         const msgClienteNorm = normalizarNomeDeMoto(mensagemDoJob ?? '');
-        const pediuOutraMoto =
-          jaApresentou && /outra|outro modelo|mais opcoes|ver mais/.test(msgClienteNorm);
+        // Usa a MESMA régua de "pedido de algo diferente" do resto do motor (com
+        // as exclusões: "outra loja/dia/cidade/pagamento" NÃO é pedido de moto).
+        // O `/outra/` solto aqui fazia "Vi mais barato em outra loja" — agregado
+        // a um turno seguinte — autorizar oferta de motos (medido ao vivo).
+        const pediuOutraMoto = jaApresentou && ehPedidoDiferente(msgClienteNorm);
         // (1) ESCOLHA do cliente — detectada INDEPENDENTE de o modelo ter declarado
         // fotos (`media_urls`). A skill manda o modelo mandar as fotos seguintes por
         // `media_urls`, e nesse caminho a escolha era PULADA: não virava trava nem
@@ -3793,16 +3797,22 @@ async function executarTurnoDoAgente(
           pediuOutraMoto,
         });
         const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
-        if (ofereceuSimilaresNesteTurno || decisaoOferta.pode) {
-          runLog.info('oferta de motos autorizada', {
-            motivo: ofereceuSimilaresNesteTurno ? 'ferramenta_semelhantes' : decisaoOferta.motivo,
-            criterio: decisaoOferta.criterio,
-          });
-        } else if (catalogoDoTurno.length > 0) {
-          runLog.info('consulta ao catálogo sem pedido do cliente: oferta bloqueada', {
-            motivo: decisaoOferta.motivo,
-          });
-        }
+        // DIAGNÓSTICO: registra as ENTRADAS da régua neste turno — sem isto não há
+        // como saber POR QUE um turno ofereceu (o motivo sozinho não mostra qual
+        // sinal disparou). Barato e observável.
+        runLog.info('régua de oferta (entradas)', {
+          mensagem: (mensagemDoJob ?? '').replace(/\s+/g, ' ').slice(0, 120),
+          motivo: ofereceuSimilaresNesteTurno ? 'ferramenta_semelhantes' : decisaoOferta.motivo,
+          pode: ofereceuSimilaresNesteTurno || decisaoOferta.pode,
+          criterio: decisaoOferta.criterio,
+          consultouCatalogo: catalogoDoTurno.length > 0,
+          maisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
+          pediuDiferente: ehPedidoDiferente(mensagemDoJob ?? ''),
+          pediuOutraMoto,
+          ehObjecao: ehObjecaoValor(mensagemDoJob ?? ''),
+          temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+          objetouAntes: catalogoDaConversa.objecao !== null,
+        });
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
           // alternativas (usado para gravar a moto de referência).

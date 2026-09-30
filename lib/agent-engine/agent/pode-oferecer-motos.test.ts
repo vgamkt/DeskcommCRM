@@ -89,6 +89,25 @@ describe('podeOferecerMotos — a régua única', () => {
     ).toMatchObject({ pode: false, motivo: 'escolha_travada' });
   });
 
+  it('qualquer forma de objeção (1ª vez) NÃO oferece — inclusive com escolha travada', () => {
+    for (const m of [
+      'achei cara',
+      'ta caro demais',
+      'vi mais barato em outra loja',
+      'nao tenho esse valor',
+      'esta muito rodada',
+      'achei antiga',
+      'vou pensar',
+      'esta salgada',
+    ]) {
+      expect(podeOferecerMotos(s({ mensagem: m })), m).toMatchObject({ pode: false });
+      // E também com uma moto travada na conversa.
+      expect(podeOferecerMotos(s({ mensagem: m, temEscolhaTravada: true })), m).toMatchObject({
+        pode: false,
+      });
+    }
+  });
+
   it('objeção que persiste NÃO oferece se for insistência em DESCONTO (é handoff)', () => {
     expect(
       podeOferecerMotos(s({ mensagem: 'me da um desconto', objetouAntes: true })),

@@ -31,8 +31,16 @@ export interface EstadoObjecao {
 export function ehPedidoDiferente(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
+  // "outra/outro" só é pedido de OUTRA MOTO quando NÃO se refere a outra coisa:
+  // "vi mais barato em outra LOJA", "outro DIA", "outra CIDADE", "outra FORMA de
+  // pagamento" não são pedido de moto — e o falso-positivo aqui disparava oferta
+  // (medido ao vivo 2026-09-30: "Vi mais barato em outra loja" → motos).
   const pedeOutra =
-    /\b(outra|outro|outras|outros|diferente|diferentes|opcao|opcoes|alternativa)\b/.test(n);
+    /\b(outra|outro|outras|outros)\b(?!\s+(?:loja|lojas|lugar|cidade|pessoa|vendedor|vendedora|atendente|consultor|dia|dias|semana|mes|horario|hora|forma|maneira|coisa|coisas|pagamento|parcela|condicao|condicoes|momento|vez|motivo|razao|duvida|pergunta|informacao|informacoes)\b)/.test(
+      n,
+    ) ||
+    /\b(diferente|diferentes|alternativa|alternativas)\b/.test(n) ||
+    /\b(opcao|opcoes)\b(?!\s+de\s+pagamento)/.test(n);
   const pedeMaisNova = /\bmais (nova|novo)\b/.test(n);
   // "mais barata" só é PEDIDO com verbo de pedido; "vi mais barato" é comparação
   // (objeção de valor, persuade) — não confundir.

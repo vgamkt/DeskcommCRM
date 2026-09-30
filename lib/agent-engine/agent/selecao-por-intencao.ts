@@ -593,7 +593,9 @@ export function querAlternativa(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
   // `car[oa]` cobre "caro" e "cara" (moto feminina: "essa está cara").
-  return /\b(car[oa]|barat\w*|desconto|preco|mais nova|mais novo|outra|outro|mud(ei|ar|ou|ando)|diferente|troc\w*|mais opcoes|outras motos|ver mais|alternativa|parecid\w*|semelhant\w*)\b/.test(
+  // `outr[ao]s?` só conta quando NÃO se refere a "outra loja/dia/cidade/forma…",
+  // que NÃO é querer outra moto (falso-positivo medido ao vivo 2026-09-30).
+  return /\b(car[oa]|barat\w*|desconto|preco|mais nova|mais novo|outr[ao]s?\b(?!\s+(?:loja|lojas|lugar|cidade|pessoa|vendedor|vendedora|atendente|consultor|dia|dias|semana|mes|horario|hora|forma|maneira|coisa|coisas|pagamento|parcela|condicao|condicoes|momento|vez|motivo|razao|duvida|pergunta|informacao|informacoes)\b)|mud(ei|ar|ou|ando)|diferente|troc\w*|mais opcoes|outras motos|ver mais|alternativa|parecid\w*|semelhant\w*)\b/.test(
     n,
   );
 }
