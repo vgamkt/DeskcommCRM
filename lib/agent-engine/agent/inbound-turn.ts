@@ -1725,6 +1725,19 @@ export async function avisarCapacidadesAusentes(
  * caminho para o turno rodar desescoltado, e a guarda de artefato
  * (`tests/unit/handoff-por-orcamento.test.ts`) conta exatamente um call site.
  */
+/**
+ * Preço numérico (R$) de uma moto do catálogo, lido de `preco` ou dos valores
+ * crus (`valores.preco`/`valores.valor`). `null` quando ausente. Entende o
+ * formato BRL ("R$ 28.990,00"). Puro — usado para NÃO oferecer acima do valor
+ * que o cliente informou.
+ */
+function precoNumericoDaMoto(m: MotoDoCatalogo): number | null {
+  const raw = m.preco ?? m.valores?.preco ?? m.valores?.valor;
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  const v = parseFloat(raw.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(v) ? v : null;
+}
+
 export async function runAgentTurn(
   deps: InboundTurnDeps,
   job: JobRow,
@@ -2842,9 +2855,10 @@ async function executarTurnoDoAgente(
   // cliente CONFIRMOU → só agora a oferta sai. Até confirmar, NÃO se mostra.
   const confirmouOpcoes =
     (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && clienteConfirmouVer(mensagemDoJob);
-  // Valor (R$) que o cliente citou NESTE turno — vira limite máximo da oferta de
-  // preço (evita mandar moto acima da proposta, ex.: 41 mil para quem deu 27 mil).
-  const valorPropostaTurno = ehObjecaoTurno ? valorCitado(mensagemDoJob) : null;
+  // Valor (R$) que o cliente citou NESTE turno — vira limite máximo da oferta
+  // (evita mandar moto acima da proposta/orçamento, ex.: 41 mil para quem deu 27
+  // mil). Independe de ser objeção: um pedido "até 20 mil" também limita.
+  const valorPropostaTurno = valorCitado(mensagemDoJob);
   // Bloco do turno: a fase da objeção OU o "mostrar" (cliente confirmou a oferta).
   const blocoObjecaoTurno =
     ehObjecaoTurno && faseObjecaoTurno !== null
@@ -4076,11 +4090,16 @@ async function executarTurnoDoAgente(
             }
             // LIMITE DE PREÇO: se o cliente informou um valor/proposta, a oferta NÃO
             // passa dele (evita mandar moto de R$ 41 mil para quem propôs R$ 27 mil).
+            // O preço pode NÃO ter papel no mapeamento (`col_preco` nulo) — por isso
+            // lemos o valor do próprio objeto da moto (`preco`/`valores`).
             const valorLimite =
               valorPropostaTurno ?? catalogoDaConversa.objecao?.valorProposta ?? null;
-            if (valorLimite !== null && mapeamento !== null) {
-              const colunaPreco = colunaDoPapel(mapeamento, 'preco');
-              if (colunaPreco !== null) faixasDoTurno = { ...faixasDoTurno, [colunaPreco]: { max: valorLimite } };
+            if (valorLimite !== null) {
+              const dentroDoValor = candidatos.filter((m) => {
+                const p = precoNumericoDaMoto(m);
+                return p !== null && p <= valorLimite;
+              });
+              if (dentroDoValor.length > 0) candidatos = dentroDoValor;
             }
             const selecao = selecionarPorIntencao({
               termoBase,
@@ -4184,7 +4203,23 @@ async function executarTurnoDoAgente(
               return planoDeFotosDasMotos(doPedido, undefined, legendaConfig);
             }
           }
-          return planoDeFotos(motos, body, catalogoDoTurno, legendaConfig);
+          // Respeita o teto de valor também nas motos que o MODELO declarou por
+          // nome (senão ele furaria o filtro do motor — ex.: 41 mil p/ quem deu 27).
+          const limiteDeclaradas =
+            valorPropostaTurno ?? catalogoDaConversa.objecao?.valorProposta ?? null;
+          const motosDeclaradas = motos ?? [];
+          const motosDoModelo =
+            limiteDeclaradas !== null
+              ? motosDeclaradas.filter((nome) => {
+                  const alvo = [...catalogoDoTurno, ...catalogoDaConversa.motos].find(
+                    (x) => x.nome === nome,
+                  );
+                  if (alvo === undefined) return true;
+                  const p = precoNumericoDaMoto(alvo);
+                  return p === null || p <= limiteDeclaradas;
+                })
+              : motosDeclaradas;
+          return planoDeFotos(motosDoModelo, body, catalogoDoTurno, legendaConfig);
         })();
         // Marca que as fotos automáticas já saíram neste turno (não repetir).
         if (planoAutomatico.length > 0) jaApresentouAutomatico = true;
