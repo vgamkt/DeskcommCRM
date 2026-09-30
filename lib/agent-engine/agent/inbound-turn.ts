@@ -174,10 +174,12 @@ import {
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import {
+  avancarObjecao,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
-  proximaFase,
+  faseDoTurno,
+  motivoDaObjecao,
   renderBlocoObjecao,
   type EstadoObjecao,
   type FaseObjecao,
@@ -2819,18 +2821,21 @@ async function executarTurnoDoAgente(
           opcoes: null,
         }
       : await carregarCatalogoDaConversa(pool, tenantId, input.conversationId);
-  // C-071: OBJEÇÃO DE VALOR — a fase do turno sai da mensagem + do estado
-  // guardado (`persuadir` na 1ª objeção; `checar` quando ela persiste). Serve
-  // para injetar o bloco que diz à IA o que fazer e para gravar a fase.
+  // C-071: OBJEÇÃO — regra do dono (2026-09-30): DUAS tentativas de persuasão por
+  // TIPO de objeção e, na TERCEIRA vez do mesmo tipo, libera oferecer outra opção
+  // (avisando o responsável). Se o tipo muda, a contagem reinicia. A fase do turno
+  // e o novo estado saem daqui; servem para injetar o bloco e persistir.
   const ehObjecaoTurno =
     mensagemDoJob.trim() !== '' && ehObjecaoValor(mensagemDoJob);
   // Pedido DIRETO de desconto/condição melhor: persuade na 1ª vez; se insistir,
   // encaminha ao consultor (não oferece outras motos).
   const descontoTurno =
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
-  const faseObjecaoTurno: FaseObjecao | null = ehObjecaoTurno
-    ? proximaFase(catalogoDaConversa.objecao?.fase ?? null, descontoTurno)
-    : null;
+  const motivoObjecaoTurno = ehObjecaoTurno ? motivoDaObjecao(mensagemDoJob) : null;
+  const faseObjecaoTurno: FaseObjecao | null =
+    motivoObjecaoTurno !== null
+      ? faseDoTurno(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno)
+      : null;
   // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
   // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
   // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
@@ -2847,7 +2852,7 @@ async function executarTurnoDoAgente(
     podeOferecerMotos({
       mensagem,
       temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-      faseObjecaoAnterior: catalogoDaConversa.objecao?.fase ?? null,
+      estadoObjecaoAnterior: catalogoDaConversa.objecao,
       pediuOutraMoto: false,
     } satisfies SinaisDeOferta);
   // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
@@ -3793,7 +3798,7 @@ async function executarTurnoDoAgente(
         const decisaoOferta = podeOferecerMotos({
           mensagem: mensagemDoJob ?? '',
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-          faseObjecaoAnterior: catalogoDaConversa.objecao?.fase ?? null,
+          estadoObjecaoAnterior: catalogoDaConversa.objecao,
           pediuOutraMoto,
         });
         const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
@@ -3811,7 +3816,7 @@ async function executarTurnoDoAgente(
           pediuOutraMoto,
           ehObjecao: ehObjecaoValor(mensagemDoJob ?? ''),
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-          faseObjecaoAnterior: catalogoDaConversa.objecao?.fase ?? null,
+          estadoObjecaoAnterior: catalogoDaConversa.objecao,
         });
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
@@ -4199,12 +4204,12 @@ async function executarTurnoDoAgente(
         const objecaoParaSalvar: EstadoObjecao | null | undefined =
           ofereceuSimilaresNesteTurno
             ? null
-            : faseObjecaoTurno !== null
+            : motivoObjecaoTurno !== null
               ? {
                   moto: motoDaObjecao
                     ? normalizarNomeDeMoto(motoDaObjecao.valores?.nome ?? motoDaObjecao.nome)
                     : '',
-                  fase: faseObjecaoTurno,
+                  ...avancarObjecao(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno),
                 }
               : undefined;
         if (

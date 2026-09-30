@@ -15,15 +15,69 @@
  */
 import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 
-// Duas tentativas de persuasão ('persuadir' → 'persuadir2') e, na 3ª objeção,
-// 'oferecer' (libera alternativas com o aviso ao responsável). 'checar' é o nome
-// LEGADO gravado por versões anteriores e vale como 'oferecer'.
-export type FaseObjecao = 'persuadir' | 'persuadir2' | 'oferecer' | 'checar' | 'handoff';
+// Fase do TURNO. Duas tentativas de persuasão ('persuadir' → 'persuadir2') e, na
+// 3ª vez do MESMO tipo de objeção, 'oferecer' (libera alternativas com o aviso ao
+// responsável). 'handoff' quando o cliente insiste em desconto.
+export type FaseObjecao = 'persuadir' | 'persuadir2' | 'oferecer' | 'handoff';
+
+/** O TIPO da objeção — a contagem é POR TIPO (mudou o tipo, reinicia em 1). */
+export type MotivoObjecao = 'preco' | 'km' | 'ano' | 'outro';
 
 export interface EstadoObjecao {
   /** Moto em foco quando a objeção começou (contexto; pode ficar vazio). */
   moto: string;
-  fase: FaseObjecao;
+  /** Tipo da objeção CORRENTE. */
+  motivo: MotivoObjecao;
+  /** Quantas vezes ESTE tipo de objeção já foi tratado (persistido). */
+  tentativas: number;
+}
+
+/**
+ * Deriva o TIPO da objeção da mensagem: preço, rodagem(km), ano ou genérica.
+ */
+export function motivoDaObjecao(mensagem: string): MotivoObjecao {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return 'outro';
+  if (/\b(car[oa]|preco|valor|desconto|barat\w*|salgad\w*|parcela\w*|custa|orcamento)\b/.test(n)) {
+    return 'preco';
+  }
+  if (/\b(rodad\w*|quilometragem|quilometros|km)\b/.test(n)) return 'km';
+  if (/\b(antig\w*|velh\w*|ano)\b/.test(n)) return 'ano';
+  return 'outro';
+}
+
+/**
+ * A FASE deste turno, a partir do estado ANTERIOR e do motivo de AGORA:
+ *  - sem estado anterior OU motivo DIFERENTE → 'persuadir' (1ª do novo motivo);
+ *  - mesmo motivo com 1 tentativa → 'persuadir2' (2ª);
+ *  - mesmo motivo com 2+ tentativas → 'oferecer' (3ª);
+ *  - insistência em DESCONTO → 'handoff'.
+ */
+export function faseDoTurno(
+  anterior: EstadoObjecao | null,
+  motivo: MotivoObjecao,
+  desconto: boolean,
+): FaseObjecao {
+  if (desconto) return 'handoff';
+  if (anterior === null || anterior.motivo !== motivo) return 'persuadir';
+  if (anterior.tentativas >= 2) return 'oferecer';
+  return 'persuadir2';
+}
+
+/**
+ * O NOVO estado a persistir depois deste turno (motivo + contagem). Mudou o
+ * motivo → reinicia em 1 ("caso mude a objeção, persiste mais duas vezes").
+ */
+export function avancarObjecao(
+  anterior: EstadoObjecao | null,
+  motivo: MotivoObjecao,
+  desconto: boolean,
+): { motivo: MotivoObjecao; tentativas: number } {
+  if (desconto) {
+    return { motivo: anterior?.motivo ?? motivo, tentativas: anterior?.tentativas ?? 1 };
+  }
+  if (anterior === null || anterior.motivo !== motivo) return { motivo, tentativas: 1 };
+  return { motivo, tentativas: anterior.tentativas + 1 };
 }
 
 /**
@@ -89,23 +143,6 @@ export function ehPedidoDesconto(mensagem: string): boolean {
     /\b(melhor|menor)\s+preco\b/.test(n) ||
     /\bfaz(er)? por menos\b/.test(n)
   );
-}
-
-/**
- * A próxima fase a partir da atual (regra do dono, 2026-09-30): DUAS tentativas
- * de quebrar a objeção e, na TERCEIRA, libera oferecer outra opção.
- *  - sem objeção anterior → `persuadir` (1ª tentativa);
- *  - já persuadiu uma vez → `persuadir2` (2ª tentativa);
- *  - já persuadiu duas vezes → `oferecer` (3ª: avisa o responsável e mostra opções);
- *  - insistência em DESCONTO → `handoff` (a IA não concede; encaminha ao consultor);
- *  - já oferecendo/handoff → mantém.
- */
-export function proximaFase(faseAtual: FaseObjecao | null, desconto: boolean): FaseObjecao {
-  if (faseAtual === null) return 'persuadir';
-  if (desconto) return 'handoff';
-  if (faseAtual === 'persuadir') return 'persuadir2';
-  if (faseAtual === 'persuadir2' || faseAtual === 'checar') return 'oferecer';
-  return faseAtual;
 }
 
 /**

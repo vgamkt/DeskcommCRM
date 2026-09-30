@@ -104,17 +104,30 @@ function ehFilaDeOpcoes(valor: unknown): valor is FilaDeOpcoes {
 /** Teto de motos guardadas por conversa — estado efêmero, não acervo. */
 export const MAX_MOTOS_GUARDADAS = 40;
 
-function ehEstadoObjecao(valor: unknown): valor is EstadoObjecao {
-  if (typeof valor !== 'object' || valor === null) return false;
-  const o = valor as { fase?: unknown; moto?: unknown };
-  return (
-    (o.fase === 'persuadir' ||
-      o.fase === 'persuadir2' ||
-      o.fase === 'oferecer' ||
-      o.fase === 'checar' ||
-      o.fase === 'handoff') &&
-    (o.moto === undefined || typeof o.moto === 'string')
-  );
+const MOTIVOS_OBJECAO = ['preco', 'km', 'ano', 'outro'] as const;
+
+/**
+ * Aceita o formato ATUAL (`{moto, motivo, tentativas}`) e converte o LEGADO
+ * (`{moto, fase}`) para o novo — assim uma conversa em andamento não perde o
+ * estado quando o motor é atualizado.
+ */
+function normalizarEstadoObjecao(valor: unknown): EstadoObjecao | null {
+  if (typeof valor !== 'object' || valor === null) return null;
+  const o = valor as { fase?: unknown; moto?: unknown; motivo?: unknown; tentativas?: unknown };
+  const moto = typeof o.moto === 'string' ? o.moto : '';
+  if (
+    typeof o.motivo === 'string' &&
+    (MOTIVOS_OBJECAO as readonly string[]).includes(o.motivo) &&
+    typeof o.tentativas === 'number'
+  ) {
+    return { moto, motivo: o.motivo as EstadoObjecao['motivo'], tentativas: o.tentativas };
+  }
+  if (typeof o.fase === 'string') {
+    const tentativas =
+      o.fase === 'persuadir' ? 1 : o.fase === 'persuadir2' ? 2 : o.fase === 'handoff' ? 1 : 3;
+    return { moto, motivo: 'outro', tentativas };
+  }
+  return null;
 }
 
 function ehMoto(valor: unknown): valor is MotoDoCatalogo {
@@ -159,7 +172,7 @@ export async function carregarCatalogoDaConversa(
         : [],
       escolhida: ehMoto(obj.escolhida) ? obj.escolhida : null,
       referencia: ehMoto(obj.referencia) ? obj.referencia : null,
-      objecao: ehEstadoObjecao(obj.objecao) ? obj.objecao : null,
+      objecao: normalizarEstadoObjecao(obj.objecao),
       opcoes: ehFilaDeOpcoes(obj.opcoes) ? obj.opcoes : null,
     };
   } catch {

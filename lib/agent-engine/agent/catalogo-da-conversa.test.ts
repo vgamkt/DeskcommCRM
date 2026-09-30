@@ -163,7 +163,7 @@ describe('salvarCatalogoDaConversa', () => {
     detalhadas: string[];
     escolhida: { nome: string } | null;
     referencia: { nome: string } | null;
-    objecao: { moto: string; fase: string } | null;
+    objecao: { moto: string; motivo: string; tentativas: number } | null;
   } {
     return JSON.parse(query.mock.calls[0]![1]![2] as string);
   }
@@ -266,9 +266,9 @@ describe('salvarCatalogoDaConversa', () => {
       null,
       undefined,
       undefined,
-      { moto: 'biz 125', fase: 'persuadir' },
+      { moto: 'biz 125', motivo: 'preco', tentativas: 1 },
     );
-    expect(payloadDe(query).objecao).toEqual({ moto: 'biz 125', fase: 'persuadir' });
+    expect(payloadDe(query).objecao).toEqual({ moto: 'biz 125', motivo: 'preco', tentativas: 1 });
 
     // A ferramenta de semelhantes LIMPA a objeção (null explícito).
     const query2 = vi.fn().mockResolvedValue({ rows: [] });
@@ -281,7 +281,7 @@ describe('salvarCatalogoDaConversa', () => {
         detalhadas: [],
         escolhida: null,
         referencia: null,
-        objecao: { moto: 'biz 125', fase: 'checar' },
+        objecao: { moto: 'biz 125', motivo: 'preco', tentativas: 2 },
         opcoes: null,
       },
       [],

@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  avancarObjecao,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
-  proximaFase,
+  faseDoTurno,
+  motivoDaObjecao,
   renderBlocoObjecao,
+  type EstadoObjecao,
 } from './objecao-de-valor';
+
+const est = (motivo: EstadoObjecao['motivo'], tentativas: number): EstadoObjecao => ({
+  moto: 'cb 300',
+  motivo,
+  tentativas,
+});
 
 describe('ehObjecaoValor', () => {
   it('reconhece objeção de valor', () => {
@@ -94,21 +103,40 @@ describe('ehPedidoDesconto', () => {
   });
 });
 
-describe('proximaFase — 2 tentativas e, na 3ª, oferece', () => {
-  it('null → persuadir; persuadir → persuadir2; persuadir2 → oferecer; oferecer → oferecer', () => {
-    expect(proximaFase(null, false)).toBe('persuadir');
-    expect(proximaFase('persuadir', false)).toBe('persuadir2');
-    expect(proximaFase('persuadir2', false)).toBe('oferecer');
-    expect(proximaFase('oferecer', false)).toBe('oferecer');
-    // 'checar' é legado → migra para 'oferecer'.
-    expect(proximaFase('checar', false)).toBe('oferecer');
+describe('motivoDaObjecao', () => {
+  it('classifica preço / rodagem / ano / genérico', () => {
+    expect(motivoDaObjecao('achei caro')).toBe('preco');
+    expect(motivoDaObjecao('essa moto esta muito rodada')).toBe('km');
+    expect(motivoDaObjecao('achei antiga')).toBe('ano');
+    expect(motivoDaObjecao('vou pensar')).toBe('outro');
+  });
+});
+
+describe('faseDoTurno — 2 tentativas POR TIPO e, na 3ª, oferece', () => {
+  it('sem estado (ou tipo novo) → persuadir; 1 tentativa do tipo → persuadir2; 2+ → oferecer', () => {
+    expect(faseDoTurno(null, 'preco', false)).toBe('persuadir');
+    // Mudou o tipo → reinicia em persuadir.
+    expect(faseDoTurno(est('km', 2), 'preco', false)).toBe('persuadir');
+    expect(faseDoTurno(est('preco', 1), 'preco', false)).toBe('persuadir2');
+    expect(faseDoTurno(est('preco', 2), 'preco', false)).toBe('oferecer');
+    expect(faseDoTurno(est('preco', 5), 'preco', false)).toBe('oferecer');
   });
 
   it('INSISTIU no desconto → handoff (a IA não concede)', () => {
-    expect(proximaFase('persuadir', true)).toBe('handoff');
-    expect(proximaFase('persuadir2', true)).toBe('handoff');
-    expect(proximaFase('oferecer', true)).toBe('handoff');
-    expect(proximaFase('handoff', true)).toBe('handoff');
+    expect(faseDoTurno(null, 'preco', true)).toBe('handoff');
+    expect(faseDoTurno(est('preco', 2), 'preco', true)).toBe('handoff');
+  });
+});
+
+describe('avancarObjecao — conta por tipo', () => {
+  it('mesmo tipo soma; tipo novo reinicia em 1; desconto preserva', () => {
+    expect(avancarObjecao(null, 'preco', false)).toEqual({ motivo: 'preco', tentativas: 1 });
+    expect(avancarObjecao(est('preco', 1), 'preco', false)).toEqual({ motivo: 'preco', tentativas: 2 });
+    expect(avancarObjecao(est('preco', 2), 'preco', false)).toEqual({ motivo: 'preco', tentativas: 3 });
+    // Mudou o motivo → 1.
+    expect(avancarObjecao(est('preco', 2), 'km', false)).toEqual({ motivo: 'km', tentativas: 1 });
+    // Desconto não incrementa.
+    expect(avancarObjecao(est('preco', 2), 'preco', true)).toEqual({ motivo: 'preco', tentativas: 2 });
   });
 });
 
@@ -128,13 +156,11 @@ describe('renderBlocoObjecao', () => {
   });
 
   it('oferecer (3ª): avisar o responsável (sem transferir) e oferecer pelo motivo', () => {
-    for (const fase of ['oferecer', 'checar'] as const) {
-      const b = renderBlocoObjecao(fase);
-      expect(b, fase).toContain('OFERECER');
-      expect(b, fase).toContain('responsável');
-      expect(b, fase).toContain('NÃO chame `crm_request_human_handoff`');
-      expect(b, fase).toContain('NUNCA pergunte se pode encaminhar');
-    }
+    const b = renderBlocoObjecao('oferecer');
+    expect(b).toContain('OFERECER');
+    expect(b).toContain('responsável');
+    expect(b).toContain('NÃO chame `crm_request_human_handoff`');
+    expect(b).toContain('NUNCA pergunte se pode encaminhar');
   });
 
   it('handoff: encaminhar sem oferecer motos nem perguntar', () => {

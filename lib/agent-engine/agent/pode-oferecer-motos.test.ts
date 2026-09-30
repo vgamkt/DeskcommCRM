@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { EstadoObjecao } from './objecao-de-valor';
 import {
   clienteRejeitouMoto,
   criterioDaObjecao,
@@ -12,7 +13,7 @@ function s(over: Partial<SinaisDeOferta> = {}): SinaisDeOferta {
   return {
     mensagem: '',
     temEscolhaTravada: false,
-    faseObjecaoAnterior: null,
+    estadoObjecaoAnterior: null,
     pediuOutraMoto: false,
     ...over,
   };
@@ -63,30 +64,39 @@ describe('podeOferecerMotos — a régua única', () => {
     expect(podeOferecerMotos(s({ mensagem: 'quero outra cor' })).pode).toBe(true);
   });
 
-  it('NÃO oferece na 1ª objeção (tentativa 1 de 2)', () => {
-    expect(podeOferecerMotos(s({ mensagem: 'achei cara', faseObjecaoAnterior: null }))).toMatchObject({
+  const OBJ = (motivo: EstadoObjecao['motivo'], tentativas: number): EstadoObjecao => ({
+    moto: '',
+    motivo,
+    tentativas,
+  });
+
+  it('NÃO oferece na 1ª objeção (tentativa 1 do tipo)', () => {
+    expect(podeOferecerMotos(s({ mensagem: 'achei cara', estadoObjecaoAnterior: null }))).toMatchObject({
       pode: false,
       motivo: 'objecao_tentativa_1',
     });
   });
 
-  it('NÃO oferece na 2ª objeção (tentativa 2 de 2) — ainda persuade', () => {
+  it('NÃO oferece na 2ª do MESMO tipo (tentativa 2) — ainda persuade', () => {
     expect(
-      podeOferecerMotos(s({ mensagem: 'mas continua cara', faseObjecaoAnterior: 'persuadir' })),
+      podeOferecerMotos(s({ mensagem: 'mas continua cara', estadoObjecaoAnterior: OBJ('preco', 1) })),
     ).toMatchObject({ pode: false, motivo: 'objecao_tentativa_2' });
   });
 
-  it('OFERECE na 3ª objeção — com o critério do motivo', () => {
+  it('OFERECE na 3ª do MESMO tipo — com o critério do motivo', () => {
     expect(
-      podeOferecerMotos(s({ mensagem: 'mas continua cara', faseObjecaoAnterior: 'persuadir2' })),
+      podeOferecerMotos(s({ mensagem: 'mas continua cara', estadoObjecaoAnterior: OBJ('preco', 2) })),
     ).toMatchObject({ pode: true, motivo: 'objecao_persistente', criterio: 'preco' });
     expect(
-      podeOferecerMotos(s({ mensagem: 'essa moto esta muito rodada', faseObjecaoAnterior: 'persuadir2' })),
+      podeOferecerMotos(s({ mensagem: 'essa moto esta muito rodada', estadoObjecaoAnterior: OBJ('km', 2) })),
     ).toMatchObject({ pode: true, criterio: 'km' });
-    // Já liberado antes ('oferecer'/'checar') → continua podendo.
+  });
+
+  it('MUDOU o tipo de objeção → reinicia a contagem (volta a persuadir)', () => {
+    // estava em preço com 2 tentativas; agora reclamou de rodagem (km, tipo novo)
     expect(
-      podeOferecerMotos(s({ mensagem: 'e o preco?', faseObjecaoAnterior: 'oferecer' })),
-    ).toMatchObject({ pode: true });
+      podeOferecerMotos(s({ mensagem: 'agora achei muito rodada', estadoObjecaoAnterior: OBJ('preco', 2) })),
+    ).toMatchObject({ pode: false, motivo: 'objecao_tentativa_1' });
   });
 
   it('NÃO oferece em assunto alheio ("De sao paulo"), travado ou não', () => {
@@ -120,7 +130,7 @@ describe('podeOferecerMotos — a régua única', () => {
 
   it('objeção que persiste NÃO oferece se for insistência em DESCONTO (é handoff)', () => {
     expect(
-      podeOferecerMotos(s({ mensagem: 'me da um desconto', faseObjecaoAnterior: 'persuadir2' })),
+      podeOferecerMotos(s({ mensagem: 'me da um desconto', estadoObjecaoAnterior: OBJ('preco', 2) })),
     ).toMatchObject({ pode: false, motivo: 'insistencia_desconto_handoff' });
   });
 

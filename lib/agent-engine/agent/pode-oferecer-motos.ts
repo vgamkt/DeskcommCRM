@@ -15,12 +15,12 @@
  *   - pediu catálogo/moto/menos ("quero uma moto", "tem uma CB 300?");
  *   - pediu para ver MAIS opções ("quero ver mais", "tem outras?");
  *   - pediu algo DIFERENTE ("quero outra cor", "queria mais nova");
- *   - a OBJEÇÃO PERSISTIU (já houve uma tentativa de persuasão antes) → aí sim
- *     oferece o que ataca o motivo (caro→mais barata, rodada→menos km, antiga→
- *     mais nova).
+ *   - o MESMO tipo de objeção já foi tratado DUAS vezes → na 3ª vez oferece o que
+ *     ataca o motivo (caro→mais barata, rodada→menos km, antiga→mais nova).
+ *     Mudou o tipo de objeção → reinicia a contagem (mais duas tentativas).
  *
  * NÃO oferece quando:
- *   - é a PRIMEIRA objeção → persuade primeiro;
+ *   - é a 1ª ou a 2ª vez do tipo de objeção → persuade;
  *   - há ESCOLHA TRAVADA e o cliente não apontou defeito nem pediu outra;
  *   - o turno é de coleta/assunto alheio ("De sao paulo");
  *   - a IA só CONSULTOU o catálogo para responder uma dúvida (isso NÃO autoriza).
@@ -33,7 +33,8 @@ import {
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
-  type FaseObjecao,
+  motivoDaObjecao,
+  type EstadoObjecao,
 } from './objecao-de-valor';
 import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 import { querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
@@ -50,15 +51,11 @@ export function preferenciaDoCriterio(c: CriterioDaOferta): 'menor' | 'maior' | 
 
 /**
  * Deriva o critério da reclamação: "achei cara" → preço menor; "muito rodada" →
- * km menor; "muito antiga" → ano maior. Puro.
+ * km menor; "muito antiga" → ano maior. Puro. (`outro` → null, sem critério.)
  */
 export function criterioDaObjecao(mensagem: string): CriterioDaOferta {
-  const n = normalizarNomeDeMoto(mensagem);
-  if (n === '') return null;
-  if (/\b(car[oa]|preco|valor|desconto|barat\w*|salgad\w*|parcela\w*|custa)\b/.test(n)) return 'preco';
-  if (/\b(rodad\w*|quilometragem|quilometros|km)\b/.test(n)) return 'km';
-  if (/\b(antig\w*|velh\w*|ano)\b/.test(n)) return 'ano';
-  return null;
+  const m = motivoDaObjecao(mensagem);
+  return m === 'outro' ? null : m;
 }
 
 /**
@@ -94,11 +91,11 @@ export interface SinaisDeOferta {
   /** Há uma moto ESCOLHIDA/travada na conversa. */
   temEscolhaTravada: boolean;
   /**
-   * A FASE da objeção registrada no turno anterior (memória da conversa):
-   * `null` = nenhuma; `persuadir` = já tentou convencer 1x; `persuadir2` = 2x;
-   * `oferecer`/`checar` = já liberou; `handoff` = encaminhado.
+   * O ESTADO da objeção no turno anterior (memória da conversa): o TIPO
+   * (`motivo`) e quantas vezes ele já foi tratado (`tentativas`). `null` =
+   * nenhuma objeção ainda.
    */
-  faseObjecaoAnterior: FaseObjecao | null;
+  estadoObjecaoAnterior: EstadoObjecao | null;
   /** O cliente pediu "ver outras" depois de já ter visto opções. */
   pediuOutraMoto: boolean;
 }
@@ -127,17 +124,17 @@ export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
     return decisao(true, 'cliente_pediu_diferente', criterioDaObjecao(msg));
   }
 
-  // 3) Objeção: DUAS tentativas de persuasão; na TERCEIRA libera a oferta.
+  // 3) Objeção: DUAS tentativas de persuasão POR TIPO; na 3ª vez do MESMO tipo,
+  //    libera a oferta. Mudou o tipo de objeção → reinicia a contagem.
   if (ehObjecaoValor(msg)) {
     // Insistência em DESCONTO é caso de handoff (C-071), não de trocar de moto.
     if (ehPedidoDesconto(msg)) return decisao(false, 'insistencia_desconto_handoff');
-    const f = s.faseObjecaoAnterior;
-    if (f === null) return decisao(false, 'objecao_tentativa_1');
-    if (f === 'persuadir') return decisao(false, 'objecao_tentativa_2');
-    if (f === 'persuadir2' || f === 'oferecer' || f === 'checar') {
+    const a = s.estadoObjecaoAnterior;
+    const mesmoTipo = a !== null && a.motivo === motivoDaObjecao(msg);
+    if (mesmoTipo && a.tentativas >= 2) {
       return decisao(true, 'objecao_persistente', criterioDaObjecao(msg));
     }
-    return decisao(false, 'objecao_handoff');
+    return decisao(false, mesmoTipo ? 'objecao_tentativa_2' : 'objecao_tentativa_1');
   }
 
   // 4) Pedido de PROCESSO (financiar/trocar/consignar/vender) é FLUXO, não

@@ -1,30 +1,36 @@
 /**
  * SIMULAÇÃO DE CONVERSA — a régua turno a turno, com o ESTADO evoluindo como
- * evoluiria numa conversa real (`faseObjecaoAnterior` e `temEscolhaTravada` são a
- * memória da conversa). Reproduz o caso medido ao vivo ("De sao paulo" → 5 motos)
- * e prova a regra do dono: DUAS tentativas de persuasão e, na TERCEIRA objeção,
- * libera oferecer outra opção.
+ * evoluiria numa conversa real (`estadoObjecaoAnterior` e `temEscolhaTravada` são
+ * a memória da conversa). Reproduz o caso medido ao vivo ("De sao paulo" → 5
+ * motos) e prova a regra do dono: DUAS tentativas de persuasão POR TIPO de
+ * objeção e, na TERCEIRA vez do mesmo tipo, libera oferecer outra opção.
  */
 import { describe, expect, it } from 'vitest';
 
-import type { FaseObjecao } from './objecao-de-valor';
+import type { EstadoObjecao, MotivoObjecao } from './objecao-de-valor';
 import { podeOferecerMotos, type SinaisDeOferta } from './pode-oferecer-motos';
 
 interface Estado {
   temEscolhaTravada: boolean;
-  faseObjecaoAnterior: FaseObjecao | null;
+  estadoObjecaoAnterior: EstadoObjecao | null;
   pediuOutraMoto: boolean;
 }
+
+const obj = (motivo: MotivoObjecao, tentativas: number): EstadoObjecao => ({
+  moto: 'cb 300',
+  motivo,
+  tentativas,
+});
 
 function rodar(estado: Estado, mensagem: string) {
   return podeOferecerMotos({ mensagem, ...estado } satisfies SinaisDeOferta);
 }
 
 describe('simulação de conversa — quando pode oferecer motos', () => {
-  it('pedido → apresenta; assunto alheio → nada; 2 objeções persuadem; 3ª oferece mais barata', () => {
+  it('pedido → apresenta; assunto alheio → nada; 2 objeções persuadem; 3ª do mesmo tipo oferece', () => {
     const estado: Estado = {
       temEscolhaTravada: false,
-      faseObjecaoAnterior: null,
+      estadoObjecaoAnterior: null,
       pediuOutraMoto: false,
     };
 
@@ -47,30 +53,29 @@ describe('simulação de conversa — quando pode oferecer motos', () => {
       motivo: 'escolha_travada',
     });
 
-    // 4) 1ª objeção de preço → persuade (não oferece).
-    expect(rodar(estado, 'achei cara')).toMatchObject({
-      pode: false,
-      motivo: 'objecao_tentativa_1',
-    });
-    // O motor grava a fase após o turno.
-    estado.faseObjecaoAnterior = 'persuadir';
+    // 4) 1ª objeção de PREÇO → persuade (não oferece).
+    expect(rodar(estado, 'achei cara')).toMatchObject({ pode: false, motivo: 'objecao_tentativa_1' });
+    estado.estadoObjecaoAnterior = obj('preco', 1);
 
-    // 5) 2ª objeção → persuade DE NOVO (ainda não oferece).
+    // 5) 2ª objeção do MESMO tipo → persuade de novo (ainda não oferece).
     expect(rodar(estado, 'mas continua cara')).toMatchObject({
       pode: false,
       motivo: 'objecao_tentativa_2',
     });
-    estado.faseObjecaoAnterior = 'persuadir2';
+    estado.estadoObjecaoAnterior = obj('preco', 2);
 
-    // 6) 3ª objeção → LIBERA, com o critério do motivo.
+    // 6) 3ª objeção do MESMO tipo → LIBERA, com o critério do motivo.
     expect(rodar(estado, 'e continua caro mesmo')).toMatchObject({
       pode: true,
       motivo: 'objecao_persistente',
       criterio: 'preco',
     });
 
-    // 7) Rejeição pontual da cor → oferece OUTRA (independe da objeção).
-    expect(rodar(estado, 'nao gostei dessa cor')).toMatchObject({ pode: true });
+    // 7) Mudou o MOTIVO (rodagem) → reinicia: volta a persuadir.
+    expect(rodar(estado, 'agora achei muito rodada')).toMatchObject({
+      pode: false,
+      motivo: 'objecao_tentativa_1',
+    });
 
     // 8) Pedido de processo (financiar) → NÃO oferece catálogo.
     expect(rodar(estado, 'quero financiar')).toMatchObject({
@@ -79,14 +84,14 @@ describe('simulação de conversa — quando pode oferecer motos', () => {
     });
   });
 
-  it('insistência em desconto → NÃO oferece (handoff), em qualquer fase', () => {
-    for (const fase of [null, 'persuadir', 'persuadir2'] as const) {
-      const estado: Estado = {
+  it('insistência em desconto → NÃO oferece (handoff), qualquer que seja o estado', () => {
+    for (const estado of [null, obj('preco', 1), obj('preco', 2)]) {
+      const e: Estado = {
         temEscolhaTravada: true,
-        faseObjecaoAnterior: fase,
+        estadoObjecaoAnterior: estado,
         pediuOutraMoto: false,
       };
-      expect(rodar(estado, 'me da um desconto'), String(fase)).toMatchObject({
+      expect(rodar(e, 'me da um desconto'), JSON.stringify(estado)).toMatchObject({
         pode: false,
         motivo: 'insistencia_desconto_handoff',
       });
@@ -96,7 +101,7 @@ describe('simulação de conversa — quando pode oferecer motos', () => {
   it('"quero ver mais opções" reabre mesmo com escolha travada', () => {
     const estado: Estado = {
       temEscolhaTravada: true,
-      faseObjecaoAnterior: null,
+      estadoObjecaoAnterior: null,
       pediuOutraMoto: false,
     };
     expect(rodar(estado, 'quero ver mais opções')).toMatchObject({
