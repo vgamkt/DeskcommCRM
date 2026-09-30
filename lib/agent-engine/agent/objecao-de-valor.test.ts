@@ -94,33 +94,47 @@ describe('ehPedidoDesconto', () => {
   });
 });
 
-describe('proximaFase', () => {
-  it('null → persuadir; persuadir + genérico → checar; checar + genérico → checar', () => {
+describe('proximaFase — 2 tentativas e, na 3ª, oferece', () => {
+  it('null → persuadir; persuadir → persuadir2; persuadir2 → oferecer; oferecer → oferecer', () => {
     expect(proximaFase(null, false)).toBe('persuadir');
-    expect(proximaFase('persuadir', false)).toBe('checar');
-    expect(proximaFase('checar', false)).toBe('checar');
+    expect(proximaFase('persuadir', false)).toBe('persuadir2');
+    expect(proximaFase('persuadir2', false)).toBe('oferecer');
+    expect(proximaFase('oferecer', false)).toBe('oferecer');
+    // 'checar' é legado → migra para 'oferecer'.
+    expect(proximaFase('checar', false)).toBe('oferecer');
   });
 
-  it('INSISTIU no desconto → handoff (a persuasão falhou)', () => {
+  it('INSISTIU no desconto → handoff (a IA não concede)', () => {
     expect(proximaFase('persuadir', true)).toBe('handoff');
-    expect(proximaFase('checar', true)).toBe('handoff');
+    expect(proximaFase('persuadir2', true)).toBe('handoff');
+    expect(proximaFase('oferecer', true)).toBe('handoff');
     expect(proximaFase('handoff', true)).toBe('handoff');
   });
 });
 
 describe('renderBlocoObjecao', () => {
-  it('persuadir: justificar e NÃO oferecer outra moto', () => {
+  it('persuadir (1ª): justificar e NÃO oferecer outra moto', () => {
     const b = renderBlocoObjecao('persuadir');
     expect(b).toContain('JUSTIFICAR');
     expect(b).toContain('procedência');
     expect(b).toContain('NÃO ofereça outra moto');
   });
 
-  it('checar: oferecer variando a frase e NUNCA pedir para encaminhar', () => {
-    const b = renderBlocoObjecao('checar');
-    expect(b).toContain('OFERECER');
-    expect(b).toContain('VARIE');
-    expect(b).toContain('NUNCA pergunte se pode encaminhar');
+  it('persuadir2 (2ª): ângulo diferente e AINDA não oferecer', () => {
+    const b = renderBlocoObjecao('persuadir2');
+    expect(b).toContain('tentativa 2');
+    expect(b).toContain('ÂNGULO DIFERENTE');
+    expect(b).toContain('NÃO ofereça outra moto');
+  });
+
+  it('oferecer (3ª): avisar o responsável (sem transferir) e oferecer pelo motivo', () => {
+    for (const fase of ['oferecer', 'checar'] as const) {
+      const b = renderBlocoObjecao(fase);
+      expect(b, fase).toContain('OFERECER');
+      expect(b, fase).toContain('responsável');
+      expect(b, fase).toContain('NÃO chame `crm_request_human_handoff`');
+      expect(b, fase).toContain('NUNCA pergunte se pode encaminhar');
+    }
   });
 
   it('handoff: encaminhar sem oferecer motos nem perguntar', () => {

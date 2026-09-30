@@ -108,7 +108,11 @@ function ehEstadoObjecao(valor: unknown): valor is EstadoObjecao {
   if (typeof valor !== 'object' || valor === null) return false;
   const o = valor as { fase?: unknown; moto?: unknown };
   return (
-    (o.fase === 'persuadir' || o.fase === 'checar' || o.fase === 'handoff') &&
+    (o.fase === 'persuadir' ||
+      o.fase === 'persuadir2' ||
+      o.fase === 'oferecer' ||
+      o.fase === 'checar' ||
+      o.fase === 'handoff') &&
     (o.moto === undefined || typeof o.moto === 'string')
   );
 }

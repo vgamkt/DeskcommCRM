@@ -29,7 +29,12 @@
  * motor (apresentação automática) E pelas ferramentas da IA (`send_message` com
  * `motos`, `crm_offer_similar_motos`): nenhum caminho oferece sem passar aqui.
  */
-import { ehObjecaoValor, ehPedidoDesconto, ehPedidoDiferente } from './objecao-de-valor';
+import {
+  ehObjecaoValor,
+  ehPedidoDesconto,
+  ehPedidoDiferente,
+  type FaseObjecao,
+} from './objecao-de-valor';
 import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 import { querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
 
@@ -88,8 +93,12 @@ export interface SinaisDeOferta {
   mensagem: string;
   /** Há uma moto ESCOLHIDA/travada na conversa. */
   temEscolhaTravada: boolean;
-  /** Já houve uma OBJEÇÃO registrada num turno anterior (persistiu). */
-  objetouAntes: boolean;
+  /**
+   * A FASE da objeção registrada no turno anterior (memória da conversa):
+   * `null` = nenhuma; `persuadir` = já tentou convencer 1x; `persuadir2` = 2x;
+   * `oferecer`/`checar` = já liberou; `handoff` = encaminhado.
+   */
+  faseObjecaoAnterior: FaseObjecao | null;
   /** O cliente pediu "ver outras" depois de já ter visto opções. */
   pediuOutraMoto: boolean;
 }
@@ -118,12 +127,17 @@ export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
     return decisao(true, 'cliente_pediu_diferente', criterioDaObjecao(msg));
   }
 
-  // 3) Objeção: 1ª vez persuade; a que PERSISTE libera a oferta pelo motivo.
+  // 3) Objeção: DUAS tentativas de persuasão; na TERCEIRA libera a oferta.
   if (ehObjecaoValor(msg)) {
-    if (!s.objetouAntes) return decisao(false, 'objecao_nova_persuadir');
     // Insistência em DESCONTO é caso de handoff (C-071), não de trocar de moto.
     if (ehPedidoDesconto(msg)) return decisao(false, 'insistencia_desconto_handoff');
-    return decisao(true, 'objecao_persistente', criterioDaObjecao(msg));
+    const f = s.faseObjecaoAnterior;
+    if (f === null) return decisao(false, 'objecao_tentativa_1');
+    if (f === 'persuadir') return decisao(false, 'objecao_tentativa_2');
+    if (f === 'persuadir2' || f === 'oferecer' || f === 'checar') {
+      return decisao(true, 'objecao_persistente', criterioDaObjecao(msg));
+    }
+    return decisao(false, 'objecao_handoff');
   }
 
   // 4) Pedido de PROCESSO (financiar/trocar/consignar/vender) é FLUXO, não

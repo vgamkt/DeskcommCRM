@@ -15,7 +15,10 @@
  */
 import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 
-export type FaseObjecao = 'persuadir' | 'checar' | 'handoff';
+// Duas tentativas de persuasão ('persuadir' → 'persuadir2') e, na 3ª objeção,
+// 'oferecer' (libera alternativas com o aviso ao responsável). 'checar' é o nome
+// LEGADO gravado por versões anteriores e vale como 'oferecer'.
+export type FaseObjecao = 'persuadir' | 'persuadir2' | 'oferecer' | 'checar' | 'handoff';
 
 export interface EstadoObjecao {
   /** Moto em foco quando a objeção começou (contexto; pode ficar vazio). */
@@ -89,17 +92,19 @@ export function ehPedidoDesconto(mensagem: string): boolean {
 }
 
 /**
- * A próxima fase a partir da atual:
- *  - sem objeção anterior → `persuadir` (1ª vez; justificar/convencer);
- *  - JÁ persuadiu e o cliente INSISTE no desconto → `handoff` (a persuasão falhou
- *    e a IA não pode conceder — encaminha ao consultor);
- *  - já persuadiu (objeção genérica) → `checar` (oferecer outras opções);
- *  - já checou/handoff → mantém.
+ * A próxima fase a partir da atual (regra do dono, 2026-09-30): DUAS tentativas
+ * de quebrar a objeção e, na TERCEIRA, libera oferecer outra opção.
+ *  - sem objeção anterior → `persuadir` (1ª tentativa);
+ *  - já persuadiu uma vez → `persuadir2` (2ª tentativa);
+ *  - já persuadiu duas vezes → `oferecer` (3ª: avisa o responsável e mostra opções);
+ *  - insistência em DESCONTO → `handoff` (a IA não concede; encaminha ao consultor);
+ *  - já oferecendo/handoff → mantém.
  */
 export function proximaFase(faseAtual: FaseObjecao | null, desconto: boolean): FaseObjecao {
   if (faseAtual === null) return 'persuadir';
   if (desconto) return 'handoff';
-  if (faseAtual === 'persuadir') return 'checar';
+  if (faseAtual === 'persuadir') return 'persuadir2';
+  if (faseAtual === 'persuadir2' || faseAtual === 'checar') return 'oferecer';
   return faseAtual;
 }
 
@@ -110,12 +115,22 @@ export function proximaFase(faseAtual: FaseObjecao | null, desconto: boolean): F
 export function renderBlocoObjecao(fase: FaseObjecao): string {
   if (fase === 'persuadir') {
     return [
-      '## Objeção de valor — passo 1: JUSTIFICAR e tentar convencer',
-      'O cliente questionou o preço/condição da moto mostrada. Neste turno:',
-      '- Entenda o motivo real (orçamento, valor não percebido, comparação, momento). Se estiver ambíguo, pergunte UMA coisa.',
+      '## Objeção — tentativa 1 de 2: JUSTIFICAR e tentar convencer',
+      'O cliente questionou o preço/condição/qualidade da moto mostrada. Neste turno:',
+      '- Entenda o motivo real (orçamento, valor não percebido, comparação, momento, rodagem, ano). Se estiver ambíguo, pergunte UMA coisa.',
       '- Justifique com dados REAIS do catálogo/base: especificações (ano, km, estado, cilindrada), procedência e a força da loja.',
       '- Tente convencer e termine com o próximo passo concreto.',
-      '- NÃO ofereça outra moto ainda. NÃO dê desconto.',
+      '- NÃO ofereça outra moto ainda. NÃO dê desconto. NÃO transfira ainda.',
+    ].join('\n');
+  }
+  if (fase === 'persuadir2') {
+    return [
+      '## Objeção — tentativa 2 de 2: tentar convencer de novo (AINDA não ofereça)',
+      'O cliente INSISTIU na objeção depois da sua explicação. Neste turno:',
+      '- Reconheça que entendeu e tente um ÂNGULO DIFERENTE do anterior (outro benefício REAL, comparação de mercado, custo-benefício) — não repita a mesma frase.',
+      '- Se o motivo continuar ambíguo, pergunte UMA coisa.',
+      '- Termine com o próximo passo concreto.',
+      '- NÃO ofereça outra moto ainda. NÃO dê desconto. NÃO transfira ainda.',
     ].join('\n');
   }
   if (fase === 'handoff') {
@@ -127,12 +142,13 @@ export function renderBlocoObjecao(fase: FaseObjecao): string {
       '- Chame `crm_request_human_handoff` para encaminhar. NUNCA pergunte "posso encaminhar?".',
     ].join('\n');
   }
+  // 'oferecer' (e 'checar' legado): terceira objeção → avisa o responsável e oferece.
   return [
-    '## Objeção de valor — passo 2: OFERECER opções que atacam o motivo',
-    'A justificativa não bastou e o cliente continua na objeção. Neste turno a oferta está LIBERADA:',
-    '- Ofereça, de forma calorosa e confiante, alternativas que ataquem EXATAMENTE o que ele reclamou: preço/parcela → opções MAIS EM CONTA; rodagem → menos km; ano → mais nova.',
-    '- VARIE as palavras, nunca repita a mesma frase. Exemplo de tom (não copie sempre): "Entendi — deixa eu te mostrar umas opções que cabem melhor no seu bolso."',
-    '- O sistema busca e ENVIA as opções (foto + legenda) junto do seu texto: anuncie em `body` que vai mostrar, SEM listar nomes.',
+    '## Objeção — passo final: AVISAR o responsável e OFERECER opções que atacam o motivo',
+    'Você já tentou convencer DUAS vezes e o cliente continua na objeção. Neste turno a oferta está LIBERADA:',
+    '- PRIMEIRO diga, em UMA linha acolhedora, que vai PEDIR AO RESPONSÁVEL para ver o que pode ser feito nessa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É só um AVISO — NÃO chame `crm_request_human_handoff` e NÃO pare de atender.',
+    '- DEPOIS ofereça, de forma calorosa e confiante, alternativas que ataquem EXATAMENTE o que ele reclamou: preço/parcela → opções MAIS EM CONTA; rodagem → menos km; ano → mais nova.',
+    '- VARIE as palavras, nunca repita a mesma frase. O sistema busca e ENVIA as opções (foto + legenda) junto do seu texto: anuncie em `body` que vai mostrar, SEM listar nomes.',
     '- Se ele quiser ESSA moto do jeito que está ("é essa", "tem como melhorar o valor?") → informe que vai pedir ao responsável a análise e chame `crm_request_human_handoff`.',
     '- NUNCA pergunte se pode encaminhar a conversa.',
   ].join('\n');

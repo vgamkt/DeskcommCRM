@@ -2847,7 +2847,7 @@ async function executarTurnoDoAgente(
     podeOferecerMotos({
       mensagem,
       temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-      objetouAntes: catalogoDaConversa.objecao !== null,
+      faseObjecaoAnterior: catalogoDaConversa.objecao?.fase ?? null,
       pediuOutraMoto: false,
     } satisfies SinaisDeOferta);
   // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
@@ -3786,14 +3786,14 @@ async function executarTurnoDoAgente(
         // A condição antiga entrava com `motoAtual !== null` (memória da conversa)
         // e varria o estoque em QUALQUER turno. Medido ao vivo (2026-09-29): um
         // áudio "Onde fica a loja?" recebeu 5 motos porque o cliente já havia
-        // escolhido uma antes. Ver `turno-de-catalogo.ts` para a régua completa.
+        // escolhido uma antes. Ver `pode-oferecer-motos.ts` para a régua completa.
         // RÉGUA ÚNICA. Note que `catalogoDoTurno.length > 0` (o MODELO consultou
         // o catálogo) NÃO entra mais como autorização — era o furo que fez o
         // cliente responder "De sao paulo" e receber 5 motos.
         const decisaoOferta = podeOferecerMotos({
           mensagem: mensagemDoJob ?? '',
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-          objetouAntes: catalogoDaConversa.objecao !== null,
+          faseObjecaoAnterior: catalogoDaConversa.objecao?.fase ?? null,
           pediuOutraMoto,
         });
         const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
@@ -3811,7 +3811,7 @@ async function executarTurnoDoAgente(
           pediuOutraMoto,
           ehObjecao: ehObjecaoValor(mensagemDoJob ?? ''),
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-          objetouAntes: catalogoDaConversa.objecao !== null,
+          faseObjecaoAnterior: catalogoDaConversa.objecao?.fase ?? null,
         });
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
