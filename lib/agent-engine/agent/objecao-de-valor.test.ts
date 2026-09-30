@@ -14,6 +14,11 @@ describe('ehObjecaoValor', () => {
       'Achei caro',
       'ta caro',
       'muito caro',
+      // Feminino: a moto é "ela" — "esta cara" era o jeito mais comum e passava
+      // batido (medido ao vivo 2026-09-30).
+      'Esta cara',
+      'ta cara demais',
+      'essa moto esta muito cara',
       'nao tenho esse valor',
       'vi mais barato',
       'vou pensar',

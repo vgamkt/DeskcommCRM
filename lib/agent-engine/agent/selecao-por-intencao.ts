@@ -592,7 +592,8 @@ export function selecionarPorIntencao(
 export function querAlternativa(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
-  return /\b(caro|barat\w*|desconto|preco|mais nova|mais novo|outra|outro|mud(ei|ar|ou|ando)|diferente|troc\w*|mais opcoes|outras motos|ver mais|alternativa|parecid\w*|semelhant\w*)\b/.test(
+  // `car[oa]` cobre "caro" e "cara" (moto feminina: "essa está cara").
+  return /\b(car[oa]|barat\w*|desconto|preco|mais nova|mais novo|outra|outro|mud(ei|ar|ou|ando)|diferente|troc\w*|mais opcoes|outras motos|ver mais|alternativa|parecid\w*|semelhant\w*)\b/.test(
     n,
   );
 }

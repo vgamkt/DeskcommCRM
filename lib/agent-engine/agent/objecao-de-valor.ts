@@ -52,7 +52,13 @@ export function ehObjecaoValor(mensagem: string): boolean {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return false;
   if (ehPedidoDiferente(mensagem)) return false;
-  return /\b(caro|preco|desconto|barat\w*|parcela\w*|valor|nao tenho|fora do|orcamento|pensar)\b/.test(n);
+  // `car[oa]`: "caro" E "cara" (a moto é FEMININA — "essa moto está cara" é o
+  // jeito mais comum de reclamar de preço). Antes só "caro" casava, e "esta cara"
+  // passava batido: o motor oferecia outras motos em vez de tratar a objeção
+  // (medido ao vivo 2026-09-30).
+  return /\b(car[oa]|preco|desconto|barat\w*|parcela\w*|valor|nao tenho|fora do|orcamento|pensar|salgad\w*)\b/.test(
+    n,
+  );
 }
 
 /**
