@@ -56,7 +56,10 @@ export function ehObjecaoValor(mensagem: string): boolean {
   // jeito mais comum de reclamar de preço). Antes só "caro" casava, e "esta cara"
   // passava batido: o motor oferecia outras motos em vez de tratar a objeção
   // (medido ao vivo 2026-09-30).
-  return /\b(car[oa]|preco|desconto|barat\w*|parcela\w*|valor|nao tenho|fora do|orcamento|pensar|salgad\w*)\b/.test(
+  // Valor (preço) OU QUALIDADE ("muito rodada", "antiga/velha"): as duas são
+  // objeções sobre a moto mostrada — 1ª vez persuade, 2ª libera oferecer outra
+  // que ataque o motivo (rodada→menos km; antiga→mais nova).
+  return /\b(car[oa]|preco|desconto|barat\w*|parcela\w*|valor|nao tenho|fora do|orcamento|pensar|salgad\w*|rodad\w*|antig\w*|velh\w*)\b/.test(
     n,
   );
 }
@@ -117,13 +120,12 @@ export function renderBlocoObjecao(fase: FaseObjecao): string {
     ].join('\n');
   }
   return [
-    '## Objeção de valor — passo 2: OFERECER outras opções (caloroso e variado)',
-    'A justificativa não bastou e o cliente continua na objeção. Neste turno:',
-    '- Ofereça, de forma calorosa e confiante, outras opções parecidas — VARIE as palavras, nunca repita a mesma frase.',
-    '- Exemplo de tom (não copie sempre): "Eu tenho algumas opções com especificações parecidas aqui na loja que tenho certeza que você vai gostar — quer que eu te mostre?"',
-    '- NÃO liste motos ainda (o sistema envia depois, quando o cliente quiser ver).',
-    '- Se ele QUISER ver → chame `crm_offer_similar_motos`.',
-    '- Se ele quiser ESSA moto ("é essa", "tem como melhorar o valor?") → informe que vai pedir ao responsável a análise e chame `crm_request_human_handoff`.',
+    '## Objeção de valor — passo 2: OFERECER opções que atacam o motivo',
+    'A justificativa não bastou e o cliente continua na objeção. Neste turno a oferta está LIBERADA:',
+    '- Ofereça, de forma calorosa e confiante, alternativas que ataquem EXATAMENTE o que ele reclamou: preço/parcela → opções MAIS EM CONTA; rodagem → menos km; ano → mais nova.',
+    '- VARIE as palavras, nunca repita a mesma frase. Exemplo de tom (não copie sempre): "Entendi — deixa eu te mostrar umas opções que cabem melhor no seu bolso."',
+    '- O sistema busca e ENVIA as opções (foto + legenda) junto do seu texto: anuncie em `body` que vai mostrar, SEM listar nomes.',
+    '- Se ele quiser ESSA moto do jeito que está ("é essa", "tem como melhorar o valor?") → informe que vai pedir ao responsável a análise e chame `crm_request_human_handoff`.',
     '- NUNCA pergunte se pode encaminhar a conversa.',
   ].join('\n');
 }

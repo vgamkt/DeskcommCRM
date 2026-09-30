@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  clienteRejeitouMoto,
+  criterioDaObjecao,
+  podeOferecerMotos,
+  preferenciaDoCriterio,
+  type SinaisDeOferta,
+} from './pode-oferecer-motos';
+
+function s(over: Partial<SinaisDeOferta> = {}): SinaisDeOferta {
+  return {
+    mensagem: '',
+    temEscolhaTravada: false,
+    objetouAntes: false,
+    pediuOutraMoto: false,
+    ...over,
+  };
+}
+
+describe('criterioDaObjecao', () => {
+  it('caro/cara/desconto → preço (menor)', () => {
+    expect(criterioDaObjecao('achei cara')).toBe('preco');
+    expect(criterioDaObjecao('ta caro demais')).toBe('preco');
+    expect(preferenciaDoCriterio('preco')).toBe('menor');
+  });
+  it('rodada/km → km (menor); antiga → ano (maior)', () => {
+    expect(criterioDaObjecao('essa moto esta muito rodada')).toBe('km');
+    expect(preferenciaDoCriterio('km')).toBe('menor');
+    expect(criterioDaObjecao('achei muito antiga')).toBe('ano');
+    expect(preferenciaDoCriterio('ano')).toBe('maior');
+  });
+  it('sem critério claro → null', () => {
+    expect(criterioDaObjecao('bom dia')).toBeNull();
+    expect(preferenciaDoCriterio(null)).toBeNull();
+  });
+});
+
+describe('clienteRejeitouMoto', () => {
+  it('reconhece rejeição pontual', () => {
+    for (const m of ['nao gostei dessa cor', 'nao curti essa', 'nao era essa', 'prefiro outra']) {
+      expect(clienteRejeitouMoto(m), m).toBe(true);
+    }
+  });
+  it('não confunde com objeção de preço ou assunto alheio', () => {
+    expect(clienteRejeitouMoto('achei cara')).toBe(false);
+    expect(clienteRejeitouMoto('de sao paulo')).toBe(false);
+  });
+});
+
+describe('podeOferecerMotos — a régua única', () => {
+  it('PODE quando o cliente pede catálogo/moto', () => {
+    expect(podeOferecerMotos(s({ mensagem: 'quero uma moto ate 20 mil' }))).toMatchObject({
+      pode: true,
+      motivo: 'cliente_pediu_catalogo',
+    });
+    expect(podeOferecerMotos(s({ mensagem: 'tem uma CB 300?' })).pode).toBe(true);
+  });
+
+  it('PODE quando pede mais opções ou rejeita um ponto', () => {
+    expect(podeOferecerMotos(s({ mensagem: 'quero ver mais opções' })).pode).toBe(true);
+    expect(podeOferecerMotos(s({ mensagem: 'nao gostei dessa cor' })).pode).toBe(true);
+    expect(podeOferecerMotos(s({ mensagem: 'quero outra cor' })).pode).toBe(true);
+  });
+
+  it('NÃO oferece na 1ª objeção — persuade primeiro', () => {
+    expect(podeOferecerMotos(s({ mensagem: 'achei cara', objetouAntes: false }))).toMatchObject({
+      pode: false,
+      motivo: 'objecao_nova_persuadir',
+    });
+  });
+
+  it('OFERECE quando a objeção PERSISTE — com o critério do motivo', () => {
+    expect(
+      podeOferecerMotos(s({ mensagem: 'mas continua cara', objetouAntes: true })),
+    ).toMatchObject({ pode: true, motivo: 'objecao_persistente', criterio: 'preco' });
+    expect(
+      podeOferecerMotos(s({ mensagem: 'essa moto esta muito rodada', objetouAntes: true })),
+    ).toMatchObject({ pode: true, criterio: 'km' });
+  });
+
+  it('NÃO oferece em assunto alheio ("De sao paulo"), travado ou não', () => {
+    expect(podeOferecerMotos(s({ mensagem: 'De sao paulo' }))).toMatchObject({
+      pode: false,
+      motivo: 'sem_pedido_do_cliente',
+    });
+    expect(
+      podeOferecerMotos(s({ mensagem: 'De sao paulo', temEscolhaTravada: true })),
+    ).toMatchObject({ pode: false, motivo: 'escolha_travada' });
+  });
+
+  it('objeção que persiste NÃO oferece se for insistência em DESCONTO (é handoff)', () => {
+    expect(
+      podeOferecerMotos(s({ mensagem: 'me da um desconto', objetouAntes: true })),
+    ).toMatchObject({ pode: false, motivo: 'insistencia_desconto_handoff' });
+  });
+
+  it('NÃO oferece com escolha travada, a menos que o cliente queira outra', () => {
+    expect(podeOferecerMotos(s({ mensagem: 'ok', temEscolhaTravada: true })).pode).toBe(false);
+    expect(
+      podeOferecerMotos(s({ mensagem: 'quero outra cor', temEscolhaTravada: true })).pode,
+    ).toBe(true);
+  });
+});

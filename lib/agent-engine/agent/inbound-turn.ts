@@ -185,11 +185,17 @@ import { extrairCriterios } from './extrair-criterios';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
 import { casaPerfil, mencionaMoto, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
-import { turnoEhDeCatalogo } from './turno-de-catalogo';
+import {
+  podeOferecerMotos,
+  preferenciaDoCriterio,
+  type DecisaoDeOferta,
+  type SinaisDeOferta,
+} from './pode-oferecer-motos';
 import {
   camposDeBusca,
   carregarCatalogoMapeamento,
   colunaDeSimilares,
+  colunaDoPapel,
   colunasDoCatalogo,
   legendaParaExibicao,
   renderBlocoCatalogo,
@@ -2831,6 +2837,18 @@ async function executarTurnoDoAgente(
     catalogoDaConversa.escolhida ??
     catalogoDaConversa.referencia ??
     (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
+  // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
+  // O motor (apresentação automática) e as ferramentas da IA (`send_message` com
+  // `motos`, `crm_offer_similar_motos`) perguntam AQUI antes de oferecer motos.
+  // `pediuOutraMoto` fica de fora nesta versão (só é conhecido dentro do
+  // `send_message`); a mensagem do cliente já cobre esse sinal na própria régua.
+  const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta =>
+    podeOferecerMotos({
+      mensagem,
+      temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+      objetouAntes: catalogoDaConversa.objecao !== null,
+      pediuOutraMoto: false,
+    } satisfies SinaisDeOferta);
   // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
   // (ex.: "quero uma moto barata") e não há moto atual → a ação do turno é
   // PERGUNTAR o orçamento, NÃO apresentar catálogo. Determinístico: só a instrução
@@ -3383,6 +3401,22 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // A régua única manda aqui também: sem sinal do cliente (pedido, rejeição
+        // ou objeção que persistiu) NÃO se buscam semelhantes. Antes a IA podia
+        // acionar esta ferramenta a qualquer momento.
+        const decisao = decidirOfertaDoTurno(mensagemDoJob ?? '');
+        if (!decisao.pode) {
+          runLog.info('oferta de semelhantes bloqueada pela régua', { motivo: decisao.motivo });
+          return {
+            ok: false,
+            error: {
+              code: 'oferta_prematura',
+              message:
+                'Neste momento NÃO ofereça outras motos. Trate a dúvida/objeção do cliente primeiro; ' +
+                'só ofereça alternativas se ele pedir, se rejeitar a moto atual ou se a objeção persistir.',
+            },
+          };
+        }
         ofereceuSimilaresNesteTurno = true;
         // O cliente quer algo parecido: a busca é do MOTOR, com a âncora na moto atual.
         intencaoDoTurno = 'alternativa';
@@ -3619,6 +3653,32 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // ─── A RÉGUA ÚNICA no envio ───────────────────────────────────────────
+        // O modelo NÃO pode OFERECER motos do catálogo (argumento `motos`) por
+        // conta própria: sem sinal do cliente, a régua barra. É o 2º caminho de
+        // vazamento, além da apresentação automática. Com o sinal OK (pedido,
+        // rejeição, objeção que persistiu) ou após `crm_offer_similar_motos`
+        // (que já passou pela régua), segue normalmente.
+        const decisaoMotosDeclaradas = decidirOfertaDoTurno(mensagemDoJob ?? '');
+        if (
+          (motos ?? []).length > 0 &&
+          !decisaoMotosDeclaradas.pode &&
+          !ofereceuSimilaresNesteTurno
+        ) {
+          runLog.info('oferta de motos do modelo bloqueada pela régua', {
+            motivo: decisaoMotosDeclaradas.motivo,
+          });
+          return {
+            ok: false,
+            error: {
+              code: 'oferta_prematura',
+              message:
+                'Não ofereça motos agora: o cliente não pediu para ver opções, não rejeitou a moto ' +
+                'atual nem repetiu a objeção. Responda o que ele perguntou; se for o caso, ofereça ' +
+                'opções só quando ele pedir ou quando a objeção persistir.',
+            },
+          };
+        }
         // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
         // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
         // C-107: preço sem valor → nenhuma foto sai neste turno (só a pergunta).
@@ -3686,18 +3746,63 @@ async function executarTurnoDoAgente(
           motoDetalhadaNome = escolhidaNesteTurno.nome;
           escolhaDetectadaNesteTurno = escolhidaNesteTurno;
         }
+        // 3º caminho de vazamento: o modelo manda as FOTOS do catálogo por
+        // `media_urls` (em vez de `motos`). Se NÃO houve escolha do cliente, NÃO
+        // se usou a ferramenta de semelhantes e a régua nega, isto é oferta
+        // disfarçada — barra. (As fotos da moto ESCOLHIDA seguem liberadas.)
+        if (
+          escolhidaNesteTurno === undefined &&
+          !ofereceuSimilaresNesteTurno &&
+          fotosDeclaradas.length > 0
+        ) {
+          const fotosDoCatalogo = new Set<string>();
+          for (const m of [...catalogoDoTurno, ...catalogoDaConversa.motos]) {
+            for (const f of m.fotos) fotosDoCatalogo.add(f);
+          }
+          const oferecendoCatalogo = fotosDeclaradas.some((f) => fotosDoCatalogo.has(f));
+          if (oferecendoCatalogo) {
+            const d = decidirOfertaDoTurno(mensagemDoJob ?? '');
+            if (!d.pode) {
+              runLog.info('fotos do catálogo por media_urls bloqueadas pela régua', {
+                motivo: d.motivo,
+              });
+              return {
+                ok: false,
+                error: {
+                  code: 'oferta_prematura',
+                  message:
+                    'Não envie fotos do catálogo agora: o cliente não pediu para ver motos. Responda o ' +
+                    'que ele perguntou; só mostre motos quando ele pedir ou quando a objeção persistir.',
+                },
+              };
+            }
+          }
+        }
         // ─── TRAVA: só é turno de catálogo com SINAL de moto NESTE turno ───────
         // A condição antiga entrava com `motoAtual !== null` (memória da conversa)
         // e varria o estoque em QUALQUER turno. Medido ao vivo (2026-09-29): um
         // áudio "Onde fica a loja?" recebeu 5 motos porque o cliente já havia
         // escolhido uma antes. Ver `turno-de-catalogo.ts` para a régua completa.
-        const turnoDeCatalogo = turnoEhDeCatalogo({
-          catalogoConsultadoNoTurno: catalogoDoTurno.length > 0,
-          ofereceuSimilaresPelaFerramenta: ofereceuSimilaresNesteTurno,
-          pediuOutraMoto,
-          temMotoAtual: motoAtualDaConversa !== null,
+        // RÉGUA ÚNICA. Note que `catalogoDoTurno.length > 0` (o MODELO consultou
+        // o catálogo) NÃO entra mais como autorização — era o furo que fez o
+        // cliente responder "De sao paulo" e receber 5 motos.
+        const decisaoOferta = podeOferecerMotos({
           mensagem: mensagemDoJob ?? '',
+          temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+          objetouAntes: catalogoDaConversa.objecao !== null,
+          pediuOutraMoto,
         });
+        const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
+        if (ofereceuSimilaresNesteTurno || decisaoOferta.pode) {
+          runLog.info('oferta de motos autorizada', {
+            motivo: ofereceuSimilaresNesteTurno ? 'ferramenta_semelhantes' : decisaoOferta.motivo,
+            criterio: decisaoOferta.criterio,
+          });
+        } else if (catalogoDoTurno.length > 0) {
+          runLog.info('consulta ao catálogo sem pedido do cliente: oferta bloqueada', {
+            motivo: decisaoOferta.motivo,
+          });
+        }
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
           // alternativas (usado para gravar a moto de referência).
@@ -3926,6 +4031,14 @@ async function executarTurnoDoAgente(
                     (typeof o.min === 'number' || typeof o.max === 'number')
                   );
                 }));
+            // OBJEÇÃO PERSISTENTE: a oferta ataca o MOTIVO da reclamação — "caro" →
+            // mais barata; "muito rodada" → menos km; "antiga" → mais nova. Vira
+            // uma PREFERÊNCIA de ranqueamento na coluna de papel correspondente.
+            if (decisaoOferta.criterio !== null && mapeamento !== null) {
+              const coluna = colunaDoPapel(mapeamento, decisaoOferta.criterio);
+              const pref = preferenciaDoCriterio(decisaoOferta.criterio);
+              if (coluna !== null && pref !== null) criteriosDoTurno[coluna] = pref;
+            }
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,

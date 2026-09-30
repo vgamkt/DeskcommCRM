@@ -9,14 +9,13 @@ function sinais(over: Partial<SinaisDoTurnoDeCatalogo> = {}): SinaisDoTurnoDeCat
     pediuOutraMoto: false,
     temMotoAtual: false,
     mensagem: '',
+    objetouAntes: false,
     ...over,
   };
 }
 
-describe('turnoEhDeCatalogo — não despeja motos sem intenção', () => {
+describe('turnoEhDeCatalogo — não despeja motos sem intenção (fachada da régua)', () => {
   it('o DEFEITO medido: moto atual + "onde fica a loja?" NÃO é turno de catálogo', () => {
-    // O cliente já escolheu uma moto (memória) e perguntou o endereço. A versão
-    // antiga (`motoAtual !== null`) mandava 5 fotos antes da resposta.
     expect(
       turnoEhDeCatalogo(sinais({ temMotoAtual: true, mensagem: 'Onde fica a loja?' })),
     ).toBe(false);
@@ -28,10 +27,15 @@ describe('turnoEhDeCatalogo — não despeja motos sem intenção', () => {
     }
   });
 
-  it('o MODELO consultou o catálogo agora → é turno de catálogo', () => {
+  it('o MODELO consultar o catálogo NÃO autoriza sozinho (o furo "De sao paulo" → 5 motos)', () => {
     expect(turnoEhDeCatalogo(sinais({ catalogoConsultadoNoTurno: true, mensagem: 'oi' }))).toBe(
-      true,
+      false,
     );
+    expect(
+      turnoEhDeCatalogo(
+        sinais({ catalogoConsultadoNoTurno: true, mensagem: 'De sao paulo', temMotoAtual: true }),
+      ),
+    ).toBe(false);
   });
 
   it('a ferramenta de semelhantes foi usada → é turno de catálogo', () => {
@@ -53,7 +57,6 @@ describe('turnoEhDeCatalogo — não despeja motos sem intenção', () => {
   });
 
   it('pedido de PROCESSO NÃO é turno de catálogo, mesmo citando "moto" ou com verbo de pedido', () => {
-    // "Quero financiar" disparava 5 fotos de motos (medido ao vivo 2026-09-29).
     for (const m of [
       'Quero financiar',
       'quero parcelar em 12x',
@@ -66,12 +69,11 @@ describe('turnoEhDeCatalogo — não despeja motos sem intenção', () => {
     }
   });
 
-  it('objeção de valor ("achei caro") NÃO é turno de catálogo — persuade primeiro (C-071)', () => {
+  it('objeção NOVA ("achei caro") NÃO é turno de catálogo — persuade primeiro (C-071)', () => {
     expect(turnoEhDeCatalogo(sinais({ temMotoAtual: true, mensagem: 'achei caro' }))).toBe(false);
     expect(turnoEhDeCatalogo(sinais({ temMotoAtual: true, mensagem: 'ta caro demais' }))).toBe(
       false,
     );
-    // O DEFEITO medido ao vivo: a objeção CITA "moto" e disparava o despejo.
     expect(
       turnoEhDeCatalogo(
         sinais({ temMotoAtual: true, mensagem: 'Achei caro, essa moto esta muito rodada?' }),
@@ -83,5 +85,23 @@ describe('turnoEhDeCatalogo — não despeja motos sem intenção', () => {
         sinais({ temMotoAtual: true, mensagem: 'achei caro, quero ver mais opções' }),
       ),
     ).toBe(true);
+  });
+
+  it('objeção que PERSISTE → é turno de catálogo (oferece o que ataca o motivo)', () => {
+    expect(
+      turnoEhDeCatalogo(
+        sinais({ temMotoAtual: true, mensagem: 'mas continua caro', objetouAntes: true }),
+      ),
+    ).toBe(true);
+    // Insistência em DESCONTO é handoff, não troca de moto.
+    expect(
+      turnoEhDeCatalogo(
+        sinais({
+          temMotoAtual: true,
+          mensagem: 'me da um desconto',
+          objetouAntes: true,
+        }),
+      ),
+    ).toBe(false);
   });
 });
