@@ -78,6 +78,12 @@ Corrigir, no sistema de atendimento:
 - **Release**: commit `11fa8bab` (régua) + `199b1ef9` (fix detecção/log),
   imagens **1.31.1** buildadas localmente e deployadas (`pull_policy=never`).
   GHCR continua bloqueado (sem `write:packages`).
+- **Regra final (dono, 2026-09-30)**: 2 tentativas de persuasão **por tipo** de
+  objeção; na 3ª vez do MESMO tipo, avisa que vai consultar o responsável e
+  oferece opções que atacam o motivo. Mudou o tipo → reinicia. Estado gravado em
+  `conversations.metadata.agent_catalogo.objecao = {moto, motivo, tentativas}`.
+  Validado ao vivo (1.31.3): preço(1)→0, preço(2)→0, preço(3)→oferece; km(1)→0
+  (reiniciou), km(2)→0, km(3)→oferece com aviso.
 - **Validação ao vivo (logs da régua)**: 1ª objeção (qualquer forma:
   "Ta caro", "Vi mais barato em outra loja", "Nao tenho esse valor",
   "Esta muito rodada", "Achei antiga", "Vou pensar", "Esta salgada",
