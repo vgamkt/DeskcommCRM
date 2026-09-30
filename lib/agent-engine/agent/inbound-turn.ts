@@ -4099,7 +4099,20 @@ async function executarTurnoDoAgente(
                 const p = precoNumericoDaMoto(m);
                 return p !== null && p <= valorLimite;
               });
-              if (dentroDoValor.length > 0) candidatos = dentroDoValor;
+              if (dentroDoValor.length > 0) {
+                candidatos = dentroDoValor;
+              } else {
+                // Nenhum "parecido" cabe no valor (ex.: cliente na XMax de 31.900
+                // propõe 27.000) → amplia para QUALQUER moto dentro do valor que já
+                // conhecemos — a mais barata é o que ataca a objeção de preço.
+                const amplo = mesclarMotos(catalogoDoTurno, catalogoDaConversa.motos).filter(
+                  (m) => {
+                    const p = precoNumericoDaMoto(m);
+                    return p !== null && p <= valorLimite;
+                  },
+                );
+                if (amplo.length > 0) candidatos = amplo;
+              }
             }
             const selecao = selecionarPorIntencao({
               termoBase,

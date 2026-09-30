@@ -57,6 +57,20 @@ Corrigir, no sistema de atendimento:
 - `scripts/deploy-vps.sh` — pull + up de app/worker/scheduler.
 - ⚠️ Deploy LOCAL usa `*_PULL_POLICY=never` para NÃO puxar a `:latest` antiga do GHCR.
 
+## ARMADILHA CRÍTICA do deploy nesta VPS (Traefik) — 2026-09-30
+Esta VPS usa **Traefik próprio** (`edge-traefik`, `network_mode: host`; provider
+docker com labels). O domínio `app.vgasistemas.app` é roteado pelas **labels do
+Docker** no container do app, definidas em `docker-compose.traefik.yml`. Subir só
+com `-f docker-compose.prod.yml` **recria o app sem as labels e sem a rede
+`deskcommcrm_proxy` → o site responde 404** (foi o que aconteceu e foi corrigido).
+Portanto, TODO `up -d` do app leva os DOIS arquivos:
+```
+docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d --no-deps app
+```
+(Só o `app` precisa; worker/scheduler não têm rota.) Validação rápida:
+`docker inspect deskcommcrm-app-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'`
+tem de listar `deskcommcrm_proxy`.
+
 ## Armadilha do deploy
 `docker compose up` **sem override** volta para `ghcr.io/vgamkt/deskcomm-worker:latest`
 (antigo). No deploy, **fixar** `WORKER_IMAGE`/`APP_IMAGE` (no `.env` ou num override).
