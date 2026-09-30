@@ -45,9 +45,17 @@ Corrigir, no sistema de atendimento:
 - App roda a imagem **antiga** (não conhece "groq") → o card "Groq" na tela só aparece após deploy do app.
 
 ## Pendente
-- [x] Modificação "descrição da moto em foco" — implementada e testada (109 testes das áreas + 1001 no total).
-- [ ] **Commit único de release** com tudo o que passou + item no `CHANGELOG.md`/`.changes`.
-- [ ] **Deploy app+worker juntos** (CI `main`/`v*`, ou script local com imagens versionadas).
+- [x] Modificação "descrição da moto em foco" — implementada e testada.
+- [x] **Commit de release** `fe66efa0` + tag `v1.30.0` (push feito) + `.changes/correcoes-atendimento-audio-fluxos-garantia.md`.
+- [x] **Imagens buildadas localmente** `ghcr.io/vgamkt/{deskcommcrm,deskcomm-worker,deskcomm-scheduler}:1.30.0` e `:latest`.
+- [x] **Deploy na VPS** com as imagens locais (`pull_policy=never`) — app/worker/scheduler healthy.
+- [ ] **Publicar no GHCR** — BLOQUEADO: os tokens da VPS não têm `write:packages`; o CI recusa tag fora da `main`. Falta um PAT com `write:packages` (ou merge na `main`). As imagens já estão prontas localmente; é só `docker login ghcr.io` + `docker push`.
+- [ ] (Fino) App responde `version:"local"` — no release oficial, definir `APP_VERSION`.
+
+## Scripts do processo
+- `scripts/release-local.sh <versao>` — verifica, commita, push, swap temporário, build e push GHCR.
+- `scripts/deploy-vps.sh` — pull + up de app/worker/scheduler.
+- ⚠️ Deploy LOCAL usa `*_PULL_POLICY=never` para NÃO puxar a `:latest` antiga do GHCR.
 
 ## Armadilha do deploy
 `docker compose up` **sem override** volta para `ghcr.io/vgamkt/deskcomm-worker:latest`
