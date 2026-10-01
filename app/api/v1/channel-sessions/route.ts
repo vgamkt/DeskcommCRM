@@ -17,6 +17,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { capabilitiesOf } from "@/lib/channels/capabilities";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
@@ -25,7 +26,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 export const CHANNEL_COLUMNS =
-  "id, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at";
+  "id, provider, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -54,7 +55,23 @@ export async function GET(): Promise<Response> {
   );
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  return ok(data ?? [], {
+  // `pode_enviar_grupo` é a CAPACIDADE derivada do provider, calculada aqui para
+  // a tela não precisar nomear o provider (invariante 1): só o canal por QR
+  // declara `groups: "full"`. Provider desconhecido → false (fail-closed).
+  const sessoes = (data ?? []).map((s) => {
+    const provider = (s as { provider?: string }).provider;
+    let podeEnviarGrupo = false;
+    if (provider) {
+      try {
+        podeEnviarGrupo = capabilitiesOf(provider as never).groups === "full";
+      } catch {
+        podeEnviarGrupo = false;
+      }
+    }
+    return { ...s, pode_enviar_grupo: podeEnviarGrupo };
+  });
+
+  return ok(sessoes, {
     requestId,
     ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}),
   });

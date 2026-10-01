@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 
 interface Settings {
@@ -34,6 +35,7 @@ interface Settings {
   destination_is_group: boolean;
   interval_minutes: number;
   batch_size: number;
+  instructions: string | null;
 }
 
 interface Sessao {
@@ -42,11 +44,13 @@ interface Sessao {
   phone_number: string | null;
   provider: string;
   status: string | null;
+  pode_enviar_grupo?: boolean;
 }
 
 interface RespostaGet {
   data: {
     settings: Settings;
+    prompt_padrao: string;
     sessoes: Sessao[];
     pode_editar: boolean;
   };
@@ -98,6 +102,8 @@ export function ResumoDeConversasClient() {
   const [destinoGrupo, setDestinoGrupo] = useState(false);
   const [intervalo, setIntervalo] = useState(15);
   const [lote, setLote] = useState(20);
+  const [instrucoes, setInstrucoes] = useState("");
+  const [promptPadrao, setPromptPadrao] = useState("");
 
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [credenciais, setCredenciais] = useState<Credencial[]>([]);
@@ -121,6 +127,10 @@ export function ResumoDeConversasClient() {
         setDestinoGrupo(s.destination_is_group);
         setIntervalo(s.interval_minutes);
         setLote(s.batch_size);
+        setPromptPadrao(cfg.data.prompt_padrao);
+        // A caixa É o prompt. Se ainda não houver um salvo, mostra o padrão para
+        // o dono editar (é o "transfira o prompt do sistema para a caixa").
+        setInstrucoes(s.instructions?.trim() ? s.instructions : cfg.data.prompt_padrao);
         setSessoes(cfg.data.sessoes);
         setPodeEditar(cfg.data.pode_editar);
 
@@ -150,7 +160,7 @@ export function ResumoDeConversasClient() {
     [modelos, provider],
   );
   const sessaoEscolhida = sessoes.find((s) => s.id === sessionId) ?? null;
-  const sessaoEnviaGrupo = sessaoEscolhida?.provider === "waha";
+  const sessaoEnviaGrupo = sessaoEscolhida?.pode_enviar_grupo === true;
 
   const salvar = async () => {
     setSalvando(true);
@@ -162,6 +172,7 @@ export function ResumoDeConversasClient() {
         destination_is_group: destinoGrupo,
         interval_minutes: Math.max(1, Math.min(1440, Math.trunc(intervalo) || 15)),
         batch_size: Math.max(1, Math.min(200, Math.trunc(lote) || 20)),
+        instructions: instrucoes.trim() || null,
       });
       if (provider && modelId) {
         await apiClient.put("/api/v1/ai/providers", {
@@ -201,8 +212,8 @@ export function ResumoDeConversasClient() {
           <CardTitle>Para onde avisar</CardTitle>
           <CardDescription>
             O resumo sai pelo número conectado escolhido abaixo. Em número, no canal oficial
-            (Meta/Datafy) o destino precisa ter falado com esse número nas últimas 24 horas. Em
-            grupo, só funciona por um número WAHA.
+            o destino precisa ter falado com esse número nas últimas 24 horas. Em grupo, só
+            funciona por um número por QR (não oficial).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -244,7 +255,7 @@ export function ResumoDeConversasClient() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="numero">Número de WhatsApp</SelectItem>
-                  <SelectItem value="grupo">Grupo de WhatsApp (só WAHA)</SelectItem>
+                  <SelectItem value="grupo">Grupo de WhatsApp (só por QR)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -260,12 +271,12 @@ export function ResumoDeConversasClient() {
               />
               <p className="text-xs text-muted-foreground">
                 {destinoGrupo
-                  ? "Informe o ID do grupo (@g.us). Só o número WAHA envia a grupo — confirme que ele participa do grupo."
+                  ? "Informe o ID do grupo (@g.us). Só o número por QR envia a grupo — confirme que ele participa do grupo."
                   : "Só dígitos, com DDI e DDD (ex.: 55 + DDD + número)."}
               </p>
               {destinoGrupo && !sessaoEnviaGrupo && (
                 <p className="text-xs text-amber-600 dark:text-amber-500">
-                  O número escolhido não é WAHA — envio a grupo não vai funcionar.
+                  O número escolhido não é do tipo por QR — envio a grupo não vai funcionar.
                 </p>
               )}
             </div>
@@ -302,6 +313,36 @@ export function ResumoDeConversasClient() {
                 Quantas mensagens novas entram em cada resumo (as mais recentes).
               </p>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="rs-instrucoes">Prompt do resumo</Label>
+              {podeEditar && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setInstrucoes(promptPadrao)}
+                >
+                  Restaurar texto padrão
+                </Button>
+              )}
+            </div>
+            <Textarea
+              id="rs-instrucoes"
+              value={instrucoes}
+              onChange={(e) => setInstrucoes(e.target.value)}
+              placeholder="Como a IA deve resumir..."
+              rows={10}
+              maxLength={4000}
+              disabled={!podeEditar}
+            />
+            <p className="text-xs text-muted-foreground">
+              É ESTE o texto que diz à IA como resumir. O cabeçalho (nome, cidade, CNH, moto,
+              pagamento e o link do WhatsApp) e o formato da mensagem são automáticos — aqui vai só
+              o comportamento do resumo. Vazio usa o texto padrão.
+            </p>
           </div>
         </CardContent>
       </Card>

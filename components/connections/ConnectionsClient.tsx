@@ -42,6 +42,7 @@ import {
   Warning,
 } from "@/lib/ui/icons";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
+import { rotuloDoProvedor } from "@/lib/channels/rotulos";
 import { useT } from "@/hooks/i18n/useT";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -374,7 +375,12 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                       </p>
                     )}
                   </div>
-                  <Badge variant={info.variant}>{info.label}</Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {rotuloDoProvedor(c.provider) && (
+                      <Badge variant="outline">{rotuloDoProvedor(c.provider)}</Badge>
+                    )}
+                    <Badge variant={info.variant}>{info.label}</Badge>
+                  </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {c.last_health_check_at

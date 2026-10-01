@@ -6,6 +6,15 @@ import { apiClient } from "@/lib/api/client";
 export interface ChannelSession {
   id: string;
   /**
+   * Provedor/API em que o número está conectado (waha, datafy, meta_cloud,
+   * zernio). A tela mostra o RÓTULO visível via `rotuloDoProvedor`; nenhuma
+   * feature decide comportamento por ele. Opcional porque respostas antigas (ou
+   * uma instalação à frente do código) podem não trazer o campo.
+   */
+  provider?: string;
+  /** Capacidade derivada no servidor: este canal consegue enviar a grupo? */
+  pode_enviar_grupo?: boolean;
+  /**
    * Nome da sessão no transporte. NULL no canal oficial, que não tem sessão a
    * iniciar, deslogar ou apagar — é o que distingue, na tela, quem depende do
    * serviço de WhatsApp para ser excluído. O tipo dizia `string` e mentia: um

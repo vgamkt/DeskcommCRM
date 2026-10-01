@@ -45,7 +45,7 @@ import {
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { createPool } from "@/lib/agent-engine/db/pool";
-import { gerarResumoDeConversa, montarTranscricao, type MensagemResumivel } from "@/lib/conversas/resumo";
+import { comporMensagemDoResumo, gerarResumoDeConversa, montarCabecalhoDoResumo, montarTranscricao, type MensagemResumivel } from "@/lib/conversas/resumo";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -56,7 +56,6 @@ export const runtime = "nodejs";
 /** Teto por tick — a próxima passada pega o resto. */
 const CLAIM_LIMIT = 20;
 const LEASE_SECONDS = 120;
-const BOT_SILENCIADO_ATE = "infinity";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -77,6 +76,7 @@ interface Settings {
   destination_contact_id: string | null;
   interval_minutes: number;
   batch_size: number;
+  instructions: string | null;
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -144,7 +144,7 @@ async function processarEstado(
 
   const { data: settingsRow } = await admin
     .from("conversation_summary_settings")
-    .select("enabled, channel_session_id, destination, destination_is_group, destination_contact_id, interval_minutes, batch_size")
+    .select("enabled, channel_session_id, destination, destination_is_group, destination_contact_id, interval_minutes, batch_size, instructions")
     .eq("organization_id", org)
     .maybeSingle();
   const settings = settingsRow as Settings | null;
@@ -192,20 +192,35 @@ async function processarEstado(
   );
 
   const { data: contato } = estado.contact_id
-    ? await admin.from("contacts").select("name, display_name").eq("id", estado.contact_id).maybeSingle()
+    ? await admin.from("contacts").select("name, display_name, phone_number, custom_fields").eq("id", estado.contact_id).maybeSingle()
     : { data: null };
-  const nomeContato =
-    (contato as { name: string | null; display_name: string | null } | null)?.display_name ??
-    (contato as { name: string | null } | null)?.name ??
-    null;
+  const contatoRow = contato as {
+    name: string | null;
+    display_name: string | null;
+    phone_number: string | null;
+    custom_fields: Record<string, unknown> | null;
+  } | null;
+  const nomeContato = contatoRow?.display_name ?? contatoRow?.name ?? null;
 
   const texto = await gerarResumoDeConversa(pool, {
     tenantId: org,
     nomeContato,
     resumoAnterior: estado.current_summary,
     transcricao,
+    instrucoes: settings.instructions,
   });
   if (!texto) throw new Error("resumo_vazio");
+
+  // Cabeçalho do informante: quem é o cliente + link para a conversa, acima do
+  // resumo. O resumo SALVO (current_summary) continua sendo só o texto — o
+  // cabeçalho entra apenas na mensagem enviada, para não poluir o prompt da
+  // próxima atualização.
+  const cabecalho = montarCabecalhoDoResumo({
+    nome: nomeContato,
+    telefone: contatoRow?.phone_number ?? null,
+    custom: contatoRow?.custom_fields ?? {},
+  });
+  const mensagem = comporMensagemDoResumo(cabecalho, texto);
 
   await admin
     .from("conversation_summary_state")
@@ -223,7 +238,7 @@ async function processarEstado(
     })
     .eq("id", estado.id);
 
-  const enviada = await enviarResumo(admin, org, settings, texto, estado.id);
+  const enviada = await enviarResumo(admin, org, settings, mensagem, estado.id);
   return enviada ? "enviada" : "resumida";
 }
 
@@ -245,7 +260,14 @@ async function haMensagemMaisNova(
 }
 
 async function soltar(admin: Admin, id: string): Promise<void> {
-  await admin.from("conversation_summary_state").update({ claimed_until: null }).eq("id", id);
+  // Zera TAMBÉM o next_eval_at: sem isto, "ignorada" deixava o alvo vencido e o
+  // cron reclamava a mesma linha a cada minuto para sempre (medido: 105
+  // tentativas numa conversa sem nada a fazer). O próximo gatilho de mensagem
+  // rearma o relógio.
+  await admin
+    .from("conversation_summary_state")
+    .update({ claimed_until: null, next_eval_at: null })
+    .eq("id", id);
 }
 
 /**
@@ -315,13 +337,13 @@ async function enviarResumo(
   }
 
   const conversationId = await ensureConversation(admin, org, contactId, sessionId);
-  // Silencia o bot na conversa do gerente: ela é informante, não atendimento.
-  await admin
-    .from("conversations")
-    .update({ bot_silenced_until: BOT_SILENCIADO_ATE })
-    .eq("id", conversationId)
-    .eq("organization_id", org);
 
+  // NÃO silenciamos o bot aqui (era `bot_silenced_until='infinity'`). Esse campo
+  // é o marcador de HANDOFF HUMANO e `isLeadInHandoff` (human-handoff.ts:89) o
+  // lê por CONTATO: silenciar a conversa de destino colocaria o lead INTEIRO em
+  // handoff e o agente pararia de responder em TODAS as conversas dele —
+  // inclusive se o número de destino for (ou já tiver sido) um cliente. O
+  // informante é uma notificação de saída; não é assumir atendimento.
   await sendMessageHandler(
     admin,
     {
@@ -345,7 +367,7 @@ async function enviarResumo(
  * (roteamento, atendimento) para um alvo que não é cliente. Aqui é aviso, não
  * atendimento: sai pelo canal e pronto.
  *
- * Restrito a `groups: "full"` — só o canal por QR (WAHA). No oficial/parceiro a
+ * Restrito a `groups: "full"` — só o canal por QR. No oficial/parceiro a
  * capability é `limited` e o adapter recusaria o destinatário.
  */
 async function enviarParaGrupo(

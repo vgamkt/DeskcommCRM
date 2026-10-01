@@ -70,7 +70,13 @@ export interface PromptDeResumo {
   messages: ModelMessage[];
 }
 
-const SYSTEM = [
+/**
+ * O prompt PADRÃO do resumo — o texto de comportamento. É o valor inicial da
+ * caixa "Instruções para o resumo" na tela; o que o dono salvar ali SUBSTITUI
+ * este texto. Só as partes TÉCNICAS (o transcript com rótulos e o pedido de
+ * atualização) ficam no código — o "como se comportar" é editável.
+ */
+export const PROMPT_PADRAO_DO_RESUMO = [
   "Você é o assistente que mantém o gerente de uma loja informado sobre uma conversa de WhatsApp.",
   "Escreva em português do Brasil, direto e curto, como uma mensagem de WhatsApp para o gerente.",
   "Regras:",
@@ -91,9 +97,13 @@ export function montarPromptDeResumo(input: {
   nomeContato: string | null;
   resumoAnterior: string | null;
   transcricao: string;
+  /** Instruções livres do dono (tela) — anexadas ao system quando houver. */
+  instrucoes?: string | null;
 }): PromptDeResumo {
   const quem = input.nomeContato?.trim() || "o cliente";
   const cabecalho = `Conversa com ${quem}.`;
+  // O texto do dono (tela) é o SYSTEM — SUBSTITUI o padrão quando preenchido.
+  const system = input.instrucoes?.trim() || PROMPT_PADRAO_DO_RESUMO;
   const corpo = input.resumoAnterior
     ? [
         cabecalho,
@@ -115,9 +125,72 @@ export function montarPromptDeResumo(input: {
         "Escreva o resumo para o gerente.",
       ];
   return {
-    system: SYSTEM,
+    system,
     messages: [{ role: "user", content: corpo.join("\n") }],
   };
+}
+
+/** Chaves de campo personalizado que o cabeçalho procura (com apelidos). */
+function textoCustom(custom: Record<string, unknown>, chaves: string[]): string {
+  for (const k of chaves) {
+    const v = custom[k];
+    if (v === null || v === undefined) continue;
+    const s = String(v).trim();
+    if (s) return s;
+  }
+  return "";
+}
+
+function simNao(v: unknown): string {
+  if (v === true) return "sim";
+  if (v === false) return "não";
+  const s = v === null || v === undefined ? "" : String(v).trim();
+  return s;
+}
+
+export interface ContatoDoResumo {
+  nome: string | null;
+  telefone: string | null;
+  custom: Record<string, unknown>;
+}
+
+/**
+ * Cabeçalho do informante: quem é o cliente, o que se sabe dele e o link direto
+ * para a conversa. Campo sem registro fica EM BRANCO (nada é inventado). O
+ * telefone vira `https://wa.me/<dígitos>`, que o WhatsApp transforma em link
+ * clicável para abrir a conversa com o cliente.
+ */
+export function montarCabecalhoDoResumo(contato: ContatoDoResumo): string {
+  const custom = contato.custom ?? {};
+  const nome =
+    contato.nome?.trim() || textoCustom(custom, ["nome", "name", "display_name"]);
+  const cidade = textoCustom(custom, ["cidade", "city"]);
+  const cnh = simNao(custom.cnh);
+  const moto = textoCustom(custom, ["moto_interesse", "moto", "moto_de_interesse", "veiculo"]);
+  const pagamento = textoCustom(custom, [
+    "forma_pagamento",
+    "forma_de_pagamento",
+    "pagamento",
+    "payment_method",
+  ]);
+  const digits = (contato.telefone ?? "").replace(/\D/g, "");
+
+  const linhas: string[] = [];
+  if (nome) linhas.push(`*${nome}*`);
+  linhas.push(`Cidade: ${cidade}`.trimEnd());
+  linhas.push(`CNH: ${cnh}`.trimEnd());
+  linhas.push(`Moto de interesse: ${moto}`.trimEnd());
+  linhas.push(`Forma de pagamento: ${pagamento}`.trimEnd());
+  linhas.push(`WhatsApp: ${digits ? `https://wa.me/${digits}` : ""}`.trimEnd());
+  return linhas.join("\n");
+}
+
+/** Cabeçalho + resumo, como o gerente recebe. */
+export function comporMensagemDoResumo(cabecalho: string, resumo: string): string {
+  const cab = cabecalho.trim();
+  const corpo = resumo.trim();
+  if (!cab) return corpo;
+  return `${cab}\n———\n${corpo}`;
 }
 
 /** Chama o ponto `resumo_de_conversas` (o binding escolhido na tela de Provedores). */
@@ -128,6 +201,7 @@ export async function gerarResumoDeConversa(
     nomeContato: string | null;
     resumoAnterior: string | null;
     transcricao: string;
+    instrucoes?: string | null;
   },
 ): Promise<string> {
   const prompt = montarPromptDeResumo(input);

@@ -20,6 +20,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { PONTO_RESUMO_DE_CONVERSAS } from "@/lib/conversas/ponto";
+import { PROMPT_PADRAO_DO_RESUMO } from "@/lib/conversas/resumo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -28,7 +29,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const SETTINGS_COLUMNS =
-  "enabled, channel_session_id, destination, destination_is_group, interval_minutes, batch_size, updated_at";
+  "enabled, channel_session_id, destination, destination_is_group, interval_minutes, batch_size, instructions, updated_at";
 
 const putSchema = z.object({
   enabled: z.boolean(),
@@ -37,6 +38,7 @@ const putSchema = z.object({
   destination_is_group: z.boolean().default(false),
   interval_minutes: z.number().int().min(1).max(1440),
   batch_size: z.number().int().min(1).max(200),
+  instructions: z.string().max(4000).nullable().optional(),
 });
 
 const PADRAO = {
@@ -46,6 +48,7 @@ const PADRAO = {
   destination_is_group: false,
   interval_minutes: 15,
   batch_size: 20,
+  instructions: null as string | null,
   updated_at: null as string | null,
 };
 
@@ -79,6 +82,8 @@ export async function GET(): Promise<Response> {
   return ok(
     {
       settings: settings ?? PADRAO,
+      /** Texto padrão do prompt — a tela usa para preencher a caixa quando vazia. */
+      prompt_padrao: PROMPT_PADRAO_DO_RESUMO,
       sessoes: sessoes ?? [],
       binding: binding ?? null,
       pode_editar: ROLE_RANK[authz.org.role] >= ROLE_RANK.admin,
@@ -114,8 +119,13 @@ export async function PUT(req: NextRequest): Promise<Response> {
       channel_session_id: input.channel_session_id,
       destination: input.destination,
       destination_is_group: input.destination_is_group,
+      // Zera o cache do contato do destino: ele é resolvido no próximo envio.
+      // Sem isto, trocar o destino deixava o contato VELHO gravado — e a guarda
+      // anti-laço passava a pular a conversa do cliente errado.
+      destination_contact_id: null,
       interval_minutes: input.interval_minutes,
       batch_size: input.batch_size,
+      instructions: input.instructions ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "organization_id" },
