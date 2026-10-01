@@ -4109,8 +4109,11 @@ async function executarTurnoDoAgente(
             // O preço pode NÃO ter papel no mapeamento (`col_preco` nulo) — por isso
             // lemos o valor do próprio objeto da moto (`preco`/`valores`).
             // Na 2ª vez que o cliente PEDE opções, abre tolerância (valores mais
-            // próximos do orçamento) — "não atendeu nenhuma" é o sinal.
-            const tolerancia = pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
+            // próximos do orçamento) — "não atendeu nenhuma" é o sinal. MAS um
+            // valor dito AGORA é FIRME: a tolerância só vale quando o orçamento
+            // vem da memória, não de uma fala nova do cliente.
+            const tolerancia =
+              valorPropostaTurno === null && pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
             const valorLimite =
               orcamentoTurno !== null ? Math.round(orcamentoTurno * tolerancia) : null;
             if (valorLimite !== null) {
@@ -4237,7 +4240,8 @@ async function executarTurnoDoAgente(
           }
           // Respeita o teto de valor também nas motos que o MODELO declarou por
           // nome (senão ele furaria o filtro do motor — ex.: 41 mil p/ quem deu 27).
-          const toleranciaDeclaradas = pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
+          const toleranciaDeclaradas =
+            valorPropostaTurno === null && pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
           const limiteDeclaradas =
             orcamentoTurno !== null ? Math.round(orcamentoTurno * toleranciaDeclaradas) : null;
           const motosDeclaradas = motos ?? [];
