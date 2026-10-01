@@ -13,6 +13,7 @@ function s(over: Partial<SinaisDeOferta> = {}): SinaisDeOferta {
   return {
     mensagem: '',
     temEscolhaTravada: false,
+    temMotoEmFoco: false,
     estadoObjecaoAnterior: null,
     pediuOutraMoto: false,
     confirmouVerOpcoes: false,
@@ -170,5 +171,15 @@ describe('podeOferecerMotos — a régua única', () => {
     expect(
       podeOferecerMotos(s({ mensagem: 'essa moto e boa?', temEscolhaTravada: true })),
     ).toMatchObject({ pode: false, motivo: 'escolha_travada' });
+  });
+
+  it('menção solta com moto em foco NÃO oferece (sem escolha travada também)', () => {
+    expect(
+      podeOferecerMotos(s({ mensagem: 'essa moto e boa?', temMotoEmFoco: true })),
+    ).toMatchObject({ pode: false, motivo: 'sem_pedido_do_cliente' });
+    // Mas um pedido explícito continua abrindo.
+    expect(
+      podeOferecerMotos(s({ mensagem: 'quero uma moto ate 20 mil', temMotoEmFoco: true })).pode,
+    ).toBe(true);
   });
 });

@@ -92,6 +92,12 @@ export interface SinaisDeOferta {
   /** Há uma moto ESCOLHIDA/travada na conversa. */
   temEscolhaTravada: boolean;
   /**
+   * Há QUALQUER moto em foco na conversa (escolhida, referência ou já
+   * apresentada). Com moto em foco, só um PEDIDO EXPLÍCITO abre outra oferta —
+   * menção solta ("essa moto é boa?") não.
+   */
+  temMotoEmFoco: boolean;
+  /**
    * O ESTADO da objeção no turno anterior (memória da conversa): o TIPO
    * (`motivo`) e quantas vezes ele já foi tratado (`tentativas`). `null` =
    * nenhuma objeção ainda.
@@ -167,8 +173,9 @@ export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
   //    solta a "moto" no texto).
   if (s.temEscolhaTravada) return decisao(false, 'escolha_travada');
 
-  // 7) Menção/verbo solto de moto (sem escolha travada).
-  if (querMoto(msg)) return decisao(true, 'cliente_pediu_catalogo');
+  // 7) Menção/verbo solto de moto — só oferece quando NÃO há moto em foco (numa
+  //    conversa com moto já apresentada, menção solta a "moto" não reabre oferta).
+  if (querMoto(msg) && !s.temMotoEmFoco) return decisao(true, 'cliente_pediu_catalogo');
 
   // 7) Sem pedido do cliente: NÃO oferece. (Consultar o catálogo não autoriza.)
   return decisao(false, 'sem_pedido_do_cliente');

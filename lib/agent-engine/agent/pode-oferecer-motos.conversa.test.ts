@@ -26,6 +26,7 @@ function rodar(estado: Estado, mensagem: string) {
   return podeOferecerMotos({
     mensagem,
     ...estado,
+    temMotoEmFoco: false,
     confirmouVerOpcoes: false,
   } satisfies SinaisDeOferta);
 }
@@ -81,6 +82,7 @@ describe('simulação de conversa — quando pode oferecer motos', () => {
       podeOferecerMotos({
         ...estado,
         mensagem: 'pode mostrar, sim',
+        temMotoEmFoco: true,
         confirmouVerOpcoes: true,
       }),
     ).toMatchObject({ pode: true, motivo: 'cliente_confirmou_opcoes', criterio: 'preco' });

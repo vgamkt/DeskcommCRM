@@ -2895,6 +2895,7 @@ async function executarTurnoDoAgente(
     podeOferecerMotos({
       mensagem,
       temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+      temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
       estadoObjecaoAnterior: catalogoDaConversa.objecao,
       pediuOutraMoto: false,
       confirmouVerOpcoes: confirmouOpcoes,
@@ -3842,6 +3843,7 @@ async function executarTurnoDoAgente(
         const decisaoOferta = podeOferecerMotos({
           mensagem: mensagemDoJob ?? '',
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+          temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
           estadoObjecaoAnterior: catalogoDaConversa.objecao,
           pediuOutraMoto,
           confirmouVerOpcoes: confirmouOpcoes,
@@ -3861,6 +3863,7 @@ async function executarTurnoDoAgente(
           pediuOutraMoto,
           ehObjecao: ehObjecaoValor(mensagemDoJob ?? ''),
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+          temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
           estadoObjecaoAnterior: catalogoDaConversa.objecao,
           confirmouVerOpcoes: confirmouOpcoes,
           valorProposta: valorPropostaTurno,
@@ -4249,7 +4252,17 @@ async function executarTurnoDoAgente(
                   return p === null || p <= limiteDeclaradas;
                 })
               : motosDeclaradas;
-          return planoDeFotos(motosDoModelo, body, catalogoDoTurno, legendaConfig);
+          // O MESMO teto vale para as motos que o MODELO cita no texto e o motor
+          // completa com foto ("foto que o modelo esqueceu"): filtramos o CATÁLOGO
+          // passado ao plano, senão uma moto acima do orçamento entrava por ali.
+          const catalogoParaFotos =
+            limiteDeclaradas !== null
+              ? catalogoDoTurno.filter((m) => {
+                  const p = precoNumericoDaMoto(m);
+                  return p === null || p <= limiteDeclaradas;
+                })
+              : catalogoDoTurno;
+          return planoDeFotos(motosDoModelo, body, catalogoParaFotos, legendaConfig);
         })();
         // Marca que as fotos automáticas já saíram neste turno (não repetir).
         if (planoAutomatico.length > 0) jaApresentouAutomatico = true;
