@@ -24445,3 +24445,58 @@ comment on column public.catalog_mappings.col_similares is
   'Coluna de REFERÊNCIA de motos similares (ex.: moto_similar). Usada SÓ no motor: acha a moto real que cita o pedido. Nunca vai para a IA nem para o cliente.';
 
 -- ---- fim configuração por coluna + referência (migration 0251) ----
+
+-- ---- início catálogo: Gemini 3.x direto no Google (migration 0252) ----
+-- Modelos Gemini mais novos para o provider `google` (chave direta) — sem eles a
+-- tela do agente só oferece até `gemini-3.5-flash` e o `fn_publish` recusa um
+-- modelo novo. Mesmos preços do catálogo do openrouter / tabela do Google.
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('google', 'gemini-3.8-flash',      'Gemini 3.8 Flash',
+   'Flash mais recente. Mesma classe dos anteriores; preço promocional até 31/12/2026.', 75, 375, true),
+  ('google', 'gemini-3.7-flash',      'Gemini 3.7 Flash',
+   'Flash de alto desempenho; preço promocional até 31/12/2026.', 75, 375, true),
+  ('google', 'gemini-3.6-flash',      'Gemini 3.6 Flash',
+   'Flash equilibrado; preço promocional até 31/12/2026.', 75, 375, true),
+  ('google', 'gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite',
+   'Linha Lite: mais barato, para atendimento de alto volume.', 30, 250, true),
+  ('google', 'gemini-3.1-flash-lite', 'Gemini 3.1 Flash-Lite',
+   'Lite da geração 3.1 — o mais barato para tarefas simples.', 25, 150, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gemini-3.8-flash',       75, 375, 'catálogo 0252 — promo até 31/12/2026; dobra em 2027'),
+  ('gemini-3.7-flash',       75, 375, 'catálogo 0252 — promo até 31/12/2026; dobra em 2027'),
+  ('gemini-3.6-flash',       75, 375, 'catálogo 0252 — promo até 31/12/2026; dobra em 2027'),
+  ('gemini-3.5-flash-lite',  30, 250, 'catálogo 0252'),
+  ('gemini-3.1-flash-lite',  25, 150, 'catálogo 0252')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
+-- ---- fim catálogo: Gemini 3.x direto no Google (migration 0252) ----
+
+-- ---- início catálogo: áudio Whisper da Groq (migration 0253) ----
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('groq', 'whisper-large-v3-turbo', 'Whisper Large v3 Turbo (Groq)',
+   'Transcrição de áudio rápida e barata (plano gratuito). Recomendado para os áudios do WhatsApp.', 0, 0, false),
+  ('groq', 'whisper-large-v3', 'Whisper Large v3 (Groq)',
+   'Transcrição de áudio com mais qualidade; um pouco mais lenta.', 0, 0, false)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  supports_tools = excluded.supports_tools;
+-- ---- fim catálogo: áudio Whisper da Groq (migration 0253) ----

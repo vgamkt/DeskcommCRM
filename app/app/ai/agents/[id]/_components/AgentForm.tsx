@@ -38,6 +38,7 @@ import Link from "next/link";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
+import { FuncoesAuxiliares } from "./FuncoesAuxiliares";
 import { ModelPicker, useModelMeta } from "./ModelPicker";
 import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
@@ -692,9 +693,16 @@ export function AgentForm(props: Props) {
             </div>
           </Card>
 
-          {/* Provider + credential + model */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">{t("A inteligência que ele usa")}</h3>
+          {/* Provider + credential + model — card EXPLÍCITO: "para atender". */}
+          <Card className="space-y-3 p-4" data-testid="card-atender">
+            <div>
+              <h3 className="text-sm font-medium">{t("Para atender o cliente (o agente)")}</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  "É esta inteligência que CONVERSA com o cliente e responde as mensagens. As funções de áudio e imagem ficam nos cards abaixo.",
+                )}
+              </p>
+            </div>
             <div className="space-y-1">
               <Label htmlFor="provider">{t("Empresa de inteligência artificial")}</Label>
               <Select
@@ -753,6 +761,9 @@ export function AgentForm(props: Props) {
               </p>
             ) : null}
           </Card>
+
+          {/* Funções auxiliares — cards explícitos por função (áudio e imagem). */}
+          <FuncoesAuxiliares />
 
           {/* WhatsApp session */}
           <Card className="space-y-3 p-4">

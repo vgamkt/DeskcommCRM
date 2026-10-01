@@ -182,6 +182,36 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
     }
 
+    // O painel de provedores manda AQUI também: se a organização apontou o ponto
+    // `transcricao_de_audio` (card "Para transcrever o áudio do cliente" na tela
+    // do agente), essa escolha vem PRIMEIRO — provedor, modelo e chave escolhidos
+    // na tela. A cadeia padrão (Groq → OpenRouter → OpenAI) vira FALLBACK, para o
+    // cliente nunca ficar sem resposta quando o provedor escolhido falha.
+    const bindingAudio = await lerBindingDoPonto(
+      admin,
+      row.organization_id,
+      "transcricao_de_audio",
+    );
+    if (bindingAudio) {
+      try {
+        const credAudio = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+          provider: bindingAudio.provider,
+        });
+        const d = destinoDaTranscricao({
+          provedor: bindingAudio.provider,
+          chave: credAudio.apiKey,
+          model: bindingAudio.model_id,
+        });
+        if (d !== null) destinos.unshift(d);
+      } catch (err) {
+        logger.warn("[media-derive] ponto transcricao_de_audio sem credencial utilizável; usando a cadeia padrão", {
+          organization_id: row.organization_id,
+          provider: bindingAudio.provider,
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     const deps = buildDeriveDeps(llm, destinos, row.organization_id, admin);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
