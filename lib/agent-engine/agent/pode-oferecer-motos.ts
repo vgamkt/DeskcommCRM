@@ -38,7 +38,7 @@ import {
   type EstadoObjecao,
 } from './objecao-de-valor';
 import { normalizarNomeDeMoto } from './fotos-do-catalogo';
-import { querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
+import { pedeMotoExplicito, querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
 
 /** O que a objeção pede para atacar — vira o critério da busca. */
 export type CriterioDaOferta = 'preco' | 'km' | 'ano' | null;
@@ -159,11 +159,15 @@ export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
     return decisao(true, 'cliente_quer_alternativa', criterioDaObjecao(msg));
   }
 
-  // 5) Escolha travada + nenhum pedido explícito → NÃO oferece (nem por menção
+  // 5) Pedido EXPLÍCITO (verbo + termo: "quero uma moto até 20 mil") VENCE a
+  //    escolha travada — o pedido claro do cliente substitui a moto salva.
+  if (pedeMotoExplicito(msg)) return decisao(true, 'cliente_pediu_catalogo');
+
+  // 6) Escolha travada + nenhum pedido explícito → NÃO oferece (nem por menção
   //    solta a "moto" no texto).
   if (s.temEscolhaTravada) return decisao(false, 'escolha_travada');
 
-  // 6) Pedido de catálogo/moto (sem escolha travada).
+  // 7) Menção/verbo solto de moto (sem escolha travada).
   if (querMoto(msg)) return decisao(true, 'cliente_pediu_catalogo');
 
   // 7) Sem pedido do cliente: NÃO oferece. (Consultar o catálogo não autoriza.)

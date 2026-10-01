@@ -158,4 +158,17 @@ describe('podeOferecerMotos — a régua única', () => {
       podeOferecerMotos(s({ mensagem: 'quero outra cor', temEscolhaTravada: true })).pode,
     ).toBe(true);
   });
+
+  it('PEDIDO EXPLÍCITO vence a escolha travada; menção solta não', () => {
+    expect(
+      podeOferecerMotos(s({ mensagem: 'quero uma moto ate 20 mil', temEscolhaTravada: true })),
+    ).toMatchObject({ pode: true, motivo: 'cliente_pediu_catalogo' });
+    expect(
+      podeOferecerMotos(s({ mensagem: 'tem uma CB 300?', temEscolhaTravada: true })).pode,
+    ).toBe(true);
+    // Menção solta (sem verbo de pedido) NÃO destrava.
+    expect(
+      podeOferecerMotos(s({ mensagem: 'essa moto e boa?', temEscolhaTravada: true })),
+    ).toMatchObject({ pode: false, motivo: 'escolha_travada' });
+  });
 });

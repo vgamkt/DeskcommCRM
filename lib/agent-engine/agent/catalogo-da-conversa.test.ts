@@ -153,6 +153,8 @@ describe('carregarCatalogoDaConversa', () => {
       referencia: null,
       objecao: null,
       opcoes: null,
+      orcamento: null,
+      pedidosDeOpcoes: 0,
     });
   });
 });

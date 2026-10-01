@@ -189,7 +189,7 @@ import {
 import { extrairCriterios } from './extrair-criterios';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
-import { casaPerfil, mencionaMoto, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   podeOferecerMotos,
   preferenciaDoCriterio,
@@ -2859,6 +2859,19 @@ async function executarTurnoDoAgente(
   // (evita mandar moto acima da proposta/orçamento, ex.: 41 mil para quem deu 27
   // mil). Independe de ser objeção: um pedido "até 20 mil" também limita.
   const valorPropostaTurno = valorCitado(mensagemDoJob);
+  // Pedido EXPLÍCITO de moto (verbo + termo) — VENCE a escolha travada e destrava
+  // a moto salva (decisão do dono, 2026-09-30).
+  const pedidoExplicito = pedeMotoExplicito(mensagemDoJob);
+  // ORÇAMENTO da conversa: o citado AGORA ou o guardado antes — "até 20 mil"
+  // continua valendo no "quero ver mais opções" seguinte. Persistido por conversa.
+  const orcamentoTurno = valorPropostaTurno ?? catalogoDaConversa.orcamento ?? null;
+  // Quantas vezes o cliente pede para ver opções (contando este turno). Na 2ª
+  // vez, se as opções dentro do orçamento não atenderam, libera valores PRÓXIMOS.
+  const pedidoDeOpcoesTurno =
+    mensagemDoJob.trim() !== '' &&
+    (querMaisOpcoes(mensagemDoJob) || pedidoExplicito || ehPedidoDiferente(mensagemDoJob));
+  const pedidosDeOpcoesTurno =
+    (catalogoDaConversa.pedidosDeOpcoes ?? 0) + (pedidoDeOpcoesTurno ? 1 : 0);
   // Bloco do turno: a fase da objeção OU o "mostrar" (cliente confirmou a oferta).
   const blocoObjecaoTurno =
     ehObjecaoTurno && faseObjecaoTurno !== null
@@ -4092,8 +4105,11 @@ async function executarTurnoDoAgente(
             // passa dele (evita mandar moto de R$ 41 mil para quem propôs R$ 27 mil).
             // O preço pode NÃO ter papel no mapeamento (`col_preco` nulo) — por isso
             // lemos o valor do próprio objeto da moto (`preco`/`valores`).
+            // Na 2ª vez que o cliente PEDE opções, abre tolerância (valores mais
+            // próximos do orçamento) — "não atendeu nenhuma" é o sinal.
+            const tolerancia = pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
             const valorLimite =
-              valorPropostaTurno ?? catalogoDaConversa.objecao?.valorProposta ?? null;
+              orcamentoTurno !== null ? Math.round(orcamentoTurno * tolerancia) : null;
             if (valorLimite !== null) {
               const dentroDoValor = candidatos.filter((m) => {
                 const p = precoNumericoDaMoto(m);
@@ -4218,8 +4234,9 @@ async function executarTurnoDoAgente(
           }
           // Respeita o teto de valor também nas motos que o MODELO declarou por
           // nome (senão ele furaria o filtro do motor — ex.: 41 mil p/ quem deu 27).
+          const toleranciaDeclaradas = pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
           const limiteDeclaradas =
-            valorPropostaTurno ?? catalogoDaConversa.objecao?.valorProposta ?? null;
+            orcamentoTurno !== null ? Math.round(orcamentoTurno * toleranciaDeclaradas) : null;
           const motosDeclaradas = motos ?? [];
           const motosDoModelo =
             limiteDeclaradas !== null
@@ -4244,7 +4261,7 @@ async function executarTurnoDoAgente(
         const escolhaParaSalvar: MotoDoCatalogo | null | undefined =
           escolhaDetectadaNesteTurno !== null
             ? escolhaDetectadaNesteTurno
-            : pediuOutraMoto
+            : pediuOutraMoto || pedidoExplicito
               ? null
               : undefined;
         // Moto de REFERÊNCIA (âncora do modo "alternativa"): a escolha vence;
@@ -4300,7 +4317,9 @@ async function executarTurnoDoAgente(
             motoDetalhadaNome !== null ||
             escolhaParaSalvar !== undefined ||
             objecaoParaSalvar !== undefined ||
-            opcoesParaSalvar !== undefined)
+            opcoesParaSalvar !== undefined ||
+            orcamentoTurno !== (catalogoDaConversa.orcamento ?? null) ||
+            pedidosDeOpcoesTurno !== (catalogoDaConversa.pedidosDeOpcoes ?? 0))
         ) {
           void salvarCatalogoDaConversa(
             pool,
@@ -4313,6 +4332,8 @@ async function executarTurnoDoAgente(
             referenciaParaSalvar,
             objecaoParaSalvar,
             opcoesParaSalvar,
+            orcamentoTurno,
+            pedidosDeOpcoesTurno,
           );
         }
         const fotos = fotosDeclaradas;

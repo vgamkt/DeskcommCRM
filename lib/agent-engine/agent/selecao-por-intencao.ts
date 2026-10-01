@@ -662,3 +662,16 @@ export function querMoto(mensagem: string): boolean {
   if (n === '') return false;
   return VERBO_DE_PEDIDO.test(n) || TERMO_DE_MOTO.test(n);
 }
+
+/**
+ * PEDIDO EXPLÍCITO de moto: VERBO de pedido + TERMO de moto ("quero uma moto até
+ * 20 mil", "tem uma CB 300?"). Diferente de `querMoto`, que também casa MENÇÃO
+ * SOLTA ao termo ("essa moto é boa?"). É este sinal que VENCE a trava de escolha
+ * (`escolha_travada`), como decidiu o dono (2026-09-30): pedido claro do cliente
+ * substitui a moto que estava escolhida.
+ */
+export function pedeMotoExplicito(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  return VERBO_DE_PEDIDO.test(n) && TERMO_DE_MOTO.test(n);
+}

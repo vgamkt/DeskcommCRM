@@ -70,6 +70,18 @@ export interface CatalogoDaConversa {
    * não há fila.
    */
   opcoes: FilaDeOpcoes | null;
+  /**
+   * ORÇAMENTO que o cliente informou (qualquer turno, não só objeção): "até 20
+   * mil", "eu dou 27". Limita toda oferta seguinte — evita mandar moto acima do
+   * que ele falou. `null` quando nunca informou.
+   */
+  orcamento?: number | null;
+  /**
+   * Quantas vezes o cliente PEDIU EXPLICITAMENTE para ver mais opções. Na 2ª
+   * vez, se as opções dentro do orçamento não atenderam, libera valores mais
+   * PRÓXIMOS (tolerância maior).
+   */
+  pedidosDeOpcoes?: number;
 }
 
 /** Fila de opções pendentes do pedido atual (C-089). */
@@ -88,6 +100,8 @@ const VAZIO: CatalogoDaConversa = {
   referencia: null,
   objecao: null,
   opcoes: null,
+  orcamento: null,
+  pedidosDeOpcoes: 0,
 };
 
 function ehFilaDeOpcoes(valor: unknown): valor is FilaDeOpcoes {
@@ -186,6 +200,14 @@ export async function carregarCatalogoDaConversa(
       referencia: ehMoto(obj.referencia) ? obj.referencia : null,
       objecao: normalizarEstadoObjecao(obj.objecao),
       opcoes: ehFilaDeOpcoes(obj.opcoes) ? obj.opcoes : null,
+      orcamento:
+        typeof (obj as { orcamento?: unknown }).orcamento === 'number'
+          ? (obj as { orcamento: number }).orcamento
+          : null,
+      pedidosDeOpcoes:
+        typeof (obj as { pedidosDeOpcoes?: unknown }).pedidosDeOpcoes === 'number'
+          ? (obj as { pedidosDeOpcoes: number }).pedidosDeOpcoes
+          : 0,
     };
   } catch {
     return VAZIO;
@@ -215,6 +237,8 @@ export async function salvarCatalogoDaConversa(
   referencia: MotoDoCatalogo | null | undefined = undefined,
   objecao: EstadoObjecao | null | undefined = undefined,
   opcoes: FilaDeOpcoes | null | undefined = undefined,
+  orcamento: number | null | undefined = undefined,
+  pedidosDeOpcoes: number | undefined = undefined,
 ): Promise<void> {
   try {
     const vistas = new Set<string>();
@@ -239,6 +263,10 @@ export async function salvarCatalogoDaConversa(
       objecao === undefined ? atual.objecao : objecao;
     const opcoesFinal: FilaDeOpcoes | null =
       opcoes === undefined ? atual.opcoes : opcoes;
+    const orcamentoFinal: number | null =
+      orcamento === undefined ? (atual.orcamento ?? null) : orcamento;
+    const pedidosDeOpcoesFinal: number =
+      pedidosDeOpcoes === undefined ? (atual.pedidosDeOpcoes ?? 0) : pedidosDeOpcoes;
     await db.query(
       `update conversations
           set metadata = jsonb_set(
@@ -258,6 +286,8 @@ export async function salvarCatalogoDaConversa(
           referencia: referenciaFinal,
           objecao: objecaoFinal,
           opcoes: opcoesFinal,
+          orcamento: orcamentoFinal,
+          pedidosDeOpcoes: pedidosDeOpcoesFinal,
         }),
       ],
     );
