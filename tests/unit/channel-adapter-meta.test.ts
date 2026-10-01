@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getAdapter } from "@/lib/channels";
 
+vi.mock("@/lib/channels/cloud/fetch-media", () => ({
+  fetchCloudInboundMedia: vi.fn(async () => ({ buffer: Buffer.from([1, 2, 3]), mime: "audio/ogg" })),
+}));
+
+import { fetchCloudInboundMedia } from "@/lib/channels/cloud/fetch-media";
+
 /**
  * O adapter resolve a credencial POR SESSÃO (banco) com o env como fallback. Sem
  * mockar o admin client, o `fetch` stubado captura a query do Supabase em vez da
@@ -210,11 +216,43 @@ describe("adapter meta_cloud — envio", () => {
     expect(corpo.contacts[0]?.phones[0]?.wa_id).toBe("5511999887766");
   });
 
+  it("com citação manda `context.message_id` (paridade com o canal por QR)", async () => {
+    configurar();
+    const spy = stubFetch({ messages: [{ id: "wamid.R" }] });
+    await a().send({
+      organizationId: ORG,
+      sessionRef: "x",
+      to: "5531",
+      kind: "text",
+      body: "oi",
+      replyToExternalId: "wamid.ORIG",
+    });
+    const corpo = JSON.parse(spy.mock.calls[0]![1].body as string) as Record<string, unknown>;
+    expect(corpo.context).toEqual({ message_id: "wamid.ORIG" });
+  });
+
   it("resposta sem id devolve externalId null, sem estourar", async () => {
     configurar();
     stubFetch({ messages: [] });
     const r = await a().send({ organizationId: ORG, sessionRef: "x", to: "5531", kind: "text", body: "oi" });
     expect(r).toEqual({ externalId: null });
+  });
+});
+
+describe("adapter meta_cloud — mídia de entrada", () => {
+  it("baixa pelo helper neutro com o media id e a credencial da sessão", async () => {
+    configurar();
+    const r = await a().fetchInboundMedia!({
+      organizationId: ORG,
+      sessionRef: "1103328999528818",
+      url: "3001880776842122",
+      hintMime: "audio/ogg",
+    });
+
+    expect(r.mime).toBe("audio/ogg");
+    const [entrada, creds] = vi.mocked(fetchCloudInboundMedia).mock.calls[0]!;
+    expect(entrada).toEqual({ mediaId: "3001880776842122", hintMime: "audio/ogg" });
+    expect(creds).toEqual({ token: "tok", graphBase: "https://graph.facebook.com/v22.0" });
   });
 });
 

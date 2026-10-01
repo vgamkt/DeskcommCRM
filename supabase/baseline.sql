@@ -14295,13 +14295,19 @@ create index if not exists meta_templates_sessao_idx
 -- `update.sh` de um clone com dados falhar no primeiro e deixar a tabela sem
 -- constraint entre o `drop` e o `add` que funciona.
 --
+-- `datafy` entrou junto pela migration 0254: a 0235 (que criou o canal) ampliou
+-- só o vocabulário de `channel_sessions` e esqueceu ESTE, então todo webhook do
+-- parceiro era processado mas o arquivo do corpo cru era recusado com
+-- `violates check constraint "webhook_events_log_provider_check"` — o instrumento
+-- de diagnóstico falhava calado no canal recém-entrado (medido em produção).
+--
 -- Alargamento puro: um CHECK que aceita MAIS valores não pode ser violado por
 -- linha que já passava pelo antigo, então não precisa de backfill antes.
 alter table public.webhook_events_log
   drop constraint if exists webhook_events_log_provider_check;
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio'
+    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----

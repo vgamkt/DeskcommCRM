@@ -115,6 +115,12 @@ export interface InboundMessageEvent {
   text: string | null;
   /** Preenchido quando `type === "contact"` (cartão compartilhado). */
   sharedContact?: SharedContact | null;
+  /**
+   * `wamid` da mensagem que o cliente RESPONDEU ("responder em cima"), quando
+   * houver. A Meta só manda o id — o texto da citada é resolvido na ingestão
+   * contra o nosso próprio banco. Paridade com o `contextInfo` do canal por QR.
+   */
+  contextId?: string | null;
   media: {
     id: string;
     /** A Meta manda URL pronta, com `ext=` de expiração — baixe na hora, não guarde. */
@@ -208,6 +214,7 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
           const corpoMidia = tipo !== "contacts" ? (raw[tipo] as Record<string, unknown> | undefined) : undefined;
           const sharedContact = tipo === "contacts" ? parseMetaInboundContact(raw) : null;
           const tipoCrm = tipo === "contacts" ? "contact" : tipo;
+          const contexto = raw.context as Record<string, unknown> | undefined;
 
           out.push({
             kind: "inbound_message",
@@ -224,6 +231,7 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
                 ? str((raw.text as Record<string, unknown>)?.body)
                 : sharedContact?.name ?? null,
             ...(sharedContact ? { sharedContact } : {}),
+            contextId: str(contexto?.id),
             media:
               corpoMidia && str(corpoMidia.id)
                 ? {

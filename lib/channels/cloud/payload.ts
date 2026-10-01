@@ -50,3 +50,18 @@ export function cloudMediaPayload(env: OutboundEnvelope): Record<string, unknown
       };
   }
 }
+
+/**
+ * Citação: `replyToExternalId` → objeto `context` da Cloud API.
+ *
+ * Irmão do `reply_to` do canal por QR. Sem isto, responder a uma mensagem do
+ * cliente pelo canal oficial/parceiro saía SEM a citação — a paridade que o
+ * transacional e o atendimento esperam. O `context.message_id` é o `wamid` da
+ * mensagem citada, exatamente o que a coluna `messages.external_id` guarda.
+ *
+ * Campo IRMÃO de `type` no corpo (não dentro do objeto do tipo), por isso mora
+ * na montagem do `send`, ao lado de `to`, e não em `cloudMediaPayload`.
+ */
+export function cloudContextPayload(env: OutboundEnvelope): Record<string, unknown> {
+  return env.replyToExternalId ? { context: { message_id: env.replyToExternalId } } : {};
+}

@@ -19,10 +19,12 @@
  * ogg/opus) é idêntico e vem do módulo neutro `lib/channels/cloud/payload.ts`.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { cloudContactPayload, cloudMediaPayload, toE164Digits } from "../cloud/payload";
+import { fetchCloudInboundMedia } from "../cloud/fetch-media";
+import { cloudContactPayload, cloudContextPayload, cloudMediaPayload, toE164Digits } from "../cloud/payload";
 import { graphPartnerGraphBase, resolveGraphPartnerCreds } from "../graph-parceiro/credentials";
 import { graphPartnerTemplateOps } from "../graph-parceiro/templates";
 import { sendTemplateForSession } from "../meta/send-template-for-session";
+import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -88,6 +90,32 @@ export const datafyAdapter: ChannelAdapter = {
       const detail = err instanceof Error ? err.message : "erro_desconhecido";
       return { reachable: false, status: null, detail: detail.slice(0, 200) };
     }
+  },
+
+  /**
+   * Baixa a mídia que o cliente mandou — o passo que faltava para áudio virar
+   * transcrição, imagem virar descrição e PDF virar texto.
+   *
+   * `input.url` aqui é o **media id** do provedor, não uma URL: a família Cloud
+   * guarda o handle opaco em `messages.media_url` (ver o cabeçalho de
+   * `../cloud/fetch-media.ts` e a ingestão). O download em dois passos e as
+   * guardas de SSRF moram no helper neutro, compartilhado com o canal oficial.
+   */
+  async fetchInboundMedia(input: ChannelTenantScope & {
+    sessionRef: string;
+    url: string;
+    hintMime?: string | null;
+  }): Promise<FetchedMedia> {
+    const creds = await resolveGraphPartnerCreds(createAdminClient(), {
+      organizationId: input.organizationId,
+      phoneNumberId: input.sessionRef,
+    });
+    if (!creds) throw new Error("datafy_not_configured: sem credencial para baixar a mídia.");
+
+    return fetchCloudInboundMedia(
+      { mediaId: input.url, hintMime: input.hintMime },
+      { token: creds.token, graphBase: graphPartnerGraphBase() },
+    );
   },
 
   codes: {
@@ -157,6 +185,7 @@ export const datafyAdapter: ChannelAdapter = {
           messaging_product: "whatsapp",
           recipient_type: "individual",
           to: envelope.to,
+          ...cloudContextPayload(envelope),
           ...corpo,
         }),
       },

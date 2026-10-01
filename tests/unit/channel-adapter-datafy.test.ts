@@ -8,8 +8,12 @@ vi.mock("@/lib/channels/graph-parceiro/credentials", () => ({
 vi.mock("@/lib/channels/meta/send-template-for-session", () => ({
   sendTemplateForSession: vi.fn(),
 }));
+vi.mock("@/lib/channels/cloud/fetch-media", () => ({
+  fetchCloudInboundMedia: vi.fn(async () => ({ buffer: Buffer.from([1, 2, 3]), mime: "audio/ogg" })),
+}));
 
 import { datafyAdapter } from "@/lib/channels/adapters/datafy";
+import { fetchCloudInboundMedia } from "@/lib/channels/cloud/fetch-media";
 import { resolveGraphPartnerCreds } from "@/lib/channels/graph-parceiro/credentials";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
 import type { OutboundEnvelope } from "@/lib/channels/types";
@@ -113,5 +117,48 @@ describe("adapter datafy", () => {
       reachable: false,
       status: null,
     });
+  });
+
+  it("fetchInboundMedia passa o media id e a credencial da sessão para o helper neutro", async () => {
+    const r = await datafyAdapter.fetchInboundMedia!({
+      organizationId: "org-1",
+      sessionRef: "106540352242922",
+      url: "3001880776842122",
+      hintMime: "audio/ogg; codecs=opus",
+    });
+
+    expect(r.mime).toBe("audio/ogg");
+    const [entrada, creds] = vi.mocked(fetchCloudInboundMedia).mock.calls[0]!;
+    expect(entrada).toEqual({ mediaId: "3001880776842122", hintMime: "audio/ogg; codecs=opus" });
+    expect(creds).toEqual({ token: "sk_live_abc", graphBase: "https://cloud.example.test/v1" });
+  });
+
+  it("sem credencial o download falha alto — não devolve mídia vazia", async () => {
+    vi.mocked(resolveGraphPartnerCreds).mockResolvedValue(null);
+    await expect(
+      datafyAdapter.fetchInboundMedia!({ organizationId: "org-1", sessionRef: "1", url: "2" }),
+    ).rejects.toThrow(/datafy_not_configured/);
+  });
+
+  it("com citação manda `context.message_id` (paridade com o canal por QR)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ messages: [{ id: "wamid.R" }] }), { status: 200 }));
+
+    await datafyAdapter.send(envelope({ replyToExternalId: "wamid.ORIG" }));
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body));
+    expect(body.context).toEqual({ message_id: "wamid.ORIG" });
+  });
+
+  it("sem citação NÃO manda `context`", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ messages: [{ id: "wamid.R" }] }), { status: 200 }));
+
+    await datafyAdapter.send(envelope());
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body));
+    expect(body).not.toHaveProperty("context");
   });
 });

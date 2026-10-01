@@ -20,8 +20,10 @@
  *    o outro canal converte por nós, este não.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { cloudContactPayload, cloudMediaPayload, toE164Digits } from "../cloud/payload";
-import { resolveMetaCreds } from "../meta/credentials";
+import { fetchCloudInboundMedia } from "../cloud/fetch-media";
+import { cloudContactPayload, cloudContextPayload, cloudMediaPayload, toE164Digits } from "../cloud/payload";
+import { metaGraphBase, resolveMetaCreds } from "../meta/credentials";
+import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -138,6 +140,33 @@ export const metaCloudAdapter: ChannelAdapter = {
     }
   },
 
+  /**
+   * Baixa a mídia que o cliente mandou (áudio → transcrição, imagem → descrição,
+   * PDF → texto). Faltava neste canal desde que o seam nasceu: a ingestão
+   * gravava o `media id`, mas nada o baixava, então a mídia recebida pelo número
+   * oficial virava linha SEM bytes — o mesmo defeito que o zernio documenta.
+   *
+   * `input.url` é o **media id** do provedor, não uma URL: ver
+   * `../cloud/fetch-media.ts`. O download em dois passos e as guardas de SSRF
+   * são compartilhados com o parceiro Graph.
+   */
+  async fetchInboundMedia(input: ChannelTenantScope & {
+    sessionRef: string;
+    url: string;
+    hintMime?: string | null;
+  }): Promise<FetchedMedia> {
+    const creds = await resolveMetaCreds(createAdminClient(), {
+      organizationId: input.organizationId,
+      phoneNumberId: input.sessionRef,
+    });
+    if (!creds) throw new Error("meta_not_configured: sem credencial para baixar a mídia.");
+
+    return fetchCloudInboundMedia(
+      { mediaId: input.url, hintMime: input.hintMime },
+      { token: creds.token, graphBase: metaGraphBase() },
+    );
+  },
+
   codes: {
     notConfigured: "meta_not_configured",
     sendFailed: "meta_error",
@@ -173,6 +202,7 @@ export const metaCloudAdapter: ChannelAdapter = {
           messaging_product: "whatsapp",
           recipient_type: "individual",
           to: envelope.to,
+          ...cloudContextPayload(envelope),
           ...corpo,
         }),
       },

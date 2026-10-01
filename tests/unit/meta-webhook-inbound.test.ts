@@ -96,6 +96,48 @@ describe("o que separa inbound de status de entrega", () => {
   });
 });
 
+describe("citação — `responder em cima`", () => {
+  function parseComContexto(context?: Record<string, unknown>): InboundMessageEvent {
+    return parseMetaWebhook({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "w",
+          changes: [
+            {
+              field: "messages",
+              value: {
+                metadata: { phone_number_id: "pn1" },
+                messages: [
+                  {
+                    id: "wamid.IN",
+                    from: "5531",
+                    timestamp: "1785342028",
+                    type: "text",
+                    text: { body: "Gostei dessa" },
+                    ...(context ? { context } : {}),
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })[0] as InboundMessageEvent;
+  }
+
+  it("extrai o `wamid` citado de `context.id`", () => {
+    // A Meta só manda o id da citada; o texto é resolvido na ingestão, contra o
+    // nosso banco. É o que deixa o agente saber a QUAL mensagem o cliente se
+    // referiu quando a mensagem sozinha não diz.
+    expect(parseComContexto({ id: "wamid.QUOTED", from: "5531" }).contextId).toBe("wamid.QUOTED");
+  });
+
+  it("sem `context`, contextId é null — não é citação", () => {
+    expect(parseComContexto().contextId).toBeNull();
+  });
+});
+
 describe("payload capenga não vira linha meia-boca", () => {
   it("mensagem sem id é descartada", () => {
     const r = parseMetaWebhook({

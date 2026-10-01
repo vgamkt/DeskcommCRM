@@ -28,6 +28,7 @@ import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
+import { logger } from "@/lib/logger";
 import type { InboundMessageEvent } from "./webhook";
 
 type Admin = SupabaseClient;
@@ -172,6 +173,15 @@ export async function ingestMetaInbound(
     return { status: "failed", reason: `conversa: ${erroConversa?.message ?? "sem id"}` };
   }
 
+  // Citação ("responder em cima"): a Meta manda só o `context.id` da citada; o
+  // texto vem do NOSSO banco. Guardar o id local + o texto em `metadata.citacao`
+  // é o que deixa o agente saber a QUAL mensagem o cliente se referiu quando a
+  // sozinha não diz (ex.: "Gostei dessa"). Paridade com o canal por QR, que lê o
+  // `contextInfo` do transporte.
+  const citada = e.contextId
+    ? await resolverMensagemCitada(admin, orgId, conversationId as string, e.contextId)
+    : null;
+
   const { data: inserida, error: erroInsert } = await admin
     .from("messages")
     .insert({
@@ -188,10 +198,26 @@ export async function ingestMetaInbound(
       body: e.type === "contact" ? (e.sharedContact?.name ?? e.text) : e.text,
       external_id: e.externalId,
       media_mime: e.media?.mime ?? null,
+      // ─── A coluna guarda o ID do provedor, não uma URL (de propósito) ──────
+      //
+      // É este campo que acorda `media-persist-worker` (`if (!msg.media_url)
+      // skipped`). Sem ele, a mídia recebida pelo canal oficial/parceiro era
+      // gravada como linha SEM bytes e a derivação textual nunca rodava —
+      // áudio sem transcrição, imagem sem descrição, PDF sem extração.
+      //
+      // O valor é o `media.id` (handle opaco), não a URL do webhook: a URL é
+      // efêmera, exige Bearer e vem de um payload cuja assinatura é OPCIONAL no
+      // parceiro. O adapter a reconstrói contra a base fixa do provedor — ver
+      // `lib/channels/cloud/fetch-media.ts`. Guardar URL aqui reintroduziria o
+      // SSRF-com-credencial que o canal intermediado já documenta.
+      media_url: e.media?.id ?? null,
+      reply_to_message_id: citada?.id ?? null,
       sent_at: e.sentAt.toISOString(),
       metadata: {
         ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
         ...(e.sharedContact ? { shared_contact: e.sharedContact } : {}),
+        // O agente lê `metadata->'citacao'->>'texto'`; o id fica para rastreio.
+        ...(e.contextId ? { citacao: { id: e.contextId, texto: citada?.texto ?? "" } } : {}),
       },
     })
     .select("id")
@@ -215,6 +241,18 @@ export async function ingestMetaInbound(
   } as never);
 
   const messageId = (inserida as { id: string } | null)?.id ?? "";
+
+  // ─── O elo que faltava: acordar o worker de persistência ────────────────────
+  //
+  // `media_url` (gravado acima) é o dado que o worker LÊ; isto é o evento que o
+  // FAZ OLHAR. O canal por QR e o intermediado emitem os dois desde sempre —
+  // este não emitia, então a mídia do canal oficial/parceiro ficava sem bytes
+  // mesmo depois de `media_url` existir. Só quando HÁ mídia: pedir sem anexo
+  // faria o worker buscar URL inexistente e marcar `failed` em mensagem perfeita.
+  if (e.media && messageId) {
+    await pedirPersistenciaDaMidia(admin, orgId, conversationId as string, messageId);
+  }
+
   await aplicarEfeitosPosEntrada(admin, {
     organizationId: orgId,
     contactId: contactId as string,
@@ -231,4 +269,69 @@ export async function ingestMetaInbound(
     messageId,
     conversationId: conversationId as string,
   };
+}
+
+/**
+ * Acha a mensagem CITADA (por `wamid`) dentro da conversa e devolve o id local
+ * e o texto dela.
+ *
+ * A Meta entrega só o `context.id`; o conteúdo da citada não vem no webhook —
+ * ele está no NOSSO banco, porque a mensagem citada passou por aqui. `null`
+ * quando não é nossa (mensagem anterior ao CRM): a citação fica só no
+ * `metadata`, sem `reply_to_message_id`, que é o que o `body` do insert aceita.
+ */
+async function resolverMensagemCitada(
+  admin: Admin,
+  organizationId: string,
+  conversationId: string,
+  externalId: string,
+): Promise<{ id: string; texto: string } | null> {
+  const { data, error } = await admin
+    .from("messages")
+    .select("id, body")
+    .eq("organization_id", organizationId)
+    .eq("conversation_id", conversationId)
+    .eq("external_id", externalId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn("[meta.ingest] não resolvi a mensagem citada", {
+      organization_id: organizationId,
+      conversation_id: conversationId,
+      detail: error.message,
+    });
+    return null;
+  }
+  const row = data as { id: string; body: string | null } | null;
+  return row ? { id: row.id, texto: row.body ?? "" } : null;
+}
+
+/**
+ * Acorda `media-persist-worker` para baixar e guardar a mídia recebida.
+ *
+ * Best-effort, como no canal intermediado: a mensagem já está gravada e visível.
+ * Devolver falha aqui derrubaria a ingestão e o provider reenviaria tudo —
+ * trocaria uma mídia faltando por uma tempestade de reentregas.
+ */
+async function pedirPersistenciaDaMidia(
+  admin: Admin,
+  organizationId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<void> {
+  const { error } = await admin.rpc("emit_event" as never, {
+    p_event_type: "media.persist_requested",
+    p_entity_kind: "message",
+    p_entity_id: messageId,
+    p_payload: { message_id: messageId, conversation_id: conversationId },
+    p_metadata: { source: "meta_webhook" },
+    p_organization_id: organizationId,
+  } as never);
+  if (error) {
+    logger.warn("[meta.ingest] emit media.persist_requested falhou", {
+      messageId,
+      detail: error.message,
+    });
+  }
 }
