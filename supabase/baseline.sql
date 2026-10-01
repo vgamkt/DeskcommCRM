@@ -24506,3 +24506,162 @@ on conflict (provider, model_id) do update set
   description = excluded.description,
   supports_tools = excluded.supports_tools;
 -- ---- fim catálogo: áudio Whisper da Groq (migration 0253) ----
+
+-- ---- resumo de conversas: informante de follow-up (migration 0255) ----
+-- Config por organização + estado por conversa do informante "Resumo de
+-- Conversas". O debounce é um TRIGGER em `messages` (não um handler de
+-- event_log): `message.sent` nunca teve consumidor e tem backlog medido, então
+-- registrar handler drenaria milhares de eventos antigos de uma vez. O gatilho
+-- cobre inbound e outbound sem tocar no event_log e engole exceção para nunca
+-- derrubar a gravação da mensagem.
+create table if not exists public.conversation_summary_settings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null unique references public.organizations(id) on delete cascade,
+  enabled boolean not null default false,
+  channel_session_id uuid references public.channel_sessions(id) on delete set null,
+  destination text,
+  destination_is_group boolean not null default false,
+  destination_contact_id uuid references public.contacts(id) on delete set null,
+  interval_minutes int not null default 15 check (interval_minutes between 1 and 1440),
+  batch_size int not null default 20 check (batch_size between 1 and 200),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.conversation_summary_settings
+  add column if not exists destination_contact_id uuid references public.contacts(id) on delete set null;
+
+create table if not exists public.conversation_summary_state (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  contact_id uuid references public.contacts(id) on delete set null,
+  status text not null default 'active' check (status in ('active', 'paused')),
+  current_summary text,
+  last_message_at timestamptz,
+  last_summarized_message_at timestamptz,
+  last_summarized_at timestamptz,
+  next_eval_at timestamptz,
+  attempts int not null default 0,
+  last_error text,
+  claimed_until timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint conversation_summary_state_conv_unique unique (organization_id, conversation_id)
+);
+
+create index if not exists conversation_summary_state_org_idx
+  on public.conversation_summary_state (organization_id);
+create index if not exists conversation_summary_state_due_idx
+  on public.conversation_summary_state (next_eval_at)
+  where status = 'active' and next_eval_at is not null;
+
+alter table public.conversation_summary_settings enable row level security;
+alter table public.conversation_summary_state enable row level security;
+drop policy if exists tenant_isolation_conversation_summary_settings_all on public.conversation_summary_settings;
+create policy tenant_isolation_conversation_summary_settings_all on public.conversation_summary_settings
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+drop policy if exists tenant_isolation_conversation_summary_state_all on public.conversation_summary_state;
+create policy tenant_isolation_conversation_summary_state_all on public.conversation_summary_state
+  using (organization_id in (select public.fn_user_org_ids()))
+  with check (organization_id in (select public.fn_user_org_ids()));
+
+drop trigger if exists conversation_summary_settings_updated_at on public.conversation_summary_settings;
+create trigger conversation_summary_settings_updated_at
+  before update on public.conversation_summary_settings
+  for each row execute function public.fn_set_updated_at();
+drop trigger if exists conversation_summary_state_updated_at on public.conversation_summary_state;
+create trigger conversation_summary_state_updated_at
+  before update on public.conversation_summary_state
+  for each row execute function public.fn_set_updated_at();
+
+create or replace function public.fn_conversation_summary_touch()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_enabled boolean;
+  v_interval int;
+  v_is_group boolean;
+  v_dest_contact uuid;
+begin
+  begin
+    select enabled, interval_minutes, destination_contact_id
+      into v_enabled, v_interval, v_dest_contact
+      from public.conversation_summary_settings
+     where organization_id = NEW.organization_id;
+    if not found or v_enabled is not true then
+      return NEW;
+    end if;
+
+    -- Guarda anti-laço: a conversa com o PRÓPRIO destino (o gerente) não entra.
+    if v_dest_contact is not null and NEW.contact_id = v_dest_contact then
+      return NEW;
+    end if;
+
+    select is_group into v_is_group from public.conversations where id = NEW.conversation_id;
+    if coalesce(v_is_group, false) then
+      return NEW;
+    end if;
+
+    if NEW.direction = 'inbound' then
+      insert into public.conversation_summary_state
+        (organization_id, conversation_id, contact_id, status, last_message_at, next_eval_at)
+      values
+        (NEW.organization_id, NEW.conversation_id, NEW.contact_id, 'active',
+         NEW.sent_at, now() + make_interval(mins => v_interval))
+      on conflict (organization_id, conversation_id) do update
+        set last_message_at = greatest(public.conversation_summary_state.last_message_at, NEW.sent_at),
+            next_eval_at = now() + make_interval(mins => v_interval),
+            updated_at = now();
+    else
+      update public.conversation_summary_state
+         set last_message_at = greatest(last_message_at, NEW.sent_at),
+             next_eval_at = now() + make_interval(mins => v_interval),
+             updated_at = now()
+       where organization_id = NEW.organization_id
+         and conversation_id = NEW.conversation_id;
+    end if;
+  exception when others then
+    null;
+  end;
+  return NEW;
+end;
+$fn$;
+
+drop trigger if exists trg_conversation_summary_touch on public.messages;
+create trigger trg_conversation_summary_touch
+  after insert on public.messages
+  for each row execute function public.fn_conversation_summary_touch();
+
+create or replace function public.fn_claim_due_conversation_summaries(p_limit int, p_lease_seconds int)
+returns setof public.conversation_summary_state
+language sql
+security definer
+set search_path = public
+as $fn$
+  update public.conversation_summary_state s
+     set claimed_until = now() + make_interval(secs => p_lease_seconds),
+         attempts = s.attempts + 1,
+         updated_at = now()
+   where s.id in (
+     select id from public.conversation_summary_state
+      where status = 'active'
+        and next_eval_at is not null
+        and next_eval_at <= now()
+        and (claimed_until is null or claimed_until < now())
+      order by next_eval_at
+      limit p_limit
+      for update skip locked
+   )
+  returning s.*;
+$fn$;
+revoke all on function public.fn_claim_due_conversation_summaries(int, int) from public, anon, authenticated;
+
+comment on table public.conversation_summary_settings is
+  'Migration 0255: configuração do informante "Resumo de Conversas" por organização.';
+comment on table public.conversation_summary_state is
+  'Migration 0255: estado por conversa do informante (resumo atual, corte incremental e debounce).';
+-- ---- fim resumo de conversas (migration 0255) ----

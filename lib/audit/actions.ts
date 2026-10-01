@@ -155,6 +155,7 @@ export const AUDIT_ACTIONS = [
   "ai.credential_deleted",
   "ai.credential_revalidated",
   "ai.rag_embedding_updated",
+  "ai.resumo_de_conversas_configurado",
   "ai_agent.created",
   "ai_agent.updated",
   "ai_agent.archived",

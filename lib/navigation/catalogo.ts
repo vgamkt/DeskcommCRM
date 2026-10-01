@@ -378,6 +378,15 @@ export const NAV_CATALOG = [
     minRole: "agent",
   },
   {
+    href: "/app/ai/resumo-de-conversas",
+    label: "Resumo de Conversas",
+    description: "Recebe no seu WhatsApp um resumo do que está acontecendo em cada conversa, sem abrir o inbox.",
+    icon: "ListChecks",
+    group: "ia",
+    section: "Acompanhar o agente",
+    minRole: "manager",
+  },
+  {
     href: "/app/ai/inbox",
     label: "Alertas",
     description: "O que a IA encontrou e precisa de uma decisão sua.",

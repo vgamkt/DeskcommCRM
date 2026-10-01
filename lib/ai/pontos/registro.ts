@@ -559,6 +559,20 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "O sistema erra a hora de resumir a conversa: resume cedo demais e perde contexto, ou tarde demais e a resposta é recusada.",
     registraEm: "nenhum",
   },
+
+  // ─────────────────── Resumo para o gerente (informante) ──────────────────
+  {
+    id: "resumo_de_conversas",
+    rotulo: "Resumir a conversa para o gerente",
+    oQueFaz:
+      "Junta o que o cliente, o bot e o atendente disseram num resumo curto, para o gerente saber quem espera o quê sem abrir o inbox.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/conversas/resumo.ts",
+    sintomaDeFalha:
+      "O informante manda o mesmo resumo velho, ou nenhum, e o gerente perde o acompanhamento do atendimento.",
+    registraEm: "llm_calls",
+  },
 ] as const;
 
 /** Índice por id, para quem resolve um binding. */
