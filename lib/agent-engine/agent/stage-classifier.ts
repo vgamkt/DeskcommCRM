@@ -20,6 +20,10 @@
  * NOMES dos estágios (regra dura 8).
  *
  * tenant_id/lead_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
+ *
+ * JEV (Fase 1): quando ligada por `JEV_ENABLED`, o estágio é decidido PRIMEIRO pela Jev
+ * (decisão estruturada, `lib/ai/jev`) e o modelo de chat vira o ÚLTIMO recurso. DESLIGADA
+ * por padrão — sem a flag, o caminho e o comportamento são exatamente os de antes.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -32,6 +36,9 @@ import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
 import type { LeadContext } from '../edge/crm/get-lead-context';
 import { LEAD_STAGES, type LeadStage } from './lead-state';
+import { alvosDeJevDe } from '../../ai/jev/config';
+import { decidir, type AlvoDeJev } from '../../ai/jev/index';
+import type { PerguntasDeJev, RespostasDeJev } from '../../ai/jev/tipos';
 
 /** Knobs do classificador (env STAGE_CLASSIFIER_*; defaults conservadores no .env.example). */
 export interface StageClassifierKnobs {
@@ -56,6 +63,82 @@ export const STAGE_CLASSIFIER_INSTRUCTION =
   '- won: o lead fechou/aceitou explicitamente (vai assinar, pagar, emitir nota).\n' +
   '- lost: o lead recusou, desistiu ou pediu para parar de ser contatado.\n' +
   'Responda SOMENTE com uma palavra — o nome exato do estágio, em inglês. Sem explicação, sem pontuação.';
+
+/**
+ * Definições curtas de cada estágio do funil — o MESMO conteúdo da instrução
+ * acima (vocabulário do produto, não invenção), no formato `choice` da Jev.
+ */
+const DEFINICOES_DE_ESTAGIO: Record<LeadStage, string> = {
+  new: 'recém-chegado, ainda sem diálogo real (só um "oi"/pergunta genérica, sem contexto)',
+  contacted: 'já houve troca inicial e rapport, mas sem necessidade ou dor concreta',
+  qualifying: 'revelando necessidade, contexto, dores ou tamanho da operação',
+  qualified: 'orçamento, autoridade, necessidade e prazo (BANT) confirmados — pronto para proposta',
+  negotiating: 'proposta/preço/condições na mesa; discutindo valor, desconto ou parcelamento',
+  won: 'fechou/aceitou explicitamente (vai assinar, pagar, emitir nota)',
+  lost: 'recusou, desistiu ou pediu para parar de ser contatado',
+};
+
+/** Pergunta `choice` da Jev para o estágio (as opções são o enum LEAD_STAGES). */
+export function perguntaDeEstagioDeJev(): PerguntasDeJev {
+  const criteria: Record<string, string> = {};
+  for (const stage of LEAD_STAGES) criteria[stage] = DEFINICOES_DE_ESTAGIO[stage];
+  return {
+    estagio: {
+      type: 'choice',
+      instructions:
+        'Com base na conversa e no estágio atual do funil, em que estágio a conversa está AGORA?',
+      criteria,
+    },
+  };
+}
+
+/** Lê o estágio da resposta da Jev; `null` = resposta sem estágio reconhecível. */
+export function estagioDaRespostaDeJev(respostas: RespostasDeJev): LeadStage | null {
+  const a = respostas.estagio;
+  if (!a || a.type !== 'choice' || typeof a.choice !== 'string') return null;
+  const escolhido = a.choice.trim().toLowerCase();
+  return (LEAD_STAGES as readonly string[]).includes(escolhido)
+    ? (escolhido as LeadStage)
+    : null;
+}
+
+/**
+ * Tenta o estágio pela JEV (decisão estruturada). `null` = Jev não devolveu um
+ * estágio utilizável (esgotou as tentativas ou não preencheu) — o chamador cai
+ * no modelo de chat (último recurso). Nunca lança.
+ */
+async function classificarEstagioComJev(
+  context: LeadContext,
+  currentStage: LeadStage,
+  alvos: AlvoDeJev[],
+  log: Logger,
+): Promise<LeadStage | null> {
+  const decisao = await decidir({
+    alvos,
+    state: { estagio_atual: currentStage, conversa: context },
+    questions: perguntaDeEstagioDeJev(),
+    opcoes: {
+      aoTentar: (info) => {
+        log.info('stage-classifier: tentativa da Jev', {
+          provider: info.provider,
+          tentativa: info.tentativa,
+          ok: info.respostaOk,
+          motivo: info.motivo ?? null,
+        });
+      },
+    },
+  });
+  if (decisao === null) {
+    log.warn('stage-classifier: Jev esgotou as tentativas — caindo no modelo de chat (último recurso)');
+    return null;
+  }
+  const estagio = estagioDaRespostaDeJev(decisao.respostas);
+  if (estagio === null) {
+    log.warn('stage-classifier: Jev sem estágio reconhecível — caindo no modelo de chat');
+    return null;
+  }
+  return estagio;
+}
 
 function buildClassifierMessage(context: LeadContext, currentStage: LeadStage): string {
   return [
@@ -101,6 +184,19 @@ export async function classifyStage(
   },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<LeadStage | null> {
+  // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
+  // Se responder, o estágio vem dela; se esgotar, cai no modelo de chat abaixo.
+  const alvos = alvosDeJevDe(process.env);
+  if (alvos.length > 0) {
+    const porJev = await classificarEstagioComJev(
+      args.context,
+      args.currentStage,
+      alvos,
+      deps.log,
+    );
+    if (porJev !== null) return porJev;
+  }
+
   const call = await runModelCall(
     db,
     cfg,

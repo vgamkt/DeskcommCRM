@@ -187,6 +187,17 @@ const schema = z.object({
   TRANSCRIPTION_API_KEY: z.string().optional().default(""),
   TRANSCRIPTION_BASE_URL: z.string().optional().default(""),
   TRANSCRIPTION_MODEL: z.string().optional().default(""),
+  // Jev (System One) — decisão estruturada, multi-provedor. DESLIGADA por padrão:
+  // sem JEV_ENABLED nada muda. Quando ligada, os pontos de LEITURA tentam a Jev
+  // ANTES do modelo de chat e caem no chat se ela esgotar. `JEV_FALLBACK_*` é o
+  // "se um provedor cair, uso o outro". Lido por `alvosDeJevDe` (lib/ai/jev/config.ts).
+  JEV_ENABLED: z.string().optional().default(""),
+  JEV_PROVIDER: z.string().optional().default(""),
+  JEV_API_KEY: z.string().optional().default(""),
+  JEV_MODEL: z.string().optional().default(""),
+  JEV_FALLBACK_PROVIDER: z.string().optional().default(""),
+  JEV_FALLBACK_API_KEY: z.string().optional().default(""),
+  JEV_FALLBACK_MODEL: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron
