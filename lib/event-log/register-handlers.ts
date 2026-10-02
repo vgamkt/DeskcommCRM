@@ -21,6 +21,7 @@ import { mediaDeriveHandler } from "@/workers/media-derive-worker.handler";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import { conversaoDeVendaHandler } from "@/lib/conversoes/envio.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
+import { jevRetryHandler } from "@/lib/ai/jev/outbox";
 
 let _registered = false;
 
@@ -42,6 +43,9 @@ export function ensureHandlersRegistered(): void {
   registerHandler(mediaPersistHandler);
   registerHandler(mediaDeriveHandler);
   registerHandler(webPushInboundHandler);
+  // Outbox da Jev: retry DURÁVEL das decisões que esgotaram por TPM. Depende só
+  // de banco (re-resolve alvos + decide), então roda cedo como os demais.
+  registerHandler(jevRetryHandler);
   // Por último: reportar a venda ao anúncio é o consumidor mais externo do
   // fechamento — depende de rede de terceiro e não pode atrasar quem escreve
   // no banco. Falha dele nunca segura os handlers acima.

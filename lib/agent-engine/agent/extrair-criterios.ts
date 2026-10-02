@@ -38,6 +38,7 @@ import {
   perguntaDeCriteriosDeJev,
 } from '../../ai/jev/pontos/catalog-criteria';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
+import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 
 const JSON_INSTRUCTION =
   'Responda SOMENTE o JSON, no MESMO formato do exemplo, sem texto antes ou depois.';
@@ -382,6 +383,13 @@ export async function extrairCriterios(
       state: { mensagem: input.mensagem, estoque: estoque.map((m) => m.nome) },
       questions: perguntaDeCriteriosDeJev({ colunas, estoque }),
       perguntasObrigatorias: ['intencao'],
+      // TPM/instabilidade: persiste a decisão para retry durável (outbox).
+      aoEsgotar: (info) =>
+        enfileirarDecisaoJev(db, {
+          organizationId: input.tenantId,
+          point: 'catalog_criteria',
+          ...info,
+        }),
     });
     if (decisaoJev !== null) {
       registrarDecisaoJev(deps.log, 'catalog_criteria', decisaoJev);

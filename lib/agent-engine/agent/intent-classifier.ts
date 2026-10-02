@@ -24,6 +24,7 @@ import {
   vereditoDaRespostaDeJev,
 } from '../../ai/jev/pontos/intent-router';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
+import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 
 export interface IntentVerdict {
   intentName: string | null;
@@ -119,6 +120,12 @@ export async function classifyIntent(
         alvos: alvosJev,
         state: { mensagem: input.signal },
         questions: perguntaDeIntencaoDeJev(input.router.members),
+        aoEsgotar: (info) =>
+          enfileirarDecisaoJev(db, {
+            organizationId: input.tenantId,
+            point: 'intent_router',
+            ...info,
+          }),
       });
       if (decisaoJev !== null) {
         registrarDecisaoJev(deps.log, 'intent_router', decisaoJev);

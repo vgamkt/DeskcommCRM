@@ -40,6 +40,7 @@ import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { decidir, type AlvoDeJev } from '../../ai/jev/index';
 import type { PerguntasDeJev, RespostasDeJev } from '../../ai/jev/tipos';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
+import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 
 /** Knobs do classificador (env STAGE_CLASSIFIER_*; defaults conservadores no .env.example). */
 export interface StageClassifierKnobs {
@@ -113,11 +114,17 @@ async function classificarEstagioComJev(
   currentStage: LeadStage,
   alvos: AlvoDeJev[],
   log: Logger,
+  aoEsgotar?: (info: {
+    state: unknown;
+    questions: PerguntasDeJev;
+    perguntasObrigatorias?: string[];
+  }) => void | Promise<void>,
 ): Promise<LeadStage | null> {
   const decisao = await decidir({
     alvos,
     state: { estagio_atual: currentStage, conversa: context },
     questions: perguntaDeEstagioDeJev(),
+    ...(aoEsgotar !== undefined ? { aoEsgotar } : {}),
     opcoes: {
       aoTentar: (info) => {
         log.info('stage-classifier: tentativa da Jev', {
@@ -195,6 +202,12 @@ export async function classifyStage(
       args.currentStage,
       alvos,
       deps.log,
+      (info) =>
+        enfileirarDecisaoJev(db, {
+          organizationId: ids.tenantId,
+          point: 'stage_classifier',
+          ...info,
+        }),
     );
     if (porJev !== null) return porJev;
   }

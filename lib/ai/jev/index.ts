@@ -38,6 +38,16 @@ export interface ArgsDeDecisao {
   perguntasObrigatorias?: string[];
   opcoes?: Partial<OpcoesDoMotor>;
   fazerRequisicao?: FazerRequisicao;
+  /**
+   * Chamado quando a Jev esgota por falha de INFRAESTRUTURA (TPM/instabilidade) —
+   * permite persistir a decisão para retry durável (outbox). Best-effort: o que
+   * o callback fizer não muda a resposta do turno (que já cai no fallback).
+   */
+  aoEsgotar?: (info: {
+    state: unknown;
+    questions: PerguntasDeJev;
+    perguntasObrigatorias?: string[];
+  }) => void | Promise<void>;
 }
 
 /**
@@ -150,6 +160,22 @@ export async function decidir(args: ArgsDeDecisao): Promise<DecisaoDeJev | null>
     const cd = cooldownDeJevDe(process.env);
     if (cd > 0) {
       jevIndisponivelAte = Date.now() + (maiorRetryAfterMs > 0 ? maiorRetryAfterMs : cd);
+    }
+    // Persiste a decisão para retry durável (outbox). Só aqui — nas falhas de
+    // infraestrutura, que é o caso do TPM — e NUNCA nas de schema/auth (o retry
+    // só repetiria o mesmo defeito de config). Best-effort: não lança.
+    if (args.aoEsgotar) {
+      try {
+        await args.aoEsgotar({
+          state: args.state,
+          questions: args.questions,
+          ...(args.perguntasObrigatorias !== undefined
+            ? { perguntasObrigatorias: args.perguntasObrigatorias }
+            : {}),
+        });
+      } catch {
+        // o outbox não pode derrubar o turno que já respondeu pelo fallback
+      }
     }
   }
   return null;

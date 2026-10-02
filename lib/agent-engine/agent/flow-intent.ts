@@ -25,6 +25,7 @@ import { decidir } from '../../ai/jev';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { nomeDoFluxoDaRespostaDeJev, perguntaDeFluxoDeJev } from '../../ai/jev/pontos/flow-intent';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
+import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 
 /** Um fluxo ativo oferecido ao classificador. */
 export interface FluxoParaIA {
@@ -146,6 +147,12 @@ export async function escolherFluxoPorIA(
         alvos: alvosJev,
         state: { mensagem: input.texto },
         questions: perguntaDeFluxoDeJev(fluxos),
+        aoEsgotar: (info) =>
+          enfileirarDecisaoJev(db, {
+            organizationId: input.organizationId,
+            point: 'flow_intent',
+            ...info,
+          }),
       });
       if (decisaoJev !== null) {
         registrarDecisaoJev(deps.log, 'flow_intent', decisaoJev);
