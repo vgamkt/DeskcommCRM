@@ -36,6 +36,12 @@ import type pg from 'pg';
 
 import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { EstadoObjecao } from './objecao-de-valor';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDe } from '../../ai/jev/config';
+import {
+  motoEscolhidaDaRespostaDeJev,
+  perguntaDeMotoEscolhidaJev,
+} from '../../ai/jev/pontos/moto-escolhida';
 
 /** Estado persistido por conversa. */
 export interface CatalogoDaConversa {
@@ -429,4 +435,54 @@ export function motoEscolhidaPeloCliente(
   if (porCor.length === 1) return porCor[0];
 
   return undefined;
+}
+
+/**
+ * Versão ASSÍNCRONA de `motoEscolhidaPeloCliente`: o determinístico decide
+ * primeiro; só quando ele fica em DÚVIDA (`undefined`), HÁ sinal de escolha e há
+ * MAIS DE UMA candidata, a Jev **desempata** (`choice` entre as candidatas +
+ * "nenhuma"). Desligada por padrão (`JEV_ENABLED`) → comportamento idêntico ao de
+ * antes. Nunca lança.
+ */
+export async function motoEscolhidaPeloClienteComJev(
+  textoDoModelo: string,
+  textoDoCliente: string,
+  catalogo: readonly MotoDoCatalogo[],
+  jaDetalhadas: readonly string[],
+  textoCitado = '',
+): Promise<MotoDoCatalogo | undefined> {
+  const deterministica = motoEscolhidaPeloCliente(
+    textoDoModelo,
+    textoDoCliente,
+    catalogo,
+    jaDetalhadas,
+    textoCitado,
+  );
+  if (deterministica !== undefined) return deterministica;
+  if (catalogo.length === 0) return undefined;
+
+  // Sem sinal positivo de escolha (é pergunta/objeção) → NÃO chama a Jev.
+  if (bloqueiaEscolha(textoDoCliente)) return undefined;
+  const alvos = alvosDeJevDe(process.env);
+  if (alvos.length === 0) return undefined;
+
+  const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
+  const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
+  if (candidatas.length < 2) return undefined; // 0/1 candidata: a determinística já bastava
+
+  const decisao = await decidir({
+    alvos,
+    state: {
+      cliente: textoDoCliente,
+      citado: textoCitado,
+      modelo: textoDoModelo,
+      candidatas: candidatas.map((m) => m.nome),
+    },
+    questions: perguntaDeMotoEscolhidaJev(candidatas.map((m) => m.nome)),
+    perguntasObrigatorias: ['moto'],
+  });
+  if (decisao === null) return undefined;
+  const nome = motoEscolhidaDaRespostaDeJev(decisao.respostas);
+  if (nome === null) return undefined;
+  return candidatas.find((m) => m.nome === nome);
 }

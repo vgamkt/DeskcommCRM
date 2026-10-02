@@ -167,7 +167,7 @@ import {
 } from './fotos-do-catalogo';
 import {
   carregarCatalogoDaConversa,
-  motoEscolhidaPeloCliente,
+  motoEscolhidaPeloClienteComJev,
   salvarCatalogoDaConversa,
   type CatalogoDaConversa,
   type FilaDeOpcoes,
@@ -3788,7 +3788,7 @@ async function executarTurnoDoAgente(
         // para o turno do PRÓPRIO pedido ("Cb 300") não ser lido como escolha.
         const escolhidaNesteTurno =
           jaApresentou && !pediuOutraMoto
-            ? motoEscolhidaPeloCliente(
+            ? await motoEscolhidaPeloClienteComJev(
                 body,
                 mensagemDoJob ?? '',
                 catalogoEfetivo,
@@ -5520,7 +5520,7 @@ async function executarTurnoDoAgente(
     // buscado (`carregarDescricaoDaMoto` devolve null sem tocar o banco).
     const preEscolhaDescricao =
       catalogoDaConversa.motos.length > 0
-        ? motoEscolhidaPeloCliente(
+        ? await motoEscolhidaPeloClienteComJev(
             '',
             currentInboundText ?? '',
             catalogoDaConversa.motos,
