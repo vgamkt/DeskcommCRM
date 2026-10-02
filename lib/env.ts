@@ -206,6 +206,9 @@ const schema = z.object({
   JEV_CAP_TOTAL_MS: z.string().optional().default(""),
   JEV_BASE_MS: z.string().optional().default(""),
   JEV_MAX_MS: z.string().optional().default(""),
+  // Circuit breaker: após esgotar por TPM/instabilidade, quanto tempo a Jev fica
+  // "indisponível" (ms) antes de tentar de novo. `0` desliga. Vazio = 30000.
+  JEV_COOLDOWN_MS: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron

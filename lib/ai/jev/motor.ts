@@ -31,6 +31,8 @@ export interface InfoDaTentativa {
   latenciaMs: number;
   respostaOk: boolean;
   motivo?: MotivoDeFalha;
+  /** `Retry-After` do provedor, quando veio — base do cooldown do breaker. */
+  retryAfterMs?: number;
 }
 
 export const MOTOR_PADRAO: OpcoesDoMotor = {
@@ -151,6 +153,7 @@ export async function decidirComTentativas<T>(
           latenciaMs,
           respostaOk: false,
           motivo: erro.motivo,
+          ...(erro.retryAfterMs !== undefined ? { retryAfterMs: erro.retryAfterMs } : {}),
         });
         if (!erro.retentavel) {
           aguardarMs = 0;

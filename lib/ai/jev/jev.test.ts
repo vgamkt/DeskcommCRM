@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chamarSystemone, endpointDeJev, type FazerRequisicao, type RespostaHttpLike } from "./cliente";
 import { calcularEspera, decidirComTentativas } from "./motor";
-import { decidir } from "./index";
+import { decidir, cooldownDeJevDe, _resetarBreakerDeJev } from "./index";
 import { ErroDeJev, type PerguntasDeJev } from "./tipos";
 
 function httpRes(
@@ -268,6 +268,92 @@ describe("decidir (failover de provedores + perguntas obrigatorias)", () => {
 
   it("decidir sem alvos → null", async () => {
     expect(await decidir({ alvos: [], state: "s", questions: perguntas })).toBeNull();
+  });
+});
+
+describe("circuit breaker da Jev (TPM)", () => {
+  const opcoes = { maxTentativas: 10, dormir: async () => {}, aleatorio: () => 0, capTotalMs: 5000 } as const;
+  const alvo = [{ provider: "opencode", apiKey: "k" }] as const;
+
+  beforeEach(() => {
+    _resetarBreakerDeJev();
+    delete process.env.JEV_COOLDOWN_MS;
+  });
+  afterEach(() => {
+    _resetarBreakerDeJev();
+    delete process.env.JEV_COOLDOWN_MS;
+  });
+
+  it("cooldownDeJevDe: padrão 30s, 0 desliga", () => {
+    expect(cooldownDeJevDe({})).toBe(30000);
+    expect(cooldownDeJevDe({ JEV_COOLDOWN_MS: "0" })).toBe(0);
+    expect(cooldownDeJevDe({ JEV_COOLDOWN_MS: "5000" })).toBe(5000);
+    expect(cooldownDeJevDe({ JEV_COOLDOWN_MS: "lixo" })).toBe(30000);
+  });
+
+  it("429 abre o breaker: o próximo ponto cai direto no fallback, SEM tocar o provedor", async () => {
+    const fazer = vi.fn(async () => httpRes(429, { error: "rate" }, { "retry-after": "60" }));
+    const r1 = await decidir({
+      alvos: [...alvo],
+      state: "s",
+      questions: perguntas,
+      opcoes,
+      fazerRequisicao: fazer as unknown as FazerRequisicao,
+    });
+    expect(r1).toBeNull();
+    const aposFalha = fazer.mock.calls.length;
+    expect(aposFalha).toBeGreaterThan(0);
+
+    const r2 = await decidir({
+      alvos: [...alvo],
+      state: "s",
+      questions: perguntas,
+      opcoes,
+      fazerRequisicao: fazer as unknown as FazerRequisicao,
+    });
+    expect(r2).toBeNull();
+    expect(fazer.mock.calls.length).toBe(aposFalha); // breaker aberto: nem tentou
+  });
+
+  it("schema (400) NÃO abre o breaker — outro ponto ainda tenta", async () => {
+    const fazer = vi.fn(async () => httpRes(400, { error: "schema" }));
+    await decidir({
+      alvos: [...alvo],
+      state: "s",
+      questions: perguntas,
+      opcoes,
+      fazerRequisicao: fazer as unknown as FazerRequisicao,
+    });
+    const aposFalha = fazer.mock.calls.length;
+    await decidir({
+      alvos: [...alvo],
+      state: "s",
+      questions: perguntas,
+      opcoes,
+      fazerRequisicao: fazer as unknown as FazerRequisicao,
+    });
+    expect(fazer.mock.calls.length).toBeGreaterThan(aposFalha);
+  });
+
+  it("JEV_COOLDOWN_MS=0 desliga o breaker", async () => {
+    process.env.JEV_COOLDOWN_MS = "0";
+    const fazer = vi.fn(async () => httpRes(429, { error: "rate" }));
+    await decidir({
+      alvos: [...alvo],
+      state: "s",
+      questions: perguntas,
+      opcoes,
+      fazerRequisicao: fazer as unknown as FazerRequisicao,
+    });
+    const aposFalha = fazer.mock.calls.length;
+    await decidir({
+      alvos: [...alvo],
+      state: "s",
+      questions: perguntas,
+      opcoes,
+      fazerRequisicao: fazer as unknown as FazerRequisicao,
+    });
+    expect(fazer.mock.calls.length).toBeGreaterThan(aposFalha);
   });
 });
 
