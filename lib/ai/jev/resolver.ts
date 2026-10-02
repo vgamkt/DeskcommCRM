@@ -21,6 +21,7 @@ import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
 
 import { BASES_SYSTEMONE, ehModeloDeJev } from './cliente';
 import { alvosDeJevDe, fallbackDeJevDe } from './config';
+import { purposeDeJev } from './provedores';
 import type { AlvoDeJev } from './index';
 
 interface LinhaBinding {
@@ -70,12 +71,17 @@ export async function alvosDeJevDaOrg(
   purpose: string,
 ): Promise<AlvoDeJev[]> {
   try {
+    // O binding PRÓPRIO da Jev (`<ponto>__jev`) vence o de chat do mesmo ponto.
+    // Sem ele, aceita o binding do ponto (compatibilidade) — desde que o modelo
+    // seja de Jev. Assim a escolha da Jev e a do chat não se sobrescrevem.
+    const jv = purposeDeJev(purpose);
     const { rows } = await db.query<LinhaBinding>(
       `select provider, credential_id, model_id
          from ai_purpose_bindings
-        where organization_id = $1 and purpose = $2 and is_enabled
+        where organization_id = $1 and is_enabled and purpose = any($2::text[])
+        order by (purpose = $3) desc, created_at desc
         limit 1`,
-      [organizationId, purpose],
+      [organizationId, [jv, purpose], jv],
     );
     const b = rows[0];
     if (b !== undefined) {

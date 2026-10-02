@@ -60,6 +60,23 @@ interface Ponto {
     porQue: string;
   };
   avisos: string[];
+  /** Este ponto aceita decisão estruturada (Jev). */
+  ofereceJev: boolean;
+  /** O binding de Jev do ponto (`<id>__jev`), separado do de chat. */
+  jev: { provider: string; modelId: string | null; credentialId: string | null; isEnabled: boolean } | null;
+}
+
+interface ModeloJev {
+  provider: string;
+  model_id: string;
+  display_name: string;
+}
+
+interface ProvedorJev {
+  id: string;
+  rotulo: string;
+  quandoUsar: string;
+  ondePegarAChave: string;
 }
 
 interface Modelo {
@@ -93,6 +110,8 @@ interface Dados {
   provedores: Provedor[];
   credenciais: Credencial[];
   modelos: Modelo[];
+  provedoresJev: ProvedorJev[];
+  modelosJev: ModeloJev[];
   podeEditar: boolean;
 }
 
@@ -262,6 +281,159 @@ function ResumoDoGrupo({ pontos }: { pontos: Ponto[] }) {
         </p>
       )}
     </Card>
+  );
+}
+
+/**
+ * DECISÃO ESTRUTURADA (Jev) do ponto — binding PRÓPRIO (`<id>__jev`), separado do
+ * chat. A Jev decide ANTES do modelo de conversa; se ela esgotar, o chat assume.
+ * Salvar aqui NÃO toca no modelo de chat do ponto.
+ */
+function SecaoDeJev({
+  ponto,
+  dados,
+  aoSalvar,
+}: {
+  ponto: Ponto;
+  dados: Dados;
+  aoSalvar: () => Promise<void>;
+}) {
+  const t = useT();
+  const [provider, setProvider] = useState(ponto.jev?.provider ?? dados.provedoresJev[0]?.id ?? "openrouter");
+  const [modelId, setModelId] = useState(ponto.jev?.modelId ?? "");
+  const [credentialId, setCredentialId] = useState(ponto.jev?.credentialId ?? "");
+  const [salvando, setSalvando] = useState(false);
+
+  const modelos = dados.modelosJev.filter((m) => m.provider === provider);
+  const creds = dados.credenciais.filter((c) => c.provider === provider);
+
+  async function salvar(isEnabled: boolean) {
+    setSalvando(true);
+    try {
+      const res = await fetch("/api/v1/ai/providers", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          purpose: `${ponto.id}__jev`,
+          provider,
+          model_id: modelId,
+          credential_id: credentialId || null,
+          is_enabled: isEnabled,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
+        return;
+      }
+      toast.success(
+        isEnabled
+          ? t("Decisão estruturada (Jev) ligada neste ponto")
+          : t("Decisão estruturada (Jev) desligada neste ponto"),
+      );
+      await aoSalvar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-md border p-3" data-testid={`jev-${ponto.id}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Label className="text-xs font-medium">{t("Decisão estruturada (Jev)")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Quem decide este ponto ANTES do modelo de conversa. Se a Jev esgotar, o chat assume — o cliente sempre é respondido.",
+            )}
+          </p>
+        </div>
+        {ponto.jev?.isEnabled && (
+          <Badge variant="secondary" className="text-xs">
+            {t("ligada")}
+          </Badge>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div>
+          <Label className="text-xs">{t("Provedor (Jev)")}</Label>
+          <Select
+            value={provider}
+            onValueChange={(v) => {
+              setProvider(v);
+              setModelId("");
+              setCredentialId("");
+            }}
+          >
+            <SelectTrigger data-testid={`jev-provider-${ponto.id}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {dados.provedoresJev.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.rotulo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label className="text-xs">{t("Modelo (Jev)")}</Label>
+          <Select value={modelId} onValueChange={setModelId}>
+            <SelectTrigger data-testid={`jev-modelo-${ponto.id}`}>
+              <SelectValue placeholder={t("escolha")} />
+            </SelectTrigger>
+            <SelectContent>
+              {modelos.map((m) => (
+                <SelectItem key={m.model_id} value={m.model_id}>
+                  {m.display_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label className="text-xs">{t("Chave")}</Label>
+          <Select value={credentialId} onValueChange={setCredentialId}>
+            <SelectTrigger data-testid={`jev-chave-${ponto.id}`}>
+              <SelectValue placeholder={t("da instalação")} />
+            </SelectTrigger>
+            <SelectContent>
+              {creds.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.label} ••{c.api_key_last4 ?? "??"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex gap-2 sm:col-span-3">
+          <Button
+            size="sm"
+            disabled={salvando || !modelId}
+            onClick={() => void salvar(true)}
+            data-testid={`jev-salvar-${ponto.id}`}
+          >
+            {salvando ? t("Salvando…") : t("Ligar Jev neste ponto")}
+          </Button>
+          {ponto.jev?.isEnabled && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={salvando}
+              onClick={() => void salvar(false)}
+              data-testid={`jev-desligar-${ponto.id}`}
+            >
+              {t("Desligar")}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -494,6 +666,10 @@ function CartaoDoPonto({
             </Button>
           </div>
         </div>
+      )}
+
+      {editavel && ponto.ofereceJev && (
+        <SecaoDeJev ponto={ponto} dados={dados} aoSalvar={aoSalvar} />
       )}
     </Card>
   );

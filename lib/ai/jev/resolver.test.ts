@@ -18,15 +18,30 @@ function dbMock(respostas: QueryResp[] | (() => QueryResp)): pg.Pool {
 }
 
 beforeEach(() => {
-  delete process.env.JEV_ENABLED;
+  // O `.env` da instalação (produção) pode trazer JEV_* — o teste tem de medir o
+  // que ele MESMO monta, não o ambiente da máquina.
+  for (const k of [
+    "JEV_ENABLED",
+    "JEV_PROVIDER",
+    "JEV_API_KEY",
+    "JEV_MODEL",
+    "JEV_FALLBACK_PROVIDER",
+    "JEV_FALLBACK_API_KEY",
+    "JEV_FALLBACK_MODEL",
+  ])
+    delete process.env[k];
 });
 afterEach(() => {
-  delete process.env.JEV_ENABLED;
-  delete process.env.JEV_PROVIDER;
-  delete process.env.JEV_API_KEY;
-  delete process.env.JEV_FALLBACK_PROVIDER;
-  delete process.env.JEV_FALLBACK_API_KEY;
-  delete process.env.JEV_FALLBACK_MODEL;
+  for (const k of [
+    "JEV_ENABLED",
+    "JEV_PROVIDER",
+    "JEV_API_KEY",
+    "JEV_MODEL",
+    "JEV_FALLBACK_PROVIDER",
+    "JEV_FALLBACK_API_KEY",
+    "JEV_FALLBACK_MODEL",
+  ])
+    delete process.env[k];
 });
 
 describe("alvosDeJevDaOrg", () => {

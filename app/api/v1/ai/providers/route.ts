@@ -29,6 +29,16 @@ import {
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
+import {
+  MODELOS_DE_JEV,
+  PONTOS_COM_JEV,
+  PROVEDORES_DE_JEV,
+  SUFIXO_DE_JEV,
+  ehAlvoDeJev,
+  ehProvedorDeJev,
+  pontoDeJev,
+  purposeDeJev,
+} from "@/lib/ai/jev/provedores";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -143,6 +153,7 @@ export async function GET(): Promise<Response> {
     });
     const chave = `${decisao.provider}|${decisao.modelId ?? ""}`;
     const capacidade = capacidadePorModelo.get(chave);
+    const ofJev = bindings.get(purposeDeJev(ponto.id)) ?? null;
     return {
       id: ponto.id,
       rotulo: ponto.rotulo,
@@ -171,6 +182,18 @@ export async function GET(): Promise<Response> {
         origem: decisao.origem,
         porQue: EXPLICACAO_DA_ORIGEM[decisao.origem],
       },
+      // Decisão estruturada (Jev): pontos que a aceitam e o que está escolhido
+      // HOJE no binding próprio (`<ponto>__jev`) — separado do chat.
+      ofereceJev: PONTOS_COM_JEV.has(ponto.id),
+      jev:
+        ofJev !== null
+          ? {
+              provider: ofJev.provider,
+              modelId: ofJev.model_id,
+              credentialId: ofJev.credential_id,
+              isEnabled: ofJev.is_enabled,
+            }
+          : null,
       avisos: [
         ...decisao.avisos,
         // O aviso de capacidade é recalculado aqui porque só o servidor tem o
@@ -190,6 +213,10 @@ export async function GET(): Promise<Response> {
     provedores: PROVEDORES,
     credenciais: credsRes.data ?? [],
     modelos,
+    // Decisão estruturada (Jev): lista PRÓPRIA de provedores/modelos, para não
+    // poluir o catálogo de chat com modelos `jev-*` (que não conversam).
+    provedoresJev: PROVEDORES_DE_JEV,
+    modelosJev: MODELOS_DE_JEV,
     podeEditar: roleAtLeast(org.role, "admin"),
   });
 }
@@ -205,7 +232,7 @@ const corpoDoPut = z.object({
   provider: z
     .string()
     .min(1)
-    .refine(ehProvedorSuportado, {
+    .refine((id: string) => ehProvedorSuportado(id) || ehProvedorDeJev(id), {
       message:
         "provedor não suportado por esta instalação — escolha um da lista em Agente de IA → Provedores",
     }),
@@ -230,8 +257,30 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
   const corpo = parsed.data;
 
-  const ponto = PONTO_POR_ID.get(corpo.purpose);
+  // O binding de Jev de um ponto é `<ponto>__jev`. O ponto do sistema é a BASE.
+  const ehJev = corpo.purpose.endsWith(SUFIXO_DE_JEV);
+  const pontoId = pontoDeJev(corpo.purpose);
+  const ponto = PONTO_POR_ID.get(pontoId);
   if (!ponto) return fail("ponto_desconhecido", `"${corpo.purpose}" não é um ponto do sistema`, 404);
+
+  if (ehJev) {
+    // Escolha de JEV: o provedor precisa ter base `systemone` e o modelo ser da
+    // família Jev. Não conversa — não passa pela validação de chat.
+    if (!ehProvedorDeJev(corpo.provider) || !ehAlvoDeJev(corpo.provider, corpo.model_id)) {
+      return fail(
+        "alvo_jev_invalido",
+        `"${corpo.provider}/${corpo.model_id}" não é um modelo de decisão estruturada (Jev) válido.`,
+        422,
+      );
+    }
+  } else if (!ehProvedorSuportado(corpo.provider)) {
+    // Provedor só-Jev (ex.: typesafe) não pode ser escolhido para o CHAT.
+    return fail(
+      "provedor_invalido",
+      `"${corpo.provider}" não é um provedor de conversa. Para decisão estruturada, use o card da Jev.`,
+      422,
+    );
+  }
 
   const db = await createClient();
 
@@ -245,24 +294,30 @@ export async function PUT(req: NextRequest): Promise<Response> {
     .is("deprecated_at", null)
     .maybeSingle();
 
-  const validacao = validarBinding({
-    pontoId: corpo.purpose,
-    modelo: {
-      model_id: corpo.model_id,
-      supports_tools: modelo?.supports_tools ?? false,
-      // A capacidade vem do MOTOR, não da coluna: os dois discordavam e a tela
-      // avisava "não enxerga imagens" sobre modelo que enxerga. Ver
-      // `lib/ai/pontos/capacidade-em-vigor.ts`.
-      supports_vision: enxergaImagem({
-        provider: corpo.provider,
-        modelId: corpo.model_id,
-        doCatalogo: modelo?.supports_vision ?? null,
-      }),
-      conhecido: modelo !== null,
-    },
-  });
-  if (!validacao.ok) {
-    return fail(validacao.codigo, validacao.mensagem, 422);
+  // A catraca de capacidade é do CHAT. Na Jev, o que importa já foi validado
+  // acima (`ehAlvoDeJev`) — o modelo não conversa, não usa ferramentas.
+  let avisos: string[] = [];
+  if (!ehJev) {
+    const validacao = validarBinding({
+      pontoId,
+      modelo: {
+        model_id: corpo.model_id,
+        supports_tools: modelo?.supports_tools ?? false,
+        // A capacidade vem do MOTOR, não da coluna: os dois discordavam e a tela
+        // avisava "não enxerga imagens" sobre modelo que enxerga. Ver
+        // `lib/ai/pontos/capacidade-em-vigor.ts`.
+        supports_vision: enxergaImagem({
+          provider: corpo.provider,
+          modelId: corpo.model_id,
+          doCatalogo: modelo?.supports_vision ?? null,
+        }),
+        conhecido: modelo !== null,
+      },
+    });
+    if (!validacao.ok) {
+      return fail(validacao.codigo, validacao.mensagem, 422);
+    }
+    avisos = validacao.avisos;
   }
 
   // A credencial precisa ser DESTA organização. O client de sessão já aplica
@@ -334,5 +389,5 @@ export async function PUT(req: NextRequest): Promise<Response> {
     },
   });
 
-  return ok({ binding: gravado, avisos: validacao.avisos });
+  return ok({ binding: gravado, avisos });
 }
