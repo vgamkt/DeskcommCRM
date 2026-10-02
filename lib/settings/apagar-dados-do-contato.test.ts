@@ -45,6 +45,10 @@ function clienteFalso() {
               filtros[coluna] = valores;
               return del;
             },
+            ilike(coluna: string, padrao: unknown) {
+              filtros[coluna] = padrao;
+              return del;
+            },
             then(resolve: (r: unknown) => void) {
               delecoes.push({ tabela, filtros: { ...filtros } });
               if (tabelaQueFalha === tabela) {
@@ -106,7 +110,19 @@ describe("apagarDadosDoContato — o contato nunca sai antes dos filhos RESTRICT
 
     const doContato = delecoes.filter((d) => d.tabela !== "contacts");
     for (const d of doContato) {
-      expect(d.filtros.contact_id === CONTATO || d.filtros.conversation_id !== undefined || d.filtros.channel_session_id !== undefined).toBe(true);
+      // O filtro tem de existir e apontar para o contato OU para uma conversa/
+      // sessão dele. Os resíduos sem FK (event_log/webhook) filtram por
+      // json-path (`payload->>contact_id`) ou por sessão — variações aceitas.
+      const chaves = Object.keys(d.filtros);
+      const escopado = chaves.some(
+        (k) =>
+          k === "contact_id" ||
+          k === "conversation_id" ||
+          k === "channel_session_id" ||
+          k.endsWith("->>contact_id") ||
+          k.endsWith("->>conversation_id"),
+      );
+      expect(escopado, `${d.tabela} sem filtro de contato/conversa/sessão`).toBe(true);
     }
     const raiz = delecoes.find((d) => d.tabela === "contacts");
     expect(raiz?.filtros).toMatchObject({ id: CONTATO, organization_id: ORG });

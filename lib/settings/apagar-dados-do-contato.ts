@@ -57,6 +57,7 @@ interface FiltravelDoDelete
   extends PromiseLike<{ count: number | null; error: { message: string } | null }> {
   eq(coluna: string, valor: string): FiltravelDoDelete;
   in(coluna: string, valores: string[]): FiltravelDoDelete;
+  ilike(coluna: string, padrao: string): FiltravelDoDelete;
 }
 
 export interface ResultadoApagamentoDoContato {
@@ -69,6 +70,7 @@ export interface ResultadoApagamentoDoContato {
 /** Filhos de `conversations`, apagados por `conversation_id`. */
 const FILHOS_DA_CONVERSA = [
   "ai_invocations",
+  "ai_router_decisions",
   "conversation_notes",
   "conversation_assignment_events",
   "demanda_conversas",
@@ -175,6 +177,39 @@ export async function apagarDadosDoContato(
     }
   }
 
+  // 4b) Telefone do contato — lido ANTES do delete, para o arquivo do webhook.
+  const { data: contatoInfo } = await client
+    .from("contacts")
+    .select("phone_number")
+    .eq("id", contactId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  const digits = (
+    (contatoInfo as { phone_number?: string | null } | null)?.phone_number ?? ""
+  ).replace(/\D/g, "");
+
+  // 4c) Runs de IA por CONVERSA — os de `contact_id` já saíram no passo 3; estes
+  //     ficam com `contact_id` nulo (FK SET NULL) e sobreviveriam como órfãos.
+  if (convIds.length > 0) {
+    await apagar("ai_agent_runs", (q) => q.in("conversation_id", convIds));
+  }
+
+  // 4d) O ARQUIVO DO WEBHOOK (corpo cru) e o EVENT_LOG (que guarda o
+  //     `body_preview` das mensagens + ids) NÃO têm FK para contato/conversa:
+  //     sem apagar aqui, o texto do cliente e a moto de interesse ficam no banco.
+  if (convIds.length > 0) {
+    await apagar("event_log", (q) => q.in("payload->>conversation_id", convIds));
+  }
+  await apagar("event_log", (q) => q.eq("payload->>contact_id", contactId));
+  if (sessIds.length > 0 && digits) {
+    await apagar("webhook_events_log", (q) =>
+      q.in("channel_session_id", sessIds).ilike("raw_body", `%${digits}%`),
+    );
+  }
+
+  // 4e) Mídia no bucket (avatar do contato + anexos de cada conversa).
+  await apagarMidiaDoContato(client, organizationId, convIds, contactId);
+
   // 5) Pais, do filho para a raiz. `messages`/`conversations` RESTRICT: se
   //    falharem, `contacts` também falha e a prova final acusa.
   await apagar("messages", (q) => q.eq("contact_id", contactId));
@@ -196,4 +231,33 @@ export async function apagarDadosDoContato(
   const ok = !resto && falhas.length === 0;
 
   return { ok, counts, falhas };
+}
+
+/**
+ * Remove a mídia do contato no bucket privado `whatsapp-media`: o avatar
+ * (`{org}/avatars/{contato}.*`) e os anexos de cada conversa
+ * (`{org}/{conversa}/{mensagem}.ext`). Best-effort — falha de mídia não invalida
+ * o apagamento dos dados (que é o que a prova principal verifica).
+ */
+async function apagarMidiaDoContato(
+  client: SupabaseClient,
+  organizationId: string,
+  convIds: readonly string[],
+  contactId: string,
+): Promise<void> {
+  try {
+    const bucket = client.storage.from("whatsapp-media");
+    const paths: string[] = [];
+    const avatares = await bucket.list(`${organizationId}/avatars`);
+    for (const f of avatares.data ?? []) {
+      if (f.name.startsWith(contactId)) paths.push(`${organizationId}/avatars/${f.name}`);
+    }
+    for (const conv of convIds) {
+      const ls = await bucket.list(`${organizationId}/${conv}`);
+      for (const f of ls.data ?? []) paths.push(`${organizationId}/${conv}/${f.name}`);
+    }
+    if (paths.length > 0) await bucket.remove(paths);
+  } catch {
+    // Acessório: o que precisa ser total é a remoção do dado.
+  }
 }
