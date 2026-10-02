@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type pg from "pg";
 
 vi.mock("../edge/llm/run-model-call", () => ({ runModelCall: vi.fn() }));
+// Este arquivo testa o validador de CHAT. A Jev fica DESLIGADA (sem alvos), senão
+// o `.env` de produção (JEV_ENABLED=1) faria o teste tentar a rede.
+vi.mock("../../ai/jev/resolver", () => ({ alvosDeJevDaOrg: async () => [] }));
+vi.mock("../../ai/jev/outbox", () => ({ enfileirarDecisaoJev: async () => {} }));
 
 import { runModelCall } from "../edge/llm/run-model-call";
 import {

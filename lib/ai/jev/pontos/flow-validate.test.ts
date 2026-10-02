@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  NAO_RESPOSTA,
+  leituraDeFluxoDaJev,
+  perguntasDeFluxoDeJev,
+  type CampoDeFluxoParaJev,
+} from './flow-validate';
+import type { RespostasDeJev } from '../tipos';
+
+const campos: CampoDeFluxoParaJev[] = [
+  { key: 'cidade', label: 'Cidade', question: 'De qual cidade você fala?', type: 'text' },
+  { key: 'cnh', label: 'Tem CNH?', type: 'boolean' },
+  { key: 'cor', label: 'Cor', type: 'select', options: ['azul', 'vermelha'] },
+];
+
+describe('perguntasDeFluxoDeJev', () => {
+  it('cria respondeu_ para todos e valor_ só nos discretos', () => {
+    const q = perguntasDeFluxoDeJev(campos);
+    expect(q['respondeu_cidade']?.type).toBe('noul');
+    expect(q['respondeu_cnh']?.type).toBe('noul');
+    expect(q['valor_cnh']?.type).toBe('choice');
+    expect(q['valor_cor']?.type).toBe('choice');
+    expect(q['valor_cidade']).toBeUndefined(); // texto não tem valor pronto
+    // A escolha tem as opções + "não respondeu".
+    const crit = (q['valor_cor'] as { criteria: Record<string, string> }).criteria;
+    expect(crit[NAO_RESPOSTA]).toBeDefined();
+    expect(crit['azul']).toBeDefined();
+    expect(crit['vermelha']).toBeDefined();
+  });
+});
+
+describe('leituraDeFluxoDaJev', () => {
+  it('marca respondidos por noul e traz valores dos discretos', () => {
+    const r: RespostasDeJev = {
+      respondeu_cidade: { type: 'noul', noul: 0.9 },
+      respondeu_cnh: { type: 'noul', noul: 0.8 },
+      valor_cnh: { type: 'choice', choice: 'sim', confidence: 1, probabilities: {} },
+      respondeu_cor: { type: 'noul', noul: 0.1 },
+      valor_cor: { type: 'choice', choice: NAO_RESPOSTA, confidence: 1, probabilities: {} },
+    };
+    const l = leituraDeFluxoDaJev(r, campos);
+    expect(l.camposRespondidos.sort()).toEqual(['cidade', 'cnh']);
+    expect(l.valores).toEqual({ cnh: 'sim' });
+  });
+
+  it('nada respondido → listas vazias (o chamador evita o chat)', () => {
+    const r: RespostasDeJev = {
+      respondeu_cidade: { type: 'noul', noul: 0.2 },
+      respondeu_cnh: { type: 'noul', noul: 0.1 },
+      valor_cnh: { type: 'choice', choice: NAO_RESPOSTA, confidence: 1, probabilities: {} },
+    };
+    const l = leituraDeFluxoDaJev(r, campos);
+    expect(l.camposRespondidos).toEqual([]);
+    expect(l.valores).toEqual({});
+  });
+});
