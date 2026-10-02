@@ -23,6 +23,13 @@ import type { Logger } from '../../obs/logger';
 import type { ProviderRegistry } from '../../edge/llm/providers';
 import { runModelCall, type LlmEdgeConfig } from '../../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../../edge/llm/credentials';
+import { decidir } from '../../../ai/jev';
+import { alvosDeJevDaOrg } from '../../../ai/jev/resolver';
+import { enfileirarDecisaoJev } from '../../../ai/jev/outbox';
+import {
+  perguntaDePromessaJev,
+  promessaDaRespostaDeJev,
+} from '../../../ai/jev/pontos/promessa';
 
 /** Veredito binário do classificador. suspectPhrase = null quando isPromise = false. */
 export interface PromiseClassification {
@@ -103,6 +110,30 @@ export async function classifyPromise(
   args: { candidate: string; model?: string; llmOverride?: LlmResolveOverride },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<PromiseClassification> {
+  // JEV PRIMEIRO: ela decide sim/não (é promessa fora de tabela?) e devolve a frase
+  // suspeita. Se esgotar/estiver fora, o chat abaixo é o último recurso.
+  try {
+    const alvos = await alvosDeJevDaOrg(db, ids.tenantId, 'promise_semantic');
+    if (alvos.length > 0) {
+      const decisao = await decidir({
+        alvos,
+        state: { mensagem: args.candidate },
+        questions: perguntaDePromessaJev(),
+        aoEsgotar: (info) =>
+          enfileirarDecisaoJev(db, {
+            organizationId: ids.tenantId,
+            point: 'promise_semantic',
+            ...info,
+          }),
+      });
+      if (decisao !== null) {
+        return promessaDaRespostaDeJev(decisao.respostas);
+      }
+    }
+  } catch {
+    // Jev indisponível → segue no chat.
+  }
+
   const call = await runModelCall(
     db,
     cfg,

@@ -14,6 +14,57 @@ import type pg from 'pg';
 import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
+import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
+import {
+  camposEssenciaisDaJev,
+  perguntasDeResumoDeJev,
+  type CampoParaResumo,
+} from '../../ai/jev/pontos/resumo';
+import type { AlvoDeJev } from '../../ai/jev';
+
+/**
+ * A Jev escolhe os campos ESSENCIAIS; a síntese (chat) recebe só eles (os demais
+ * viram "(não essencial)"). Se a Jev não escolher nenhum, mantém TODOS (nunca
+ * perde dado por ausência de decisão).
+ */
+async function selecionarFatosDoResumoComJev(
+  db: pg.Pool,
+  ids: { tenantId: string; leadId: string; jobId: string },
+  dados: FluxoParaResumir,
+  alvos: readonly AlvoDeJev[],
+  log: Logger,
+): Promise<FluxoParaResumir> {
+  const comValor: CampoParaResumo[] = dados.campos
+    .filter((c) => c.valor !== null && c.valor !== '')
+    .map((c) => ({ key: c.key, label: c.label, valor: c.valor as string }));
+  if (comValor.length === 0) return dados;
+  const decisao = await decidir({
+    alvos: [...alvos],
+    state: { fluxo: dados.nomeDoFluxo, campos: comValor.map((c) => ({ label: c.label, valor: c.valor })) },
+    questions: perguntasDeResumoDeJev(comValor),
+    aoEsgotar: (info) =>
+      enfileirarDecisaoJev(db, { organizationId: ids.tenantId, point: 'flow_summary', ...info }),
+  });
+  if (decisao === null) return dados;
+  const essenciais = new Set(camposEssenciaisDaJev(decisao.respostas, comValor));
+  if (essenciais.size === 0) return dados;
+  log.info('flow-summary: a Jev escolheu os fatos essenciais', {
+    essenciais: [...essenciais],
+    total: comValor.length,
+  });
+  // Mantém TODOS os campos (para não perder fato do prompt), mas marca os não
+  // essenciais — o chat prioriza os essenciais e não omite dado.
+  return {
+    ...dados,
+    campos: dados.campos.map((c) =>
+      c.valor !== null && c.valor !== '' && !essenciais.has(c.key)
+        ? { ...c, label: `${c.label} (secundário)` }
+        : c,
+    ),
+  };
+}
 import type { JobRow } from '../queue/queue';
 import { flowGraphSchema } from '@/lib/followup/graph-schema';
 import { mapearChecklist, type PassoDeAtendimento } from '@/lib/followup/atendimento';
@@ -91,6 +142,18 @@ export async function sintetizarFluxoDeAtendimento(
   dados: FluxoParaResumir,
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<string> {
+  // JEV PRIMEIRO (decisão de SELEÇÃO): ela escolhe QUAIS campos/fatos são os
+  // essenciais e entram na síntese. O TEXTO continua sendo escrito pelo chat —
+  // a Jev não escreve; ela só decide o que NÃO pode faltar.
+  let dadosParaResumo = dados;
+  try {
+    const alvos = await alvosDeJevDaOrg(db, ids.tenantId, 'flow_summary');
+    if (alvos.length > 0) {
+      dadosParaResumo = await selecionarFatosDoResumoComJev(db, ids, dados, alvos, deps.log);
+    }
+  } catch {
+    // Jev indisponível → resumo com todos os campos (comportamento de hoje).
+  }
   const call = await runModelCall(
     db,
     cfg,
@@ -99,7 +162,7 @@ export async function sintetizarFluxoDeAtendimento(
       leadId: ids.leadId,
       jobId: ids.jobId,
       purpose: 'flow_summary',
-      messages: [{ role: 'user', content: montarMensagemDoResumo(dados) }],
+      messages: [{ role: 'user', content: montarMensagemDoResumo(dadosParaResumo) }],
     },
     { registry: deps.registry, log: deps.log },
   );

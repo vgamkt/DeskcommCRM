@@ -17,6 +17,15 @@ import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LeadContext } from '../edge/crm/get-lead-context';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
+import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
+import {
+  classeDeFollowupDaJev,
+  perguntaDeClasseDeFollowupJev,
+  perguntasDeTimingDeJev,
+  timingDaJev,
+} from '../../ai/jev/pontos/followup';
 
 const CLASSIFY_INSTRUCTION =
   'Você é um classificador auxiliar de follow-up (NÃO responde ao lead). Classifique a ' +
@@ -70,6 +79,30 @@ export async function classifyFollowupReply(
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<string> {
   if (args.candidateText === null) return 'no_reply';
+
+  // JEV PRIMEIRO: escolhe a classe (choice). Esgotou/fora → chat abaixo.
+  try {
+    const alvos = await alvosDeJevDaOrg(db, ids.tenantId, 'followup_classify');
+    if (alvos.length > 0) {
+      const decisao = await decidir({
+        alvos,
+        state: { resposta: args.candidateText, hint: args.hint ?? null },
+        questions: perguntaDeClasseDeFollowupJev(args.classes),
+        aoEsgotar: (info) =>
+          enfileirarDecisaoJev(db, {
+            organizationId: ids.tenantId,
+            point: 'followup_classify',
+            ...info,
+          }),
+      });
+      if (decisao !== null) {
+        const cls = classeDeFollowupDaJev(decisao.respostas, args.classes);
+        if (cls !== null) return cls;
+      }
+    }
+  } catch {
+    // Jev indisponível → chat.
+  }
 
   const call = await runModelCall(
     db,
@@ -215,6 +248,38 @@ export async function planFollowupTiming(
   deps: { registry?: ProviderRegistry; log: Logger; clock?: () => Date },
 ): Promise<{ propostas: PropostaDeEsperaBruta[]; modelo: string }> {
   const now = (deps.clock ?? ((): Date => new Date()))();
+
+  // JEV PRIMEIRO: escolhe a posição no intervalo de cada espera (escala). O
+  // `motivo` (texto) fica vazio no caminho da Jev — é exibição, não decisão.
+  try {
+    const alvos = await alvosDeJevDaOrg(db, ids.tenantId, 'followup_decide_timing');
+    if (alvos.length > 0) {
+      const esperasJev = args.esperas.map((e) => ({
+        node_id: e.node_id,
+        label: e.label,
+        min_ms: e.min_ms,
+        max_ms: e.max_ms,
+      }));
+      const decisao = await decidir({
+        alvos,
+        state: { esperas: args.esperas.map((e) => ({ label: e.label, guidance: e.guidance ?? null })) },
+        questions: perguntasDeTimingDeJev(esperasJev),
+        aoEsgotar: (info) =>
+          enfileirarDecisaoJev(db, {
+            organizationId: ids.tenantId,
+            point: 'followup_decide_timing',
+            ...info,
+          }),
+      });
+      if (decisao !== null) {
+        const propostas = timingDaJev(decisao.respostas, esperasJev).map((p) => ({ ...p, motivo: '' }));
+        if (propostas.length > 0) return { propostas, modelo: decisao.model };
+      }
+    }
+  } catch {
+    // Jev indisponível → chat.
+  }
+
   const call = await runModelCall(
     db,
     cfg,

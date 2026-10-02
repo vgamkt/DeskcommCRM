@@ -28,6 +28,10 @@ export const PONTOS_COM_JEV: ReadonlySet<string> = new Set([
   'flow_validate',
   'skill_select',
   'knowledge_route',
+  'promise_semantic',
+  'followup_classify',
+  'followup_decide_timing',
+  'flow_summary',
 ]);
 
 /** `catalog_criteria` → `catalog_criteria__jev`. */
