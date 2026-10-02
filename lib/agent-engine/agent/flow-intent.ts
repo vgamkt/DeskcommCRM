@@ -21,6 +21,9 @@ import type pg from 'pg';
 
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDe } from '../../ai/jev/config';
+import { nomeDoFluxoDaRespostaDeJev, perguntaDeFluxoDeJev } from '../../ai/jev/pontos/flow-intent';
 
 /** Um fluxo ativo oferecido ao classificador. */
 export interface FluxoParaIA {
@@ -132,6 +135,24 @@ export async function escolherFluxoPorIA(
   try {
     const fluxos = await carregarFluxosAtivos(db, input.organizationId, input.contactId);
     if (fluxos.length === 0) return null;
+
+    // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
+    // A Jev é AUTORITATIVA quando responde (inclusive "none"); se ela esgotar, cai
+    // no modelo de chat (último recurso), e o regex do chamador segue como fallback.
+    const alvosJev = alvosDeJevDe(process.env);
+    if (alvosJev.length > 0) {
+      const decisaoJev = await decidir({
+        alvos: alvosJev,
+        state: { mensagem: input.texto },
+        questions: perguntaDeFluxoDeJev(fluxos),
+      });
+      if (decisaoJev !== null) {
+        const nome = nomeDoFluxoDaRespostaDeJev(decisaoJev.respostas);
+        const escolhido = nome ? (fluxos.find((f) => f.nome === nome) ?? null) : null;
+        return escolhido === null ? null : { id: escolhido.id, nome: escolhido.nome };
+      }
+    }
+
     const call = deps.runModelCall ?? runModelCall;
     const { result } = await call(
       db,
