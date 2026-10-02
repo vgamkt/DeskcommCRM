@@ -31,6 +31,12 @@ import { detectarPapelColuna } from '@/lib/external-db/catalogo';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDe } from '../../ai/jev/config';
+import {
+  criteriosDaRespostaDeJev,
+  perguntaDeCriteriosDeJev,
+} from '../../ai/jev/pontos/catalog-criteria';
 
 const JSON_INSTRUCTION =
   'Responda SOMENTE o JSON, no MESMO formato do exemplo, sem texto antes ou depois.';
@@ -362,6 +368,25 @@ export async function extrairCriterios(
   if (colunas.length === 0 || input.mensagem.trim() === '') {
     return criteriosVazios();
   }
+
+  // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
+  // A Jev classifica (intenção/exigidos/principal), escolhe as FAIXAS de preço/cc e
+  // aponta as motos parecidas do estoque; se ela esgotar, o extrator de chat abaixo
+  // (ÚLTIMO RECURSO) preserva o comportamento atual.
+  const alvosJev = alvosDeJevDe(process.env);
+  if (alvosJev.length > 0) {
+    const estoque = input.estoque ?? [];
+    const decisaoJev = await decidir({
+      alvos: alvosJev,
+      state: { mensagem: input.mensagem, estoque: estoque.map((m) => m.nome) },
+      questions: perguntaDeCriteriosDeJev({ colunas, estoque }),
+      perguntasObrigatorias: ['intencao'],
+    });
+    if (decisaoJev !== null) {
+      return criteriosDaRespostaDeJev(decisaoJev.respostas, { colunas, estoque });
+    }
+  }
+
   const call = deps.runModelCall ?? runModelCall;
   try {
     const { result } = await call(
