@@ -25,6 +25,12 @@ import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { logInvocation } from "@/lib/ai/log-invocation";
 import { SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/prompts/sentiment";
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { decidir } from "@/lib/ai/jev";
+import { alvosDeJevDe } from "@/lib/ai/jev/config";
+import {
+  perguntaDeSentimentoDeJev,
+  sentimentoDaRespostaDeJev,
+} from "@/lib/ai/jev/pontos/sentimento";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const SENTIMENT_MODEL = DEFAULT_CLASSIFIER_MODEL; // "anthropic/claude-haiku-4-5"
@@ -208,68 +214,97 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     const timeout = setTimeout(() => abortController.abort(), CLASSIFY_TIMEOUT_MS);
 
     const start = Date.now();
-    let result: z.infer<typeof sentimentSchema>;
+    let result: { sentiment_score: number } | null = null;
     let promptTokens = 0;
     let completionTokens = 0;
+    let modeloUsado = resolvido.modelId;
 
-    try {
-      const generated = await generateObject({
-        model: sentimentModel,
-        schema: sentimentSchema,
-        system: SENTIMENT_SYSTEM_PROMPT,
-        prompt: body,
-        temperature: 0,
-        // 80 era pequeno demais e nunca tinha sido exercitado (o worker morria
-        // antes, na autenticação). `generateObject` com Anthropic usa modo
-        // FERRAMENTA: o JSON vai dentro de um tool_use, que custa bem mais que
-        // texto puro. Medido com mensagens reais desta instalação: 2 de 3
-        // paravam em `stop_reason: max_tokens` com o JSON cortado no meio —
-        // daí o "No object generated: response did not match schema", que
-        // parecia erro de esquema e era truncamento. Pico observado: 146 sem
-        // as descrições, 84 com elas. 256 dá folga sem virar cheque em branco.
-        maxOutputTokens: 256,
-        abortSignal: abortController.signal,
+    // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
+    // Se ela devolver a nota, o `generateObject` abaixo (chat) nem roda: o chat
+    // vira o ÚLTIMO RECURSO, preservando o comportamento atual.
+    const alvosJev = alvosDeJevDe(process.env);
+    if (alvosJev.length > 0) {
+      const decisaoJev = await decidir({
+        alvos: alvosJev,
+        state: body,
+        questions: perguntaDeSentimentoDeJev(),
       });
+      const scoreJev = decisaoJev ? sentimentoDaRespostaDeJev(decisaoJev.respostas) : null;
+      if (decisaoJev && scoreJev !== null) {
+        result = { sentiment_score: scoreJev };
+        promptTokens = decisaoJev.usage.input_tokens;
+        completionTokens = decisaoJev.usage.output_tokens;
+        modeloUsado = decisaoJev.model;
+      }
+    }
 
-      result = generated.object;
-
-      const usage = generated.usage as
-        | {
-            inputTokens?: number;
-            outputTokens?: number;
-            promptTokens?: number;
-            completionTokens?: number;
-          }
-        | undefined;
-      promptTokens = usage?.inputTokens ?? usage?.promptTokens ?? 0;
-      completionTokens = usage?.outputTokens ?? usage?.completionTokens ?? 0;
-    } catch (err) {
-      // A FALHA também vira linha em `llm_calls`. A 0128 fez isso para o seam do
-      // agent-engine, e este worker não passa por lá — então, até aqui, escolher
-      // no painel um modelo que não existe fazia toda classificação falhar sem
-      // deixar rastro nenhum: a tela de Execuções, cuja razão de existir é
-      // responder "por que falhou", não mostrava nada para este ponto, com o
-      // painel dizendo que estava configurado.
-      //
-      // O `throw` mantém o desfecho de antes — quem decide o retorno continua
-      // sendo o catch global, que nunca deixa este worker derrubar o bot.
-      logInvocation({
-        organization_id: event.organization_id,
-        agent_id: agent?.id ?? null,
-        conversation_id: conversationId ?? message.conversation_id ?? null,
-        message_id: messageId,
-        invocation_kind: "sentiment_classify",
-        model: resolvido.modelId,
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        latency_ms: Date.now() - start,
-        cost_cents: 0,
-        finish_reason: "error",
-        error_payload: { message: err instanceof Error ? err.message : String(err) },
-      });
-      throw err;
-    } finally {
+    if (result) {
       clearTimeout(timeout);
+    } else {
+      try {
+        const generated = await generateObject({
+          model: sentimentModel,
+          schema: sentimentSchema,
+          system: SENTIMENT_SYSTEM_PROMPT,
+          prompt: body,
+          temperature: 0,
+          // 80 era pequeno demais e nunca tinha sido exercitado (o worker morria
+          // antes, na autenticação). `generateObject` com Anthropic usa modo
+          // FERRAMENTA: o JSON vai dentro de um tool_use, que custa bem mais que
+          // texto puro. Medido com mensagens reais desta instalação: 2 de 3
+          // paravam em `stop_reason: max_tokens` com o JSON cortado no meio —
+          // daí o "No object generated: response did not match schema", que
+          // parecia erro de esquema e era truncamento. Pico observado: 146 sem
+          // as descrições, 84 com elas. 256 dá folga sem virar cheque em branco.
+          maxOutputTokens: 256,
+          abortSignal: abortController.signal,
+        });
+
+        result = generated.object;
+
+        const usage = generated.usage as
+          | {
+              inputTokens?: number;
+              outputTokens?: number;
+              promptTokens?: number;
+              completionTokens?: number;
+            }
+          | undefined;
+        promptTokens = usage?.inputTokens ?? usage?.promptTokens ?? 0;
+        completionTokens = usage?.outputTokens ?? usage?.completionTokens ?? 0;
+      } catch (err) {
+        // A FALHA também vira linha em `llm_calls`. A 0128 fez isso para o seam do
+        // agent-engine, e este worker não passa por lá — então, até aqui, escolher
+        // no painel um modelo que não existe fazia toda classificação falhar sem
+        // deixar rastro nenhum: a tela de Execuções, cuja razão de existir é
+        // responder "por que falhou", não mostrava nada para este ponto, com o
+        // painel dizendo que estava configurado.
+        //
+        // O `throw` mantém o desfecho de antes — quem decide o retorno continua
+        // sendo o catch global, que nunca deixa este worker derrubar o bot.
+        logInvocation({
+          organization_id: event.organization_id,
+          agent_id: agent?.id ?? null,
+          conversation_id: conversationId ?? message.conversation_id ?? null,
+          message_id: messageId,
+          invocation_kind: "sentiment_classify",
+          model: modeloUsado,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          latency_ms: Date.now() - start,
+          cost_cents: 0,
+          finish_reason: "error",
+          error_payload: { message: err instanceof Error ? err.message : String(err) },
+        });
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (result === null) {
+      // Jev e chat não preencheram — o chat lança em erro, então não deveria chegar aqui.
+      return { skipped: true, reason: "classify_failed" };
     }
 
     const latencyMs = Date.now() - start;
@@ -306,12 +341,12 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       conversation_id: conversationId ?? message.conversation_id ?? null,
       message_id: messageId,
       invocation_kind: "sentiment_classify",
-      model: resolvido.modelId,
+      model: modeloUsado,
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
       latency_ms: latencyMs,
       cost_cents: await computeCost({
-        model: resolvido.modelId,
+        model: modeloUsado,
         promptTokens,
         completionTokens,
       }),
