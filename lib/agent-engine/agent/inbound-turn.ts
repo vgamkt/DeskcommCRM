@@ -5651,6 +5651,10 @@ async function executarTurnoDoAgente(
       opening_tokens_est: Math.ceil(openingText.length / 4),
       historico_msgs: effectiveContext.messages.length,
       historico_chars: effectiveContext.messages.reduce((n, m) => n + (m.body?.length ?? 0), 0),
+      // Quebra do opening: base (ritual+contexto) x sufixo (blocos situacionais).
+      base_chars: openingBase.length,
+      sufixo_chars: openingText.length - openingBase.length,
+      skill_bodies_chars: matchedSkillsBlock.length,
     });
     // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
     // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
