@@ -1333,6 +1333,65 @@ export async function listarFluxosDeAtendimentoAtivos(
 }
 
 /**
+ * A UNIÃO dos campos COLETÁVEIS de TODOS os fluxos de atendimento ATIVOS da org
+ * (uma chave repetida em vários fluxos aparece uma vez). Serve à captura contínua:
+ * em qualquer mensagem, o cliente pode informar um dado que ALGUM fluxo pergunta —
+ * gravá-lo agora evita a repergunta quando o fluxo rodar.
+ */
+export async function camposDeColetaDosFluxosAtivos(
+  db: pg.Pool,
+  organizationId: string,
+): Promise<
+  Array<{
+    key: string;
+    label: string;
+    question?: string | undefined;
+    type: 'text' | 'number' | 'date' | 'boolean' | 'select';
+    options?: string[] | undefined;
+  }>
+> {
+  const { rows } = await db.query<{ graph: unknown }>(
+    `select v.graph
+       from followup_flow_pointers p
+       join followup_flow_versions v on v.id = p.active_version_id
+      where p.organization_id = $1
+        and p.surface = 'atendimento'
+        and p.status = 'active'
+        and p.active_version_id is not null`,
+    [organizationId],
+  );
+  const porChave = new Map<
+    string,
+    {
+      key: string;
+      label: string;
+      question?: string | undefined;
+      type: 'text' | 'number' | 'date' | 'boolean' | 'select';
+      options?: string[] | undefined;
+    }
+  >();
+  for (const row of rows) {
+    const parsed = flowGraphSchema.safeParse(row.graph);
+    if (!parsed.success) continue;
+    const checklist = mapearChecklist(parsed.data);
+    if (!checklist.ok) continue;
+    for (const passo of checklist.checklist.passos) {
+      if (passo.kind !== 'collect') continue;
+      const c = passo.node.config;
+      if (porChave.has(c.key)) continue;
+      porChave.set(c.key, {
+        key: c.key,
+        label: c.label,
+        ...(c.question !== undefined ? { question: c.question } : {}),
+        type: c.type,
+        ...(c.options !== undefined ? { options: c.options } : {}),
+      });
+    }
+  }
+  return [...porChave.values()];
+}
+
+/**
  * Começa um fluxo de atendimento para o contato. Devolve o id do enrollment
  * criado, ou `null` quando não é para começar (pointer inativo, sem versão, grafo
  * inválido, ou já existir um enrollment vivo — o índice "1 vivo por contato").

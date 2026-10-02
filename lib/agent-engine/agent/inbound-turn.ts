@@ -229,6 +229,7 @@ import {
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { gravarDadosDeterministicos } from './dados-do-lead';
+import { capturarDadosDosFluxosNaMensagem } from './captura-de-fluxo';
 import {
   campoPorChave,
   carregarEstadoDeAtendimento,
@@ -6002,6 +6003,20 @@ async function executarTurnoDoAgente(
       contatoId: leadId,
       texto: currentInboundText,
     }).catch(() => {});
+
+    // CAPTURA CONTÍNUA dos dados de fluxo: em QUALQUER mensagem (não só com fluxo
+    // ativo), a Jev/validador interpreta se o cliente informou algum campo dos
+    // fluxos ativos (cidade, CNH, moto de interesse…) e grava no contato — o
+    // fluxo mescla depois e NÃO repergunta; correção sobrescreve. Best-effort.
+    if (!preview && leadId) {
+      void capturarDadosDosFluxosNaMensagem(
+        pool,
+        deps.llmCfg,
+        { tenantId, leadId, jobId: liveJob().id },
+        { contactId: leadId, texto: currentInboundText },
+        { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+      ).catch(() => {});
+    }
 
     // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
     //
