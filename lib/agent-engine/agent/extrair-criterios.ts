@@ -32,7 +32,7 @@ import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 import { decidir } from '../../ai/jev';
-import { alvosDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import {
   criteriosDaRespostaDeJev,
   perguntaDeCriteriosDeJev,
@@ -374,7 +374,7 @@ export async function extrairCriterios(
   // A Jev classifica (intenção/exigidos/principal), escolhe as FAIXAS de preço/cc e
   // aponta as motos parecidas do estoque; se ela esgotar, o extrator de chat abaixo
   // (ÚLTIMO RECURSO) preserva o comportamento atual.
-  const alvosJev = alvosDeJevDe(process.env);
+  const alvosJev = await alvosDeJevDaOrg(db, input.tenantId, 'catalog_criteria');
   if (alvosJev.length > 0) {
     const estoque = input.estoque ?? [];
     const decisaoJev = await decidir({

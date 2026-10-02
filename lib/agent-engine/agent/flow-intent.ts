@@ -22,7 +22,7 @@ import type pg from 'pg';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import { decidir } from '../../ai/jev';
-import { alvosDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { nomeDoFluxoDaRespostaDeJev, perguntaDeFluxoDeJev } from '../../ai/jev/pontos/flow-intent';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 
@@ -140,7 +140,7 @@ export async function escolherFluxoPorIA(
     // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
     // A Jev é AUTORITATIVA quando responde (inclusive "none"); se ela esgotar, cai
     // no modelo de chat (último recurso), e o regex do chamador segue como fallback.
-    const alvosJev = alvosDeJevDe(process.env);
+    const alvosJev = await alvosDeJevDaOrg(db, input.organizationId, 'flow_intent');
     if (alvosJev.length > 0) {
       const decisaoJev = await decidir({
         alvos: alvosJev,

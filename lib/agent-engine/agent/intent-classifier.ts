@@ -18,7 +18,7 @@ import type { Logger } from '../obs/logger';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LoadedRouter, RouterMember } from './router-config';
 import { decidir } from '../../ai/jev';
-import { alvosDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import {
   perguntaDeIntencaoDeJev,
   vereditoDaRespostaDeJev,
@@ -113,7 +113,7 @@ export async function classifyIntent(
     // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
     // A Jev é AUTORITATIVA quando responde (inclusive "none"); se esgotar, cai no
     // modelo de chat (último recurso) e o chamador usa o fallbackAgentId do router.
-    const alvosJev = alvosDeJevDe(process.env);
+    const alvosJev = await alvosDeJevDaOrg(db, input.tenantId, 'intent_router');
     if (alvosJev.length > 0) {
       const decisaoJev = await decidir({
         alvos: alvosJev,

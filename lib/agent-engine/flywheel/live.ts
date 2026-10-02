@@ -10,7 +10,7 @@ import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import { aggregateFollowupOutcomes, type FlowOutcomeStat } from '../../followup/outcome-stats';
 import { decidir } from '../../ai/jev';
-import { alvosDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import {
   perguntaDeVereditoDeHigieneJev,
   vereditoDaRespostaDeJev,
@@ -158,7 +158,7 @@ export async function runFlywheelOnce(
 
     // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
     // A Jev decide o VEREDITO (tipado); o modelo de chat é o ÚLTIMO recurso.
-    const alvosJev = alvosDeJevDe(process.env);
+    const alvosJev = await alvosDeJevDaOrg(pool, turn.organization_id, 'flywheel_judge');
     let verdictValue: string;
     let missingFacts: string[] = [];
     let judgeFamily: string;

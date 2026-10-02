@@ -36,7 +36,7 @@ import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
 import type { LeadContext } from '../edge/crm/get-lead-context';
 import { LEAD_STAGES, type LeadStage } from './lead-state';
-import { alvosDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { decidir, type AlvoDeJev } from '../../ai/jev/index';
 import type { PerguntasDeJev, RespostasDeJev } from '../../ai/jev/tipos';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
@@ -188,7 +188,7 @@ export async function classifyStage(
 ): Promise<LeadStage | null> {
   // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
   // Se responder, o estágio vem dela; se esgotar, cai no modelo de chat abaixo.
-  const alvos = alvosDeJevDe(process.env);
+  const alvos = await alvosDeJevDaOrg(db, ids.tenantId, 'stage_classifier');
   if (alvos.length > 0) {
     const porJev = await classificarEstagioComJev(
       args.context,
