@@ -5643,6 +5643,15 @@ async function executarTurnoDoAgente(
       openingSuffixes.length === 0
         ? openingBase
         : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+    // Medição da Parte 1d: composição do prompt do turno (chars; tokens_est = /4).
+    runLog.info('prompt do turno (composição)', {
+      system_chars: system.length,
+      system_tokens_est: Math.ceil(system.length / 4),
+      opening_chars: openingText.length,
+      opening_tokens_est: Math.ceil(openingText.length / 4),
+      historico_msgs: effectiveContext.messages.length,
+      historico_chars: effectiveContext.messages.reduce((n, m) => n + (m.body?.length ?? 0), 0),
+    });
     // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
     // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
     // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
