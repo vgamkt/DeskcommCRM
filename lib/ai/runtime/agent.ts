@@ -32,6 +32,9 @@ import { generateText, stepCountIs, type LanguageModel, type StopCondition, type
 import {
   cabecalhosDeAtribuicaoOpenRouter,
   GROQ_ENDPOINT,
+  OPENCODE_GO_V1,
+  OPENCODE_ZEN_V1,
+  opencodeHeaders,
   OPENROUTER_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
@@ -188,6 +191,12 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
     // conclui que o produto quebrou no exato momento em que ele funciona.
     case "groq":
       return createOpenAI({ apiKey, baseURL: GROQ_ENDPOINT })(modelId);
+    // OpenCode (Zen) é OpenAI-compatível no /chat/completions e exige o header
+    // de sessão `x-opencode-session`.
+    case "opencode":
+      return createOpenAI({ apiKey, baseURL: OPENCODE_ZEN_V1, headers: opencodeHeaders() })(modelId);
+    case "opencode_go":
+      return createOpenAI({ apiKey, baseURL: OPENCODE_GO_V1, headers: opencodeHeaders() })(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }

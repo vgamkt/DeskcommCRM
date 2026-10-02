@@ -6,6 +6,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
+import { randomUUID } from 'node:crypto';
 import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
@@ -47,6 +48,34 @@ export const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
  * então `@ai-sdk/openai` conversa com ela sem dependência nova.
  */
 export const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1';
+
+/**
+ * OpenCode (Zen) — gateway OpenAI-compatível. Usamos a família
+ * `/chat/completions`, que é onde estão os modelos ABERTOS (Kimi, GLM, MiniMax,
+ * DeepSeek, Qwen3.8 Max) e os gratuitos — os que o CRM consome. As demais
+ * famílias (Responses/Messages/Google) servem GPT/Claude/Gemini, que já têm
+ * provedor próprio no sistema e cujos ids colidem com o preço deles.
+ *
+ * Autenticação: `Authorization: Bearer <token>`.
+ */
+export const OPENCODE_ZEN_V1 = 'https://opencode.ai/zen/v1';
+
+/**
+ * OpenCode Go / Go Plus — a ASSINATURA. Mesma API (OpenAI-compatível, Bearer),
+ * só muda a base (`/zen/go/v1`) e a cobrança (franquia mensal em vez de créditos).
+ */
+export const OPENCODE_GO_V1 = 'https://opencode.ai/zen/go/v1';
+
+/**
+ * A OpenCode (Go/Zen) EXIGE o header `x-opencode-session` — medido: sem ele o
+ * endpoint responde `400 MissingSessionID` ("cannot be routed efficiently"); com
+ * ele, 200. A doc pede um id estável por conversa para cache de prompt; aqui
+ * geramos um por instância (a fábrica não recebe a conversa) — presença do
+ * header é o requisito; refinar para id por conversa é melhoria futura.
+ */
+export function opencodeHeaders(): Record<string, string> {
+  return { 'x-opencode-session': randomUUID() };
+}
 
 /**
  * Cabeçalhos OPCIONAIS de atribuição da OpenRouter.
@@ -131,6 +160,30 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
     groq: (apiKey, modelId, baseUrl) => {
       const endpoint = baseUrl ?? GROQ_ENDPOINT;
       const provider = createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) });
+      return provider.chat(modelId);
+    },
+    /**
+     * OpenCode (Zen): OpenAI-compatível no `/chat/completions` (modelos abertos
+     * e gratuitos). Autentica por Bearer, como a OpenRouter/Groq.
+     */
+    opencode: (apiKey, modelId) => {
+      const provider = createOpenAI({
+        apiKey,
+        baseURL: OPENCODE_ZEN_V1,
+        headers: opencodeHeaders(),
+        fetch: contain(OPENCODE_ZEN_V1),
+      });
+      return provider.chat(modelId);
+    },
+    // OpenCode Go (assinatura): mesma API, base `/zen/go/v1`. Exige o header de
+    // sessão (`x-opencode-session`), senão responde 400 MissingSessionID.
+    opencode_go: (apiKey, modelId) => {
+      const provider = createOpenAI({
+        apiKey,
+        baseURL: OPENCODE_GO_V1,
+        headers: opencodeHeaders(),
+        fetch: contain(OPENCODE_GO_V1),
+      });
       return provider.chat(modelId);
     },
   };

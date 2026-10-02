@@ -319,8 +319,11 @@ export function AgentForm(props: Props) {
   }
 
   // Quando provider muda, limpa credential e modelo (eles dependem do provider).
+  // O `operator_model` TAMBÉM: um modelo do provider antigo (ex.: gemini) com o
+  // provider novo (ex.: opencode_go) quebra o `operator_turn` ("Model is
+  // unavailable") e trava o funil — tem de herdar de novo (vazio) e ser reescolhido.
   function changeProvider(p: Provider) {
-    patch({ provider: p, credential_id: "", model: "" });
+    patch({ provider: p, credential_id: "", model: "", operator_model: "" });
   }
 
   const cred = findCredential(props.credentials, form.credential_id);

@@ -93,6 +93,28 @@ export const PROVEDORES = [
     ondePegarAChave: "https://console.groq.com/keys",
     prefixoDaChave: "gsk_…",
   },
+  {
+    id: "opencode",
+    rotulo: "OpenCode (Zen)",
+    quandoUsar:
+      "Um gateway com modelos de vários fabricantes (inclusive gratuitos) numa chave só — inclui modelos abertos como Kimi, GLM, MiniMax e DeepSeek, além de GPT, Claude e Gemini.",
+    // O endpoint é fixo (o gateway da OpenCode). Não expomos base_url próprio
+    // para não abrir a porta de um endpoint arbitrário com a chave do operador.
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://opencode.ai/console",
+    prefixoDaChave: "…",
+  },
+  {
+    id: "opencode_go",
+    rotulo: "OpenCode Go",
+    quandoUsar:
+      "A assinatura da OpenCode (Go/Go Plus), com franquia mensal para os modelos abertos. Use quando quiser consumir a assinatura em vez dos créditos do Console.",
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://opencode.ai/console",
+    prefixoDaChave: "…",
+  },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
 // e `Provider` viraria `string`, deixando o compilador aceitar qualquer texto

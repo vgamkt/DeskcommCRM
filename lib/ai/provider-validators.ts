@@ -8,6 +8,8 @@
  *
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
+import { randomUUID } from "node:crypto";
+
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 /**
@@ -194,6 +196,69 @@ export async function validateGroqKey(apiKey: string): Promise<ValidationResult>
   }
 }
 
+/**
+ * OpenCode (Zen e Go). ⚠️ Diferente dos irmãos, o catálogo é PÚBLICO: medido em
+ * 2026-10-01, `GET .../models` responde 200 SEM header e com token falso — então
+ * validar por ele seria o mesmo defeito que já mordeu a OpenRouter (qualquer
+ * string entrava como "validada"). A prova passa a ser um POST mínimo num modelo
+ * PAGO: sem chave válida ele responde 401 (medido com token falso); com a chave,
+ * 200. Custa alguns tokens — é o preço de uma prova de verdade.
+ *
+ * Zen e Go compartilham a API e a chave; muda a BASE (`/zen/v1` × `/zen/go/v1`)
+ * e a cobrança (créditos × assinatura).
+ */
+async function validarChaveOpenCode(
+  base: string,
+  pingModel: string,
+  apiKey: string,
+): Promise<ValidationResult> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 20_000);
+  try {
+    const ping = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        // Obrigatório: sem este header o endpoint responde 400 MissingSessionID.
+        "x-opencode-session": randomUUID(),
+      },
+      body: JSON.stringify({
+        model: pingModel,
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1,
+      }),
+      signal: ctrl.signal,
+    });
+    if (ping.status === 401 || ping.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!ping.ok) return { ok: false, error: `provider_status_${ping.status}` };
+
+    // Catálogo (público) só como DADO — a prova acima é que valida a chave.
+    const res = await timedFetch(`${base}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return { ok: true, models: [] };
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export function validateOpenCodeKey(apiKey: string): Promise<ValidationResult> {
+  return validarChaveOpenCode("https://opencode.ai/zen/v1", "deepseek-v4-flash", apiKey);
+}
+
+export function validateOpenCodeGoKey(apiKey: string): Promise<ValidationResult> {
+  return validarChaveOpenCode("https://opencode.ai/zen/go/v1", "glm-5.3-flash", apiKey);
+}
+
 export function validateProviderKey(
   provider: Provider,
   apiKey: string,
@@ -209,6 +274,10 @@ export function validateProviderKey(
       return validateOpenRouterKey(apiKey);
     case "groq":
       return validateGroqKey(apiKey);
+    case "opencode":
+      return validateOpenCodeKey(apiKey);
+    case "opencode_go":
+      return validateOpenCodeGoKey(apiKey);
     default: {
       // Sem `never` aqui: `Provider` agora é derivado de PROVEDORES, e a lista
       // cresce sem que este arquivo saiba. Provedor novo cadastrado antes de
