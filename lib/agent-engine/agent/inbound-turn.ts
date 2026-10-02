@@ -148,6 +148,7 @@ import {
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { selecionarSkillsComJev } from './skill-select-jev';
+import { rotearConhecimentoComJev } from './knowledge-route-jev';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
@@ -3679,14 +3680,23 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // ROTA da base pela Jev (ponto `knowledge_route`): escolhe os MATERIAIS
+        // relevantes e o top-K antes do embedding. Fallback = todas as fontes.
+        const topKPadrao = agentConfig?.ragTopK ?? 5;
+        const rota = await rotearConhecimentoComJev(
+          pool,
+          tenantId,
+          { pergunta: query, materialIds: fontes, topKPadrao },
+          runLog,
+        );
         const out = await searchKnowledge(
           pool,
           {
             organizationId: tenantId,
-            knowledgeSourceIds: fontes,
+            knowledgeSourceIds: rota?.materialIds ?? fontes,
             kbVersionId: agentConfig?.activeKbVersionId ?? null,
             query,
-            topK: agentConfig?.ragTopK ?? 5,
+            topK: rota?.topK ?? topKPadrao,
             threshold: agentConfig?.ragSimilarityThreshold ?? 0.4,
             jobId: job?.id,
             agentId: agentConfig?.agentId ?? null,
