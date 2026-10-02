@@ -141,11 +141,13 @@ import {
   recentInboundSignal,
   loadSkills,
   matchSkills,
+  matchSkillsPorNomes,
   recordSkillMissCandidates,
   renderMatchedSkillBodies,
   renderSkillIndex,
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
+import { selecionarSkillsComJev } from './skill-select-jev';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
@@ -3040,7 +3042,21 @@ async function executarTurnoDoAgente(
   // `currentInboundText` é a MENSAGEM ATUAL: usada só para a EXCLUSÃO
   // (`unless_keywords`) — uma objeção do turno não deixa a skill de catálogo
   // entrar junto da de objeção (conflito medido ao vivo 2026-09-30).
-  const skillMatch = matchSkills(skills, skillSignal, currentInboundText ?? '');
+  const skillMatchBase = matchSkills(skills, skillSignal, currentInboundText ?? '');
+  // ── SELEÇÃO DE SKILL PELA JEV (ponto `skill_select`) ──────────────────────
+  // Quando ligada, é ela quem escolhe QUAIS skills entram (o matcher por keyword
+  // traz corpo demais/errado). O matcher segue rodando para a EXCLUSÃO
+  // (`unless_keywords`) e a telemetria de near-miss. Fallback = matcher.
+  const skillMatch = !preview
+    ? await selecionarSkillsComJev(
+        pool,
+        tenantId,
+        { mensagens: skillSignal, skills, excluidas: currentInboundText ?? '' },
+        runLog,
+      ).then((escolhidas) =>
+        escolhidas === null ? skillMatchBase : matchSkillsPorNomes(skills, escolhidas),
+      )
+    : skillMatchBase;
   // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
   // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
   // por keyword vence, e a mesma skill não entra duas vezes. A skill da

@@ -26,6 +26,7 @@ export const PONTOS_COM_JEV: ReadonlySet<string> = new Set([
   'flow_intent',
   'intent_router',
   'flow_validate',
+  'skill_select',
 ]);
 
 /** `catalog_criteria` → `catalog_criteria__jev`. */

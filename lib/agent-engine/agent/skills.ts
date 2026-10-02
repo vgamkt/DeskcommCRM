@@ -256,6 +256,18 @@ export interface SkillMatchResult {
 }
 
 /**
+ * SELEÇÃO por lista de NOMES (usada pela Jev): devolve as habilidades cujo nome
+ * está na lista escolhida. Mesmo shape do matcher — quem consome não muda.
+ */
+export function matchSkillsPorNomes(
+  skills: readonly LoadedSkill[],
+  nomes: readonly string[],
+): SkillMatchResult {
+  const alvo = new Set(nomes);
+  return { matched: skills.filter((s) => alvo.has(s.name)), missCandidates: [] };
+}
+
+/**
  * Guideline-matching if-then DETERMINÍSTICO: avalia cada skill contra o SINAL do turno
  * (texto). `any_keywords` casando (substring normalizado) = hard-match → o corpo carrega.
  * `probe_keywords` casando SEM hard-match = near-miss → candidato ao golden. Sinal vazio

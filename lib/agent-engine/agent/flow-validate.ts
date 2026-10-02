@@ -46,7 +46,7 @@ import { decidir } from '../../ai/jev';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 import {
-  candidatasDeTexto,
+  candidatasPorTipo,
   leituraDeFluxoDaJev,
   perguntasDeFluxoDeJev,
   type CampoDeFluxoParaJev,
@@ -235,7 +235,7 @@ export async function validarRespostaDoFluxo(
     // Campos de texto/número/data: candidatas extraídas da mensagem, para a Jev
     // escolher o valor (ela não devolve texto puro).
     if (p.type === 'text' || p.type === 'number' || p.type === 'date') {
-      const c = candidatasDeTexto(textoCliente, p.label);
+      const c = candidatasPorTipo(textoCliente, p.type, p.label);
       if (c.length > 0) campo.candidatas = c;
     }
     return campo;

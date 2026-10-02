@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   NAO_RESPOSTA,
+  candidatasPorTipo,
   candidatasDeTexto,
+  candidatasNumericas,
+  candidatasDeData,
   leituraDeFluxoDaJev,
   perguntasDeFluxoDeJev,
   type CampoDeFluxoParaJev,
@@ -67,5 +70,23 @@ describe('candidatasDeTexto', () => {
   it('não devolve o rótulo nem vazio', () => {
     expect(candidatasDeTexto('', 'Cidade')).toEqual([]);
     expect(candidatasDeTexto('tudo bem?', 'Cidade')).toEqual([]);
+  });
+});
+
+describe('candidatas por tipo (número/data)', () => {
+  it('números soltos viram candidatas', () => {
+    expect(candidatasNumericas('tenho 3 mil de entrada e 120 mil km').length).toBeGreaterThan(0);
+    expect(candidatasNumericas('tenho 3 mil de entrada e 120 mil km')).toContain('3');
+  });
+
+  it('datas em formatos comuns viram candidatas', () => {
+    expect(candidatasDeData('nasci em 26/02/1989')).toContain('26/02/1989');
+    expect(candidatasDeData('nascimento 1989-02-26')).toContain('1989-02-26');
+  });
+
+  it('candidatasPorTipo roteia por tipo', () => {
+    expect(candidatasPorTipo('são 3 mil', 'number', 'Entrada')).toContain('3');
+    expect(candidatasPorTipo('sou de Salvador', 'text', 'Cidade').join(' ')).toMatch(/Salvador/);
+    expect(candidatasPorTipo('em 01/01/2000', 'date', 'Data')).toContain('01/01/2000');
   });
 });

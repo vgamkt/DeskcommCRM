@@ -49,6 +49,42 @@ export function candidatasDeTexto(mensagem: string, label: string): string[] {
   return [...out].filter((v) => v.toLowerCase() !== alvo).slice(0, 4);
 }
 
+/**
+ * Candidatas numéricas: todos os números "soltos" da mensagem (dígitos, com pontos/
+ * vírgulas opcionais). A Jev escolhe qual é o valor do campo (ou "não respondeu").
+ */
+export function candidatasNumericas(mensagem: string): string[] {
+  const out = new Set<string>();
+  for (const m of mensagem.matchAll(/\b\d[\d.,]*\b/g)) {
+    const v = m[0].replace(/[.,]+$/, '');
+    if (v !== '') out.add(v);
+  }
+  return [...out].slice(0, 4);
+}
+
+/**
+ * Candidatas de DATA: formatos `DD/MM/AAAA`, `DD-MM-AAAA`, `AAAA-MM-DD`. Devolve o
+ * valor no formato do campo (o motor normaliza depois). A Jev escolhe a certa.
+ */
+export function candidatasDeData(mensagem: string): string[] {
+  const out = new Set<string>();
+  for (const m of mensagem.matchAll(/\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b/g)) out.add(m[0]);
+  for (const m of mensagem.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)) out.add(m[0]);
+  return [...out].slice(0, 4);
+}
+
+/** Candidatas por TIPO de campo (texto/número/data). */
+export function candidatasPorTipo(
+  mensagem: string,
+  tipo: CampoDeFluxoParaJev['type'],
+  label: string,
+): string[] {
+  if (tipo === 'number') return candidatasNumericas(mensagem);
+  if (tipo === 'date') return candidatasDeData(mensagem);
+  if (tipo === 'text') return candidatasDeTexto(mensagem, label);
+  return [];
+}
+
 /** O que a Jev precisa de cada campo do fluxo. */
 export interface CampoDeFluxoParaJev {
   key: string;
@@ -101,10 +137,13 @@ export function perguntasDeFluxoDeJev(
         instructions: `Qual opção o cliente escolheu para "${c.label}"?`,
         criteria,
       };
-    } else if (c.type === 'text' && (c.candidatas?.length ?? 0) > 0) {
-      // TEXTO LIVRE: a Jev escolhe, entre as CANDIDATAS extraídas da mensagem,
-      // qual é o valor do campo — ou "não respondeu". Assim até cidade passa só
-      // pela Jev (o motor não precisa do validador de chat).
+    } else if (
+      (c.type === 'text' || c.type === 'number' || c.type === 'date') &&
+      (c.candidatas?.length ?? 0) > 0
+    ) {
+      // TEXTO/NÚMERO/DATA: a Jev escolhe, entre as CANDIDATAS extraídas da
+      // mensagem, qual é o valor do campo — ou "não respondeu". Assim ATÉ os
+      // campos livres passam só pela Jev (o motor não precisa do chat).
       const criteria: Record<string, string> = {
         [NAO_RESPOSTA]: `o cliente não disse "${c.label}"`,
       };
