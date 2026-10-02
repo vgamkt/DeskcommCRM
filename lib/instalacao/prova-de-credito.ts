@@ -21,6 +21,9 @@
 import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
 import {
   cabecalhosDeAtribuicaoOpenRouter,
+  OPENCODE_GO_V1,
+  OPENCODE_ZEN_V1,
+  opencodeHeaders,
   OPENROUTER_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 
@@ -100,6 +103,29 @@ export function montarRequisicaoDeProva(
           contents: [{ parts: [{ text: "oi" }] }],
           generationConfig: { maxOutputTokens: 1 },
         },
+      };
+    // OpenCode (Zen e Go): API OpenAI-compatível, base própria. O header
+    // `x-opencode-session` é OBRIGATÓRIO no chat (sem ele → 400 MissingSessionID),
+    // então entra na prova — sem ele a "geração" nem chega a cobrar.
+    case "opencode":
+      return {
+        url: `${baseUrl ?? OPENCODE_ZEN_V1}/chat/completions`,
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+          ...opencodeHeaders(),
+        },
+        body: { model: modelo, max_tokens: 1, messages: msg },
+      };
+    case "opencode_go":
+      return {
+        url: `${baseUrl ?? OPENCODE_GO_V1}/chat/completions`,
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+          ...opencodeHeaders(),
+        },
+        body: { model: modelo, max_tokens: 1, messages: msg },
       };
     default:
       // Fail-closed: provedor que este módulo não sabe cobrar não recebe um

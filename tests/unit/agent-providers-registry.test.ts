@@ -10,7 +10,15 @@ describe("createDefaultRegistry", () => {
     // que ninguém alcança pela tela, e o inverso é uma tela que oferece o que
     // toda chamada recusaria. O par é vigiado por provedores-x-registry.test.ts.
     const reg = createDefaultRegistry();
-    expect(Object.keys(reg).sort()).toEqual(["anthropic", "google", "groq", "openai", "openrouter"]);
+    expect(Object.keys(reg).sort()).toEqual([
+      "anthropic",
+      "google",
+      "groq",
+      "openai",
+      "opencode",
+      "opencode_go",
+      "openrouter",
+    ]);
   });
   it("cada factory produz um LanguageModel (não lança ao instanciar)", () => {
     const reg = createDefaultRegistry();
