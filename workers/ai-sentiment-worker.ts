@@ -231,6 +231,12 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       });
       const scoreJev = decisaoJev ? sentimentoDaRespostaDeJev(decisaoJev.respostas) : null;
       if (decisaoJev && scoreJev !== null) {
+        console.warn("[ai-sentiment-worker] jev: sentiment_classify", {
+          provider: decisaoJev.provider,
+          tentativas: decisaoJev.tentativas,
+          input_tokens: decisaoJev.usage.input_tokens,
+          output_tokens: decisaoJev.usage.output_tokens,
+        });
         result = { sentiment_score: scoreJev };
         promptTokens = decisaoJev.usage.input_tokens;
         completionTokens = decisaoJev.usage.output_tokens;

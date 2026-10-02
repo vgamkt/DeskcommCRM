@@ -39,6 +39,7 @@ import { LEAD_STAGES, type LeadStage } from './lead-state';
 import { alvosDeJevDe } from '../../ai/jev/config';
 import { decidir, type AlvoDeJev } from '../../ai/jev/index';
 import type { PerguntasDeJev, RespostasDeJev } from '../../ai/jev/tipos';
+import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 
 /** Knobs do classificador (env STAGE_CLASSIFIER_*; defaults conservadores no .env.example). */
 export interface StageClassifierKnobs {
@@ -132,6 +133,7 @@ async function classificarEstagioComJev(
     log.warn('stage-classifier: Jev esgotou as tentativas — caindo no modelo de chat (último recurso)');
     return null;
   }
+  registrarDecisaoJev(log, 'stage_classifier', decisao);
   const estagio = estagioDaRespostaDeJev(decisao.respostas);
   if (estagio === null) {
     log.warn('stage-classifier: Jev sem estágio reconhecível — caindo no modelo de chat');

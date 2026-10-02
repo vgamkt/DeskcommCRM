@@ -24,6 +24,7 @@ import type { Logger } from '../obs/logger';
 import { decidir } from '../../ai/jev';
 import { alvosDeJevDe } from '../../ai/jev/config';
 import { nomeDoFluxoDaRespostaDeJev, perguntaDeFluxoDeJev } from '../../ai/jev/pontos/flow-intent';
+import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 
 /** Um fluxo ativo oferecido ao classificador. */
 export interface FluxoParaIA {
@@ -147,6 +148,7 @@ export async function escolherFluxoPorIA(
         questions: perguntaDeFluxoDeJev(fluxos),
       });
       if (decisaoJev !== null) {
+        registrarDecisaoJev(deps.log, 'flow_intent', decisaoJev);
         const nome = nomeDoFluxoDaRespostaDeJev(decisaoJev.respostas);
         const escolhido = nome ? (fluxos.find((f) => f.nome === nome) ?? null) : null;
         return escolhido === null ? null : { id: escolhido.id, nome: escolhido.nome };

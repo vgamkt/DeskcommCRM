@@ -15,6 +15,7 @@ import {
   perguntaDeVereditoDeHigieneJev,
   vereditoDaRespostaDeJev,
 } from '../../ai/jev/pontos/flywheel';
+import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 
 // Os dois pontos do flywheel NÃO fixam modelo aqui. Fixavam `claude-haiku-4-5`,
 // e um id de modelo só é válido no vocabulário do provedor que a instalação usa:
@@ -174,6 +175,7 @@ export async function runFlywheelOnce(
     const vereditoJev = decisaoJev ? vereditoDaRespostaDeJev(decisaoJev.respostas) : null;
 
     if (decisaoJev && vereditoJev !== null) {
+      registrarDecisaoJev(log, 'flywheel_judge', decisaoJev);
       verdictValue = vereditoJev;
       judgeFamily = decisaoJev.provider;
       judgeModel = decisaoJev.model;

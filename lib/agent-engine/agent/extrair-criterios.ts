@@ -37,6 +37,7 @@ import {
   criteriosDaRespostaDeJev,
   perguntaDeCriteriosDeJev,
 } from '../../ai/jev/pontos/catalog-criteria';
+import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 
 const JSON_INSTRUCTION =
   'Responda SOMENTE o JSON, no MESMO formato do exemplo, sem texto antes ou depois.';
@@ -383,6 +384,7 @@ export async function extrairCriterios(
       perguntasObrigatorias: ['intencao'],
     });
     if (decisaoJev !== null) {
+      registrarDecisaoJev(deps.log, 'catalog_criteria', decisaoJev);
       return criteriosDaRespostaDeJev(decisaoJev.respostas, { colunas, estoque });
     }
   }

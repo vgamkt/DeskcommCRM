@@ -23,6 +23,7 @@ import {
   perguntaDeIntencaoDeJev,
   vereditoDaRespostaDeJev,
 } from '../../ai/jev/pontos/intent-router';
+import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 
 export interface IntentVerdict {
   intentName: string | null;
@@ -120,6 +121,7 @@ export async function classifyIntent(
         questions: perguntaDeIntencaoDeJev(input.router.members),
       });
       if (decisaoJev !== null) {
+        registrarDecisaoJev(deps.log, 'intent_router', decisaoJev);
         const veredito = vereditoDaRespostaDeJev(decisaoJev.respostas);
         if (veredito !== null) {
           const conhecida =
