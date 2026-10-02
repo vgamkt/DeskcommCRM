@@ -17,6 +17,12 @@ import type pg from 'pg';
 import type { Logger } from '../obs/logger';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { LoadedRouter, RouterMember } from './router-config';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDe } from '../../ai/jev/config';
+import {
+  perguntaDeIntencaoDeJev,
+  vereditoDaRespostaDeJev,
+} from '../../ai/jev/pontos/intent-router';
 
 export interface IntentVerdict {
   intentName: string | null;
@@ -103,6 +109,27 @@ export async function classifyIntent(
 ): Promise<IntentVerdict | null> {
   const call = deps.runModelCall ?? runModelCall;
   try {
+    // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
+    // A Jev é AUTORITATIVA quando responde (inclusive "none"); se esgotar, cai no
+    // modelo de chat (último recurso) e o chamador usa o fallbackAgentId do router.
+    const alvosJev = alvosDeJevDe(process.env);
+    if (alvosJev.length > 0) {
+      const decisaoJev = await decidir({
+        alvos: alvosJev,
+        state: { mensagem: input.signal },
+        questions: perguntaDeIntencaoDeJev(input.router.members),
+      });
+      if (decisaoJev !== null) {
+        const veredito = vereditoDaRespostaDeJev(decisaoJev.respostas);
+        if (veredito !== null) {
+          const conhecida =
+            veredito.intentName !== null &&
+            input.router.members.some((m) => m.intentName === veredito.intentName);
+          return { intentName: conhecida ? veredito.intentName : null, confidence: veredito.confidence };
+        }
+      }
+    }
+
     const { result } = await call(
       db,
       llmCfg,
