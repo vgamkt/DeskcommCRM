@@ -175,6 +175,7 @@ import {
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
+import { perguntaDeMaisOpcoes } from './mais-opcoes';
 import { briefDoTurnoDe, prefetchDeJevDe } from '../../ai/jev/config';
 import { alvosDeJevDaOrg, jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
@@ -4495,8 +4496,19 @@ async function executarTurnoDoAgente(
             // ignora com frequência). Só quando o filtro deixou motos parecidas de
             // fora (temMaisOpcoesNesteTurno). Determinístico, não depende do LLM.
             if (temMaisOpcoesNesteTurno) {
-              const perguntaMais = 'Quer que eu te mostre mais opções?';
-              const jaPergunta = /mais op[çc]/i.test(final) || /mais op[çc]/i.test(introducao);
+              // Pergunta NATURAL e VARIADA (não a mesma frase em todo mundo), e —
+              // quando o cliente citou um MODELO — distinguindo "procura ESSE
+              // modelo" de "quer ver outras parecidas".
+              const citouModelo =
+                pedeMotoExplicito(mensagemDoJob ?? '') ||
+                motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDaConversa.motos).length > 0;
+              const perguntaMais = perguntaDeMaisOpcoes({
+                modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
+                variacao: pedidosDeOpcoesTurno,
+              });
+              const jaPergunta =
+                /(mais op[çc]|outras op[çc]|alternativ|parecid)/i.test(final) ||
+                /(mais op[çc]|outras op[çc]|alternativ|parecid)/i.test(introducao);
               if (!jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
               }
@@ -5719,7 +5731,7 @@ async function executarTurnoDoAgente(
       // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
       // convidado a ver as demais. Determinístico (motor), por-lead.
       temMaisOpcoesNesteTurno
-        ? '## Mais opções disponíveis\nSe apresentou algumas motos parecidas, mas AINDA HÁ outras que combinam com o pedido. Feche o turno perguntando, de forma natural, se o cliente quer ver mais opções (não liste os nomes).'
+        ? '## Ainda há outras opções que combinam\nApresente as que casaram, mas saiba que o sistema AINDA tem outras motos que combinam com o pedido. Feche o turno com um convite NATURAL e VARIADO — nunca repita sempre a mesma frase (não liste os nomes das demais).\n- Se o cliente citou um MODELO específico: pergunte com suas palavras se ele quer EXATAMENTE esse modelo ou se prefere ver opções parecidas (ex.: "Quer que eu procure essa <modelo> mesmo, ou prefere ver outras parecidas?").\n- Senão: convide a ver mais opções de forma leve (ex.: "Quer ver mais algumas?", "Te mostro outras?").'
         : '',
       caseAwaitingLeadBlock,
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
