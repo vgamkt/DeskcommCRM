@@ -66,17 +66,11 @@ interface Ponto {
   jev: { provider: string; modelId: string | null; credentialId: string | null; isEnabled: boolean } | null;
 }
 
-interface ModeloJev {
-  provider: string;
-  model_id: string;
-  display_name: string;
-}
-
 interface ProvedorJev {
   id: string;
   rotulo: string;
-  quandoUsar: string;
-  ondePegarAChave: string;
+  /** Modelo padrão da base conhecida; '' quando o provedor exige URL própria. */
+  modeloPadrao: string;
 }
 
 interface Modelo {
@@ -111,7 +105,6 @@ interface Dados {
   credenciais: Credencial[];
   modelos: Modelo[];
   provedoresJev: ProvedorJev[];
-  modelosJev: ModeloJev[];
   podeEditar: boolean;
 }
 
@@ -299,12 +292,15 @@ function SecaoDeJev({
   aoSalvar: () => Promise<void>;
 }) {
   const t = useT();
-  const [provider, setProvider] = useState(ponto.jev?.provider ?? dados.provedoresJev[0]?.id ?? "openrouter");
+  const [provider, setProvider] = useState(
+    ponto.jev?.provider ?? dados.provedoresJev[0]?.id ?? "typesafe",
+  );
   const [modelId, setModelId] = useState(ponto.jev?.modelId ?? "");
   const [credentialId, setCredentialId] = useState(ponto.jev?.credentialId ?? "");
+  const [baseUrl, setBaseUrl] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  const modelos = dados.modelosJev.filter((m) => m.provider === provider);
+  const provedorAtual = dados.provedoresJev.find((p) => p.id === provider);
   const creds = dados.credenciais.filter((c) => c.provider === provider);
 
   async function salvar(isEnabled: boolean) {
@@ -318,6 +314,7 @@ function SecaoDeJev({
           provider,
           model_id: modelId,
           credential_id: credentialId || null,
+          base_url: baseUrl.trim() !== "" ? baseUrl.trim() : null,
           is_enabled: isEnabled,
         }),
       });
@@ -362,7 +359,9 @@ function SecaoDeJev({
             value={provider}
             onValueChange={(v) => {
               setProvider(v);
-              setModelId("");
+              // Usa o modelo PADRÃO da base (sem "afinação") — o operador pode
+              // trocar pelo modelo que quiser.
+              setModelId(dados.provedoresJev.find((p) => p.id === v)?.modeloPadrao ?? "");
               setCredentialId("");
             }}
           >
@@ -381,18 +380,17 @@ function SecaoDeJev({
 
         <div>
           <Label className="text-xs">{t("Modelo (Jev)")}</Label>
-          <Select value={modelId} onValueChange={setModelId}>
-            <SelectTrigger data-testid={`jev-modelo-${ponto.id}`}>
-              <SelectValue placeholder={t("escolha")} />
-            </SelectTrigger>
-            <SelectContent>
-              {modelos.map((m) => (
-                <SelectItem key={m.model_id} value={m.model_id}>
-                  {m.display_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/*
+            Modelo é TEXTO LIVRE de propósito: não existe catálogo de modelos de
+            Jev em `ai_models` e não fazemos "afinação" de nome. O padrão da base
+            aparece como sugestão; o operador escolhe o modelo do provedor.
+          */}
+          <Input
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            placeholder={provedorAtual?.modeloPadrao || t("modelo do provedor")}
+            data-testid={`jev-modelo-${ponto.id}`}
+          />
         </div>
 
         <div>
@@ -409,6 +407,16 @@ function SecaoDeJev({
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="sm:col-span-3">
+          <Label className="text-xs">{t("URL do endpoint systemone (só se não for base conhecida)")}</Label>
+          <Input
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={provedorAtual?.modeloPadrao ? t("base conhecida — deixe em branco") : "https://api.provedor.com/v1/systemone"}
+            data-testid={`jev-base-url-${ponto.id}`}
+          />
         </div>
 
         <div className="flex gap-2 sm:col-span-3">

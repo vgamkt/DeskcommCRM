@@ -12,7 +12,7 @@
  * ponto. Assim o operador escolhe a Jev sem tocar no modelo de conversa do
  * fallback (e vice-versa).
  */
-import { BASES_SYSTEMONE, ehModeloDeJev } from './cliente';
+import { BASES_SYSTEMONE } from './cliente';
 
 /** Sufixo do binding de Jev de um ponto (o de chat fica sem sufixo). */
 export const SUFIXO_DE_JEV = '__jev';
@@ -66,29 +66,30 @@ export const PROVEDORES_DE_JEV: readonly ProvedorDeJev[] = [
   },
 ];
 
-export interface ModeloDeJev {
-  provider: string;
-  model_id: string;
-  display_name: string;
-}
-
-/** Modelos de Jev conhecidos por provedor. */
-export const MODELOS_DE_JEV: readonly ModeloDeJev[] = [
-  { provider: 'typesafe', model_id: 'jev-latest', display_name: 'Jev (TypeSafe, oficial)' },
-  { provider: 'opencode', model_id: 'jev-1.13-free', display_name: 'Jev 1.13 (OpenCode Zen, grátis)' },
-  { provider: 'openrouter', model_id: 'typesafe/jev-1.13', display_name: 'Jev 1.13 (OpenRouter)' },
-];
-
 export function ehProvedorDeJev(id: string): boolean {
   return PROVEDORES_DE_JEV.some((p) => p.id === id);
 }
 
 /**
- * O provedor+modelo escolhidos são uma configuração de Jev VÁLIDA? (provedor com
- * base `systemone` e um modelo da família Jev.)
+ * O provedor escolhido é um alvo de Jev VÁLIDO? Vale quando é uma base conhecida
+ * (`BASES_SYSTEMONE`) OU quando o operador informou a URL completa do `systemone`
+ * do provedor novo. O MODELO não entra aqui: no binding `__jev` o operador
+ * escolhe o modelo do provedor (default = o padrão da base) — não fazemos
+ * "afinação" de nome de modelo.
  */
-export function ehAlvoDeJev(provider: string, modelId: string | null | undefined): boolean {
-  const base = BASES_SYSTEMONE[provider];
-  if (base === undefined) return false;
-  return ehModeloDeJev(provider, modelId === null || modelId === undefined ? base.modeloPadrao : modelId);
+export function ehAlvoDeJev(
+  provider: string,
+  _modelId: string | null | undefined,
+  baseUrl?: string | null,
+): boolean {
+  return BASES_SYSTEMONE[provider] !== undefined || (baseUrl ?? '').trim() !== '';
 }
+
+/** Modelo padrão da base conhecida ('' quando o provedor não é conhecido). */
+export function modeloPadraoDeJev(provider: string): string {
+  return BASES_SYSTEMONE[provider]?.modeloPadrao ?? '';
+}
+
+// `ehModeloDeJev` segue usado para o binding LEGADO (mesmo purpose do chat): ali
+// o heurístico de nome evita tratar um modelo de conversa como Jev.
+export { ehModeloDeJev } from './cliente';

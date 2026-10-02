@@ -61,10 +61,16 @@ export function endpointDeJev(
   provider: string,
   apiKey: string,
   model?: string,
+  baseUrl?: string,
 ): EndpointDeJev | null {
-  const base = BASES_SYSTEMONE[provider];
-  if (!base) return null;
-  return { provider, baseUrl: base.baseUrl, apiKey, model: model?.trim() || base.modeloPadrao };
+  const known = BASES_SYSTEMONE[provider];
+  // URL explícita vence a base conhecida — é o que permite cadastrar um
+  // provedor NOVO que exponha o mesmo `systemone`, sem mexer no código.
+  const url = baseUrl?.trim() || known?.baseUrl;
+  if (!url) return null;
+  const modelFinal = model?.trim() || known?.modeloPadrao;
+  if (!modelFinal) return null;
+  return { provider, baseUrl: url, apiKey, model: modelFinal };
 }
 
 /** Resposta HTTP mínima que o cliente usa — permite dublê nos testes sem `Response`. */

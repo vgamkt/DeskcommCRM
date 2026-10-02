@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  MODELOS_DE_JEV,
   PONTOS_COM_JEV,
   PROVEDORES_DE_JEV,
   ehAlvoDeJev,
   ehProvedorDeJev,
+  modeloPadraoDeJev,
   pontoDeJev,
   purposeDeJev,
 } from './provedores';
@@ -19,10 +19,10 @@ describe('purposeDeJev / pontoDeJev', () => {
   });
 });
 
-describe('lista de provedores e modelos Jev', () => {
-  it('todo provedor Jev tem ao menos um modelo', () => {
+describe('lista de provedores Jev', () => {
+  it('toda base conhecida tem um modelo padrão (sem afinação)', () => {
     for (const p of PROVEDORES_DE_JEV) {
-      expect(MODELOS_DE_JEV.some((m) => m.provider === p.id)).toBe(true);
+      expect(modeloPadraoDeJev(p.id)).not.toBe('');
     }
   });
 
@@ -35,19 +35,21 @@ describe('lista de provedores e modelos Jev', () => {
 });
 
 describe('ehAlvoDeJev', () => {
-  it('aceita modelo da família Jev de base conhecida', () => {
+  it('base conhecida vale independente do nome do modelo (sem afinação)', () => {
+    expect(ehAlvoDeJev('typesafe', 'jev-latest')).toBe(true);
     expect(ehAlvoDeJev('opencode', 'jev-1.13-free')).toBe(true);
     expect(ehAlvoDeJev('openrouter', 'typesafe/jev-1.13')).toBe(true);
-    expect(ehAlvoDeJev('typesafe', 'jev-latest')).toBe(true);
+    // O binding __jev declara a intenção; o modelo é escolha do operador.
+    expect(ehAlvoDeJev('openrouter', 'openai/gpt-4o-mini')).toBe(true);
   });
 
-  it('aceita modelo nulo (usa o padrão da base)', () => {
-    expect(ehAlvoDeJev('typesafe', null)).toBe(true);
-    expect(ehAlvoDeJev('opencode', undefined)).toBe(true);
+  it('provedor DESCONHECIDO vale quando informa a URL do systemone', () => {
+    expect(ehAlvoDeJev('meu-provedor', 'qualquer', 'https://api.x.com/v1/systemone')).toBe(true);
+    expect(ehAlvoDeJev('meu-provedor', 'qualquer')).toBe(false);
+    expect(ehAlvoDeJev('meu-provedor', 'qualquer', '   ')).toBe(false);
   });
 
-  it('recusa modelo de chat e provedor sem base Jev', () => {
-    expect(ehAlvoDeJev('openrouter', 'openai/gpt-4o-mini')).toBe(false);
+  it('provedor de chat sem base Jev e sem URL não vale', () => {
     expect(ehAlvoDeJev('openai', 'gpt-4o')).toBe(false);
   });
 });

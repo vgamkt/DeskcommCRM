@@ -19,6 +19,12 @@ export interface AlvoDeJev {
   provider: string;
   apiKey: string;
   model?: string;
+  /**
+   * URL COMPLETA do `systemone`, quando o provedor NÃO é uma das bases
+   * conhecidas (`BASES_SYSTEMONE`). Permite cadastrar qualquer provedor novo que
+   * exponha a mesma API, sem mexer no código.
+   */
+  baseUrl?: string;
   extraHeaders?: Record<string, string>;
 }
 

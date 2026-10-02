@@ -30,12 +30,12 @@ import {
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 import {
-  MODELOS_DE_JEV,
   PONTOS_COM_JEV,
   PROVEDORES_DE_JEV,
   SUFIXO_DE_JEV,
   ehAlvoDeJev,
   ehProvedorDeJev,
+  modeloPadraoDeJev,
   pontoDeJev,
   purposeDeJev,
 } from "@/lib/ai/jev/provedores";
@@ -213,10 +213,23 @@ export async function GET(): Promise<Response> {
     provedores: PROVEDORES,
     credenciais: credsRes.data ?? [],
     modelos,
-    // Decisão estruturada (Jev): lista PRÓPRIA de provedores/modelos, para não
-    // poluir o catálogo de chat com modelos `jev-*` (que não conversam).
-    provedoresJev: PROVEDORES_DE_JEV,
-    modelosJev: MODELOS_DE_JEV,
+    // Decisão estruturada (Jev): provedores que expõem a API `systemone`. As
+    // bases conhecidas (oficial) vêm primeiro com o modelo PADRÃO; os demais
+    // provedores cadastrados entram como sugestão (o operador informa modelo e,
+    // se não for base conhecida, a URL). Sem lista curada de modelo — o operador
+    // escolhe o modelo do provedor.
+    provedoresJev: [
+      ...PROVEDORES_DE_JEV.map((p) => ({
+        id: p.id,
+        rotulo: p.rotulo,
+        modeloPadrao: modeloPadraoDeJev(p.id),
+      })),
+      ...PROVEDORES.filter((p) => !PROVEDORES_DE_JEV.some((j) => j.id === p.id)).map((p) => ({
+        id: p.id,
+        rotulo: p.rotulo,
+        modeloPadrao: "",
+      })),
+    ],
     podeEditar: roleAtLeast(org.role, "admin"),
   });
 }
@@ -264,12 +277,13 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (!ponto) return fail("ponto_desconhecido", `"${corpo.purpose}" não é um ponto do sistema`, 404);
 
   if (ehJev) {
-    // Escolha de JEV: o provedor precisa ter base `systemone` e o modelo ser da
-    // família Jev. Não conversa — não passa pela validação de chat.
-    if (!ehProvedorDeJev(corpo.provider) || !ehAlvoDeJev(corpo.provider, corpo.model_id)) {
+    // Escolha de JEV: base `systemone` conhecida OU URL completa informada. O
+    // MODELO é o que o operador escolheu (default = padrão da base) — sem
+    // "afinação" de nome. Não conversa, então não passa pela validação de chat.
+    if (!ehAlvoDeJev(corpo.provider, corpo.model_id, corpo.base_url)) {
       return fail(
         "alvo_jev_invalido",
-        `"${corpo.provider}/${corpo.model_id}" não é um modelo de decisão estruturada (Jev) válido.`,
+        `Configure um provedor de decisão estruturada (Jev) e, se ele não for uma base conhecida, informe a URL do endpoint.`,
         422,
       );
     }

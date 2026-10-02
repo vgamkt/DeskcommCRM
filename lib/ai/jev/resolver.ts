@@ -25,9 +25,11 @@ import { purposeDeJev } from './provedores';
 import type { AlvoDeJev } from './index';
 
 interface LinhaBinding {
+  purpose: string;
   provider: string;
   credential_id: string | null;
   model_id: string | null;
+  base_url: string | null;
 }
 
 async function chaveDaCredencial(
@@ -76,7 +78,7 @@ export async function alvosDeJevDaOrg(
     // seja de Jev. Assim a escolha da Jev e a do chat não se sobrescrevem.
     const jv = purposeDeJev(purpose);
     const { rows } = await db.query<LinhaBinding>(
-      `select provider, credential_id, model_id
+      `select purpose, provider, credential_id, model_id, base_url
          from ai_purpose_bindings
         where organization_id = $1 and is_enabled and purpose = any($2::text[])
         order by (purpose = $3) desc, created_at desc
@@ -85,15 +87,27 @@ export async function alvosDeJevDaOrg(
     );
     const b = rows[0];
     if (b !== undefined) {
-      // Há escolha EXPLÍCITA no painel para este ponto: ela manda. Se o modelo
-      // for de Jev, vira alvo; se for de CHAT, a Jev NÃO entra e o caminho de
-      // chat usa o modelo da tela — nunca se cai no ambiente por cima da UI.
+      // Há escolha EXPLÍCITA no painel para este ponto: ela manda. O binding
+      // PRÓPRIO da Jev (`<ponto>__jev`) declara a intenção — aceita QUALQUER
+      // provedor conhecido ou com URL própria e QUALQUER modelo (default = o
+      // padrão da base). O binding de chat (mesmo purpose, legado) só é tratado
+      // como Jev se o modelo for da família Jev.
       const base = BASES_SYSTEMONE[b.provider];
       const model = b.model_id ?? base?.modeloPadrao ?? null;
-      if (base !== undefined && model !== null && ehModeloDeJev(b.provider, model)) {
+      const baseUrl = b.base_url ?? null;
+      const veioDoBindingJev = b.purpose === jv;
+      const valido = veioDoBindingJev
+        ? (base !== undefined || baseUrl !== null) && model !== null
+        : base !== undefined && model !== null && ehModeloDeJev(b.provider, model);
+      if (valido) {
         const apiKey = await chaveDaCredencial(db, organizationId, b.provider, b.credential_id);
         if (apiKey !== null) {
-          const primario: AlvoDeJev = { provider: b.provider, apiKey, model };
+          const primario: AlvoDeJev = {
+            provider: b.provider,
+            apiKey,
+            ...(model !== null ? { model } : {}),
+            ...(baseUrl !== null && baseUrl.trim() !== '' ? { baseUrl } : {}),
+          };
           // Fallback do ambiente (JEV_FALLBACK_*) entra como SEGUNDO alvo: o
           // binding não tem noção de failover, mas a Jev não pode ficar sem para
           // onde correr se o provedor escolhido der 429/esgotar.
