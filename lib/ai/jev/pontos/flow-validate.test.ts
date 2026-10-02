@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   NAO_RESPOSTA,
+  candidatasDeTexto,
   leituraDeFluxoDaJev,
   perguntasDeFluxoDeJev,
   type CampoDeFluxoParaJev,
@@ -53,5 +54,18 @@ describe('leituraDeFluxoDaJev', () => {
     const l = leituraDeFluxoDaJev(r, campos);
     expect(l.camposRespondidos).toEqual([]);
     expect(l.valores).toEqual({});
+  });
+});
+
+describe('candidatasDeTexto', () => {
+  it('extrai um trecho capitalizado iniciado por "sou de"', () => {
+    const c = candidatasDeTexto('Sou de São José dos Campos e tenho CNH', 'Cidade');
+    expect(c.length).toBeGreaterThan(0);
+    expect(c.join(' ')).toMatch(/José/);
+  });
+
+  it('não devolve o rótulo nem vazio', () => {
+    expect(candidatasDeTexto('', 'Cidade')).toEqual([]);
+    expect(candidatasDeTexto('tudo bem?', 'Cidade')).toEqual([]);
   });
 });

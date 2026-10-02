@@ -46,6 +46,7 @@ import { decidir } from '../../ai/jev';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 import {
+  candidatasDeTexto,
   leituraDeFluxoDaJev,
   perguntasDeFluxoDeJev,
   type CampoDeFluxoParaJev,
@@ -212,22 +213,37 @@ export async function validarRespostaDoFluxo(
   // grafava cidade/cnh numa mensagem de financiamento). Se disser que alguns, o
   // chat é RESTRITO a esses campos (extrai texto/número/data) e os campos
   // DISCRETOS (sim/não, escolha) já vêm prontos da Jev. Jev fora do ar → chat.
+  // Texto da mensagem (a última + a rajada) para extrair candidatas de texto.
+  const textoCliente = args.mensagens
+    .filter((m) => m.de === 'cliente')
+    .map((m) => m.texto)
+    .join(' ');
+  const comoCampo = (p: {
+    key: string;
+    label: string;
+    question?: string | undefined;
+    type: PerguntaDoFluxo['type'];
+    options?: string[] | undefined;
+  }): CampoDeFluxoParaJev => {
+    const campo: CampoDeFluxoParaJev = {
+      key: p.key,
+      label: p.label,
+      question: p.question,
+      type: p.type,
+      options: p.options,
+    };
+    // Campos de texto/número/data: candidatas extraídas da mensagem, para a Jev
+    // escolher o valor (ela não devolve texto puro).
+    if (p.type === 'text' || p.type === 'number' || p.type === 'date') {
+      const c = candidatasDeTexto(textoCliente, p.label);
+      if (c.length > 0) campo.candidatas = c;
+    }
+    return campo;
+  };
   const camposJev: CampoDeFluxoParaJev[] = [
-    ...args.perguntas.map((p) => ({
-      key: p.key,
-      label: p.label,
-      question: p.question,
-      type: p.type,
-      options: p.options,
-    })),
+    ...args.perguntas.map(comoCampo),
     ...args.preenchidos.map((p) => ({ key: p.key, label: p.label, type: 'text' as const })),
-    ...(args.esgotados ?? []).map((p) => ({
-      key: p.key,
-      label: p.label,
-      question: p.question,
-      type: p.type,
-      options: p.options,
-    })),
+    ...(args.esgotados ?? []).map(comoCampo),
   ];
   let respondidos: string[] | null = null;
   let valoresJev: Record<string, string> = {};
@@ -269,22 +285,21 @@ export async function validarRespostaDoFluxo(
     // Jev indisponível → segue no caminho do chat (comportamento de antes).
   }
 
-  const restrito = respondidos;
-  const perguntasChat =
-    restrito === null ? args.perguntas : args.perguntas.filter((p) => restrito.includes(p.key));
-  const preenchidosChat =
-    restrito === null ? args.preenchidos : args.preenchidos.filter((p) => restrito.includes(p.key));
-  const esgotadosChat =
-    restrito === null
-      ? (args.esgotados ?? [])
-      : (args.esgotados ?? []).filter((p) => restrito.includes(p.key));
-
-  // A Jev já resolveu os DISCRETOS e não sobrou nada para o chat extrair.
-  if (perguntasChat.length === 0 && preenchidosChat.length === 0 && esgotadosChat.length === 0) {
+  // TENDA JEV: tudo o que ela já resolveu (discretos E textos com candidata) é a
+  // resposta. O chat só entra no que ela NÃO conseguiu (tipicamente texto/número/
+  // data SEM candidata extraível) — assim, no caso comum, TUDO passa só pela Jev.
+  {
     const respostas = Object.entries(valoresJev).map(([campo, valor]) => ({ campo, valor }));
-    return respostas.length > 0 ? { resultado: 'respondeu', respostas } : { resultado: 'nao_respondeu' };
+    if (respostas.length > 0) return { resultado: 'respondeu', respostas };
+    // Nada resolvido pela Jev: ela já disse se algo foi respondido. Se disse
+    // NÃO, `respondidos` já é [] (tratado acima com retorno). Se disse SIM mas
+    // sem valor (texto sem candidata), segue para o fallback de chat.
   }
 
+  // ── FALLBACK: só os campos que a Jev NÃO resolveu ──────────────────────────
+  // A escolha é da Jev; o chat cobre o resto (texto/número/data sem candidata, e
+  // o caso em que a própria Jev está fora do ar).
+  const restantes = restantesParaChat(args, respondidos);
   let texto: string;
   try {
     const call = await runModelCall(
@@ -299,10 +314,10 @@ export async function validarRespostaDoFluxo(
           {
             role: 'user',
             content: montarMensagemDoValidador(
-              perguntasChat,
-              preenchidosChat,
+              restantes.perguntas,
+              restantes.preenchidos,
               args.mensagens,
-              esgotadosChat,
+              restantes.esgotados,
             ),
           },
         ],
@@ -319,22 +334,17 @@ export async function validarRespostaDoFluxo(
 
   const validas: RespostaDoFluxo[] = [];
   const vistas = new Set<string>();
-  // Os campos DISCRETOS (sim/não, escolha) já vieram prontos da Jev.
   for (const [campo, valor] of Object.entries(valoresJev)) {
     vistas.add(campo);
     validas.push({ campo, valor });
   }
   for (const r of leitura.respostas) {
-    // Só aceito se for uma pendente/corrigível/encerrado DO CONJUNTO RESTRITO (a
-    // Jev já filtrou; o chat não pode reintroduzir um campo que ela descartou).
-    const pendente = perguntasChat.find((p) => p.key === r.campo);
-    const preenchido = preenchidosChat.find((p) => p.key === r.campo);
-    const esgotado = esgotadosChat.find((p) => p.key === r.campo);
+    const pendente = restantes.perguntas.find((p) => p.key === r.campo);
+    const preenchido = restantes.preenchidos.find((p) => p.key === r.campo);
+    const esgotado = restantes.esgotados.find((p) => p.key === r.campo);
     const alvo = pendente ?? preenchido ?? esgotado;
     if (alvo === undefined) continue;
     if (vistas.has(r.campo)) continue; // um campo, uma resposta
-    // O valor passa pela MESMA régua de tipo da captura determinística. Um campo
-    // já preenchido (correção) não carrega o tipo aqui — vale como texto livre.
     const campoParaValidar = {
       key: alvo.key,
       label: alvo.label,
@@ -348,4 +358,38 @@ export async function validarRespostaDoFluxo(
 
   if (validas.length === 0) return { resultado: 'nao_respondeu' };
   return { resultado: 'respondeu', respostas: validas };
+}
+
+/**
+ * Os campos que sobraram para o chat. Quando a Jev NÃO rodou (`respondidos ===
+ * null`) restam TODOS (é o fallback histórico). Quando ela rodou, restam só os
+ * tipos sem valor resolvido por ela: texto/número/data.
+ */
+function restantesParaChat(
+  args: {
+    perguntas: readonly PerguntaDoFluxo[];
+    preenchidos: readonly { key: string; label: string; valor: string }[];
+    esgotados?: readonly PerguntaDoFluxo[] | undefined;
+  },
+  respondidos: string[] | null,
+): {
+  perguntas: PerguntaDoFluxo[];
+  preenchidos: { key: string; label: string; valor: string }[];
+  esgotados: PerguntaDoFluxo[];
+} {
+  if (respondidos === null) {
+    return {
+      perguntas: [...args.perguntas],
+      preenchidos: [...args.preenchidos],
+      esgotados: [...(args.esgotados ?? [])],
+    };
+  }
+  const jev = new Set(respondidos);
+  const pendenteSobrou = (p: PerguntaDoFluxo) => jev.has(p.key) && p.type !== 'boolean' && p.type !== 'select';
+  const corrigivelSobrou = (p: { key: string }) => jev.has(p.key);
+  return {
+    perguntas: args.perguntas.filter(pendenteSobrou),
+    preenchidos: args.preenchidos.filter(corrigivelSobrou),
+    esgotados: (args.esgotados ?? []).filter(pendenteSobrou),
+  };
 }

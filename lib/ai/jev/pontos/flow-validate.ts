@@ -21,6 +21,34 @@ const LIMIAR_NOUL = 0.5;
 /** Opção que representa "não respondeu" nas perguntas de valor. */
 export const NAO_RESPOSTA = 'nao_respondeu';
 
+/**
+ * EXTRAI candidatos de TEXTO LIVRE da mensagem para um campo (ex.: cidade).
+ * A Jev NÃO devolve texto puro — então o motor reduz a mensagem a algumas
+ * CANDIDATAS curtas e usa uma pergunta `choice` da Jev para ela escolher a certa
+ * (ou "não respondeu"). Sem candidato, o campo de texto não vira pergunta.
+ *
+ * Padrões comuns: "sou de X", "moro em X", "estou em X", "X mesmo", "aqui é X".
+ * Devolve no máximo 4 candidatas (limite do `choice` da Jev).
+ */
+export function candidatasDeTexto(mensagem: string, label: string): string[] {
+  const t = mensagem.replace(/\s+/g, ' ').trim();
+  if (t === '') return [];
+  const out = new Set<string>();
+  const grava = (s: string | undefined) => {
+    const v = (s ?? '').replace(/[.,;!?]+$/g, '').trim();
+    if (v.length >= 2 && v.length <= 48) out.add(v);
+  };
+  // "sou de X" / "moro em X" / "estou em X" — X = 1 a 4 palavras Capitalizadas.
+  const rePref = /\b(?:sou de|moro em|estou em|resido em|venho de|aqui é|aqui e)\s+([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+(?:de|da|do|dos|das|d[ae]s)?\s*[A-ZÀ-Ú][\wÀ-ú'-]*){0,3})/g;
+  for (const m of t.matchAll(rePref)) grava(m[1]);
+  // "X mesmo" (confirmação de cidade) e "de X" capitalizado.
+  for (const m of t.matchAll(/\b([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+[A-ZÀ-Ú][\wÀ-ú'-]*){0,3})\s+mesmo\b/g)) grava(m[1]);
+  for (const m of t.matchAll(/\bde\s+([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+[A-ZÀ-Ú][\wÀ-ú'-]*){0,3})/g)) grava(m[1]);
+  // O rótulo do campo nunca é candidato (evita ecoar "Cidade").
+  const alvo = label.toLowerCase();
+  return [...out].filter((v) => v.toLowerCase() !== alvo).slice(0, 4);
+}
+
 /** O que a Jev precisa de cada campo do fluxo. */
 export interface CampoDeFluxoParaJev {
   key: string;
@@ -28,13 +56,19 @@ export interface CampoDeFluxoParaJev {
   question?: string | undefined;
   type: 'text' | 'number' | 'date' | 'boolean' | 'select';
   options?: string[] | undefined;
+  /**
+   * CANDIDATAS de texto livre extraídas da mensagem (ex.: "sou de São Paulo" →
+   * ["São Paulo"]). A Jev escolhe a certa — é como o campo de TEXTO passa só por
+   * ela, sem o validador de chat.
+   */
+  candidatas?: string[] | undefined;
 }
 
 function alvo(c: CampoDeFluxoParaJev): string {
   return c.question?.trim() || c.label;
 }
 
-/** Monta as perguntas da Jev: `respondeu_<key>` + `valor_<key>` nos discretos. */
+/** Monta as perguntas da Jev: `respondeu_<key>` + `valor_<key>` quando há valor a escolher. */
 export function perguntasDeFluxoDeJev(
   campos: readonly CampoDeFluxoParaJev[],
 ): PerguntasDeJev {
@@ -65,6 +99,21 @@ export function perguntasDeFluxoDeJev(
       perguntas[`valor_${c.key}`] = {
         type: 'choice',
         instructions: `Qual opção o cliente escolheu para "${c.label}"?`,
+        criteria,
+      };
+    } else if (c.type === 'text' && (c.candidatas?.length ?? 0) > 0) {
+      // TEXTO LIVRE: a Jev escolhe, entre as CANDIDATAS extraídas da mensagem,
+      // qual é o valor do campo — ou "não respondeu". Assim até cidade passa só
+      // pela Jev (o motor não precisa do validador de chat).
+      const criteria: Record<string, string> = {
+        [NAO_RESPOSTA]: `o cliente não disse "${c.label}"`,
+      };
+      for (const o of c.candidatas ?? []) {
+        criteria[o] = `o cliente informou "${c.label}" = "${o}"`;
+      }
+      perguntas[`valor_${c.key}`] = {
+        type: 'choice',
+        instructions: `Qual destes valores é o(a) "${c.label}" informado(a) pelo cliente?`,
         criteria,
       };
     }
