@@ -35,6 +35,8 @@
  * de precedência é a parte que erra, e ela precisa ser exercitável por teste
  * unitário. O I/O fica em quem chama.
  */
+import { ehModeloDeJev } from "../jev/cliente";
+
 import { PONTO_POR_ID, type PontoDeIa } from "./registro";
 
 /** De onde a escolha efetiva veio — vai para a tela e para o log. */
@@ -215,7 +217,19 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
   }
 
   // 2 · A escolha explícita do painel.
-  if (entrada.binding !== null && entrada.binding.is_enabled) {
+  //
+  // ⚠️ EXCEÇÃO DO BINDING DE JEV: quando o modelo escolhido para o ponto é um
+  // modelo de JEV (decisão estruturada), ele NÃO serve ao caminho de CHAT — é o
+  // fallback que roda quando a Jev esgota. Se o chat pegasse esse binding,
+  // mandaria um modelo Jev (ex.: `typesafe/jev-1.13`) para a API de conversa e
+  // tomaria 400. Então o binding de Jev é PULADO aqui: o fallback usa a
+  // herança/ambiente/padrão da organização. Quem usa o binding de Jev é o
+  // `lib/ai/jev/resolver.ts`.
+  const bindingEhDeJev =
+    entrada.binding !== null &&
+    entrada.binding.is_enabled &&
+    ehModeloDeJev(entrada.binding.provider, entrada.binding.model_id);
+  if (entrada.binding !== null && entrada.binding.is_enabled && !bindingEhDeJev) {
     if (entrada.modeloDeAmbiente !== undefined) {
       avisos.push(
         `A variável de ambiente deste ponto está definida como "${entrada.modeloDeAmbiente}", mas a escolha do painel tem prioridade.`,

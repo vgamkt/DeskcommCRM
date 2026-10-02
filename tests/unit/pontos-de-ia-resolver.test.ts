@@ -295,4 +295,25 @@ describe("o conjunto de pontos do agente publicado", () => {
     );
     expect(d.origem).toBe("binding");
   });
+
+  it("binding de modelo JEV é PULADO no caminho de chat (usa ambiente/agente/padrão)", () => {
+    // O mesmo binding serve a Jev e o chat: se o operador escolhe um modelo de
+    // Jev no ponto, o FALLBACK de chat NÃO pode mandar esse modelo para a API de
+    // conversa (400). Ele é pulado e o fallback usa a origem seguinte.
+    const d = decidirBinding(
+      entrada({
+        binding: binding({ provider: "openrouter", model_id: "typesafe/jev-1.13" }),
+        modeloDeAmbiente: "claude-haiku-4-5",
+      }),
+    );
+    expect(d.origem).toBe("variavel_de_ambiente");
+    expect(d.modelId).toBe("claude-haiku-4-5");
+  });
+
+  it("binding de Jev cai no padrão da organização quando não há ambiente nem agente", () => {
+    const d = decidirBinding(
+      entrada({ binding: binding({ provider: "opencode", model_id: "jev-1.13-free" }) }),
+    );
+    expect(d.origem).toBe("padrao_da_organizacao");
+  });
 });
