@@ -38,6 +38,7 @@ import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { EstadoObjecao } from './objecao-de-valor';
 import { decidir } from '../../ai/jev';
 import { alvosDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import {
   motoEscolhidaDaRespostaDeJev,
   perguntaDeMotoEscolhidaJev,
@@ -450,6 +451,11 @@ export async function motoEscolhidaPeloClienteComJev(
   catalogo: readonly MotoDoCatalogo[],
   jaDetalhadas: readonly string[],
   textoCitado = '',
+  /**
+   * Banco + tenant para resolver a Jev pelo BINDING do ponto (`moto_escolhida__jev`,
+   * a tela) em vez do ambiente. Sem eles, cai no ambiente (comportamento antigo).
+   */
+  deps?: { db?: pg.Pool; tenantId?: string },
 ): Promise<MotoDoCatalogo | undefined> {
   const deterministica = motoEscolhidaPeloCliente(
     textoDoModelo,
@@ -463,7 +469,11 @@ export async function motoEscolhidaPeloClienteComJev(
 
   // Sem sinal positivo de escolha (é pergunta/objeção) → NÃO chama a Jev.
   if (bloqueiaEscolha(textoDoCliente)) return undefined;
-  const alvos = alvosDeJevDe(process.env);
+  // Binding do ponto (`moto_escolhida__jev`) quando há banco+tenant; senão ambiente.
+  const alvos =
+    deps?.db !== undefined && deps.tenantId !== undefined
+      ? await alvosDeJevDaOrg(deps.db, deps.tenantId, 'moto_escolhida')
+      : alvosDeJevDe(process.env);
   if (alvos.length === 0) return undefined;
 
   const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));

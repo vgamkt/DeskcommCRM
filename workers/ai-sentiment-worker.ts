@@ -27,6 +27,8 @@ import { SENTIMENT_SYSTEM_PROMPT } from "@/lib/ai/prompts/sentiment";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { decidir } from "@/lib/ai/jev";
 import { alvosDeJevDe } from "@/lib/ai/jev/config";
+import { alvosDeJevDaOrg } from "@/lib/ai/jev/resolver";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import {
   perguntaDeSentimentoDeJev,
   sentimentoDaRespostaDeJev,
@@ -219,10 +221,15 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     let completionTokens = 0;
     let modeloUsado = resolvido.modelId;
 
-    // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
-    // Se ela devolver a nota, o `generateObject` abaixo (chat) nem roda: o chat
-    // vira o ÚLTIMO RECURSO, preservando o comportamento atual.
-    const alvosJev = alvosDeJevDe(process.env);
+    // Jev PRIMEIRO — configurada pelo BINDING do ponto (`sentiment_classify__jev`,
+    // a tela de provedores); sem binding, cai no ambiente (default DESLIGADA). Se
+    // ela devolver a nota, o `generateObject` abaixo (chat) nem roda.
+    let alvosJev: Awaited<ReturnType<typeof alvosDeJevDaOrg>>;
+    try {
+      alvosJev = await alvosDeJevDaOrg(getRequestPool(), event.organization_id, "sentiment_classify");
+    } catch {
+      alvosJev = alvosDeJevDe(process.env);
+    }
     if (alvosJev.length > 0) {
       const decisaoJev = await decidir({
         alvos: alvosJev,

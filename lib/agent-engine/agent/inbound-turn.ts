@@ -3799,6 +3799,7 @@ async function executarTurnoDoAgente(
                 catalogoEfetivo,
                 catalogoDaConversa.detalhadas,
                 currentInboundQuote ?? '',
+                { db: pool, tenantId },
               )
             : undefined;
         if (escolhidaNesteTurno !== undefined) {
@@ -5552,6 +5553,7 @@ async function executarTurnoDoAgente(
             catalogoDaConversa.motos,
             catalogoDaConversa.detalhadas,
             currentInboundQuote ?? '',
+            { db: pool, tenantId },
           )
         : undefined;
     const motoEmFoco = preEscolhaDescricao ?? motoAtualDaConversa;
