@@ -120,6 +120,15 @@ describe("evento-comando (*_requested) tem consumidor", () => {
     ).toEqual([]);
   });
 
+  it("o retry durável da Jev tem consumidor (emitido por SQL cru, fora da varredura)", () => {
+    // `lib/ai/jev/outbox.ts` grava `jev.decision_retry` por INSERT direto (tem
+    // pg pool no call site, não o admin client), então a varredura de
+    // `p_event_type:` não o enxerga. Este teste fecha o par evento↔handler:
+    // remover o `jevRetryHandler` reprova aqui, em vez de deixar o evento
+    // `pending` para sempre (anti-pattern nº 3).
+    expect(tiposConsumidos().has("jev.decision_retry")).toBe(true);
+  });
+
   it("as duas listas de exceção não envelhecem", () => {
     // Exceção resolvida e esquecida aqui mente para a próxima pessoa: ela lê
     // "isto é conhecido e aceito" sobre algo que já tem dono.
