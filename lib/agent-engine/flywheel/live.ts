@@ -9,6 +9,12 @@ import type pg from 'pg';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import { aggregateFollowupOutcomes, type FlowOutcomeStat } from '../../followup/outcome-stats';
+import { decidir } from '../../ai/jev';
+import { alvosDeJevDe } from '../../ai/jev/config';
+import {
+  perguntaDeVereditoDeHigieneJev,
+  vereditoDaRespostaDeJev,
+} from '../../ai/jev/pontos/flywheel';
 
 // Os dois pontos do flywheel NÃO fixam modelo aqui. Fixavam `claude-haiku-4-5`,
 // e um id de modelo só é válido no vocabulário do provedor que a instalação usa:
@@ -149,20 +155,50 @@ export async function runFlywheelOnce(
     const material = await buildMaterial(pool, turn);
     const optionOrder = parseInt(turn.job_id.slice(0, 8), 16) % 2 === 0 ? 'yes_first' : 'no_first';
 
-    const judgedCall = await runModelCall(
-      pool,
-      llmCfg,
-      {
-        tenantId: turn.organization_id,
-        leadId: turn.contact_id,
-        jobId: turn.job_id,
-        purpose: 'flywheel_judge',
-        messages: [{ role: 'user', content: judgePrompt(material, optionOrder) }],
-      },
-      { log },
-    );
-    const verdict = parseJson<{ verdict: string; missing_facts?: string[] }>(judgedCall.result.text);
-    const verdictValue = ['yes', 'no', 'unknown'].includes(verdict.verdict) ? verdict.verdict : 'unknown';
+    // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
+    // A Jev decide o VEREDITO (tipado); o modelo de chat é o ÚLTIMO recurso.
+    const alvosJev = alvosDeJevDe(process.env);
+    let verdictValue: string;
+    let missingFacts: string[] = [];
+    let judgeFamily: string;
+    let judgeModel: string;
+
+    const decisaoJev =
+      alvosJev.length > 0
+        ? await decidir({
+            alvos: alvosJev,
+            state: judgePrompt(material, optionOrder),
+            questions: perguntaDeVereditoDeHigieneJev(),
+          })
+        : null;
+    const vereditoJev = decisaoJev ? vereditoDaRespostaDeJev(decisaoJev.respostas) : null;
+
+    if (decisaoJev && vereditoJev !== null) {
+      verdictValue = vereditoJev;
+      judgeFamily = decisaoJev.provider;
+      judgeModel = decisaoJev.model;
+      // `missing_facts` (extração de texto livre) fica vazio quando a Jev julga:
+      // o distiller ainda propõe um bullet genérico. A extração continua sendo
+      // trabalho do chat, não da Jev.
+    } else {
+      const judgedCall = await runModelCall(
+        pool,
+        llmCfg,
+        {
+          tenantId: turn.organization_id,
+          leadId: turn.contact_id,
+          jobId: turn.job_id,
+          purpose: 'flywheel_judge',
+          messages: [{ role: 'user', content: judgePrompt(material, optionOrder) }],
+        },
+        { log },
+      );
+      const verdict = parseJson<{ verdict: string; missing_facts?: string[] }>(judgedCall.result.text);
+      verdictValue = ['yes', 'no', 'unknown'].includes(verdict.verdict) ? verdict.verdict : 'unknown';
+      missingFacts = verdict.missing_facts ?? [];
+      judgeFamily = judgedCall.provider;
+      judgeModel = judgedCall.model;
+    }
 
     const { rowCount } = await pool.query(
       `insert into flywheel_judge_verdicts
@@ -176,8 +212,8 @@ export async function runFlywheelOnce(
         DIMENSION,
         verdictValue,
         optionOrder,
-        judgedCall.provider,
-        judgedCall.model,
+        judgeFamily,
+        judgeModel,
         JSON.stringify({ source: 'live_turn', job_id: turn.job_id, contact_id: turn.contact_id }),
         runId,
       ],
@@ -195,7 +231,7 @@ export async function runFlywheelOnce(
           leadId: turn.contact_id,
           jobId: turn.job_id,
           purpose: 'flywheel_distiller',
-          messages: [{ role: 'user', content: distillerPrompt(verdict.missing_facts ?? []) }],
+          messages: [{ role: 'user', content: distillerPrompt(missingFacts) }],
         },
         { log },
       );
