@@ -170,6 +170,21 @@ function modoDe(respostas: RespostasDeJev, chave: string): string | undefined {
   return a?.type === 'choice' ? a.choice : undefined;
 }
 
+/** Margem de ±30% na busca por NÚMERO (regra do dono): aceita um pouco acima e abaixo. */
+export const MARGEM_NUMERICA_PCT = 30;
+
+/** Alarga a faixa em ±`pct`% (para cima e para baixo), arredondando. */
+function aplicarMargem(
+  f: { min?: number; max?: number } | null,
+  pct: number,
+): { min?: number; max?: number } | null {
+  if (!f) return null;
+  const out: { min?: number; max?: number } = {};
+  if (f.min !== undefined) out.min = Math.max(0, Math.round(f.min * (1 - pct / 100)));
+  if (f.max !== undefined) out.max = Math.round(f.max * (1 + pct / 100));
+  return out;
+}
+
 /** Converte as respostas da Jev no `CriteriosExtraidos` do motor. */
 export function criteriosDaRespostaDeJev(
   respostas: RespostasDeJev,
@@ -197,18 +212,21 @@ export function criteriosDaRespostaDeJev(
   const precoCol = e.colunas.find((c) => detectarPapelColuna(c) === 'preco');
   const precoResp = respostas.cx_preco;
   if (precoCol && precoResp?.type === 'choice') {
-    const f = aplicarModo(
-      faixaEscolhida(precoResp.choice, FAIXAS_DE_PRECO),
-      modoDe(respostas, 'modo_preco'),
+    const f = aplicarMargem(
+      aplicarModo(faixaEscolhida(precoResp.choice, FAIXAS_DE_PRECO), modoDe(respostas, 'modo_preco')),
+      MARGEM_NUMERICA_PCT,
     );
     if (f) faixas[precoCol] = f;
   }
   const ccCol = e.colunas.find((c) => detectarPapelColuna(c) === 'cilindrada');
   const ccResp = respostas.cx_cilindrada;
   if (ccCol && ccResp?.type === 'choice') {
-    const f = aplicarModo(
-      faixaEscolhida(ccResp.choice, FAIXAS_DE_CILINDRADA),
-      modoDe(respostas, 'modo_cilindrada'),
+    const f = aplicarMargem(
+      aplicarModo(
+        faixaEscolhida(ccResp.choice, FAIXAS_DE_CILINDRADA),
+        modoDe(respostas, 'modo_cilindrada'),
+      ),
+      MARGEM_NUMERICA_PCT,
     );
     if (f) faixas[ccCol] = f;
   }

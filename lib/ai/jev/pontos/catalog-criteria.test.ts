@@ -53,8 +53,9 @@ describe("criteriosDaRespostaDeJev", () => {
     expect(c.intencao).toBe("pedido");
     expect(c.exigidos).toEqual(["preco"]);
     expect(c.principal).toBe("preco");
-    expect(c.faixas.preco).toEqual({ min: 15000, max: 20000 });
-    expect(c.faixas.cilindrada).toEqual({ min: 161, max: 250 });
+    // Faixas com margem de ±30% (regra do dono).
+    expect(c.faixas.preco).toEqual({ min: 10500, max: 26000 });
+    expect(c.faixas.cilindrada).toEqual({ min: 113, max: 325 });
     expect(c.hipoteses).toEqual([
       { nome: "Honda CB 300", preco: "14990", cilindrada: "293.5", marca: "Honda" },
     ]);
@@ -73,7 +74,7 @@ describe("criteriosDaRespostaDeJev", () => {
       cx_preco: { type: "choice", choice: "15 a 20 mil", confidence: 1, probabilities: {} },
       modo_preco: { type: "choice", choice: "teto", confidence: 1, probabilities: {} },
     };
-    expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({ max: 20000 });
+    expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({ max: 26000 });
   });
 
   it("'intervalo' mantém min e max", () => {
@@ -82,8 +83,8 @@ describe("criteriosDaRespostaDeJev", () => {
       modo_preco: { type: "choice", choice: "intervalo", confidence: 1, probabilities: {} },
     };
     expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({
-      min: 15000,
-      max: 20000,
+      min: 10500,
+      max: 26000,
     });
   });
 });
