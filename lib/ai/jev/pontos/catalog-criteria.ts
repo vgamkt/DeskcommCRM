@@ -4,8 +4,10 @@
  * O extrator devolve um objeto RICO. A Jev NÃO extrai valor livre/número, então
  * o recorte (decidido com o dono em 2026-10-02) é:
  *  - CLASSIFICAÇÃO pela Jev: `intencao`, `exigidos` (noul por coluna) e `principal` (choice);
- *  - FAIXAS pela Jev: `preco` e `cilindrada` escolhidas entre as FAIXAS abaixo (definidas
- *    pelo dono) — evitando inventar números;
+ *  - FAIXAS pela Jev: `preco`, `cilindrada` e `potencia` escolhidas entre as FAIXAS abaixo
+ *    (definidas pelo dono) — evitando inventar números. Decisão do dono (2026-10-02): depois
+ *    de CATEGORIA, os atributos que MAIS importam são CILINDRADA e POTÊNCIA — a MARCA sozinha
+ *    não é ênfase, e marca dentro do nome do modelo ("Honda CB 250") NÃO conta como exigência;
  *  - `hipoteses`: a Jev diz quais motos do ESTOQUE são parecidas (noul por moto), e os
  *    VALORES vêm do próprio estoque (não inventados).
  *  - `criterios` (valor livre por coluna) fica vazio no caminho da Jev.
@@ -42,6 +44,31 @@ export const FAIXAS_DE_CILINDRADA: readonly FaixaDeOpcao[] = [
   { rotulo: '251 a 300', min: 251, max: 300 },
   { rotulo: 'acima de 300', min: 300 },
 ];
+
+/**
+ * Faixas de POTÊNCIA (cv). Decisão do dono (2026-10-02): depois de CATEGORIA, os
+ * atributos que MAIS importam são CILINDRADA e POTÊNCIA — não a marca. A Jev
+ * escolhe a faixa (não inventa número).
+ */
+export const FAIXAS_DE_POTENCIA: readonly FaixaDeOpcao[] = [
+  { rotulo: 'não citou' },
+  { rotulo: 'até 10', max: 10 },
+  { rotulo: '11 a 15', min: 11, max: 15 },
+  { rotulo: '16 a 20', min: 16, max: 20 },
+  { rotulo: '21 a 30', min: 21, max: 30 },
+  { rotulo: 'acima de 30', min: 30 },
+];
+
+/** A coluna é de POTÊNCIA? (não há papel próprio; detecta pelo nome.) */
+export function ehColunaDePotencia(nome: string): boolean {
+  const n = nome.toLowerCase();
+  return /potenci/.test(n) || /cavalos/.test(n) || /\bcv\b/.test(n) || /\bhp\b/.test(n);
+}
+
+/** A coluna é de MARCA? (tratada com cuidado: não deve virar filtro por engano.) */
+export function ehColunaDeMarca(nome: string): boolean {
+  return /marca|fabricante|montadora/.test(nome.toLowerCase());
+}
 
 /** Limiar de `noul` para considerar a hipótese verdadeira. */
 const LIMIAR_NOUL = 0.5;
@@ -86,7 +113,8 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     },
     principal: {
       type: 'choice',
-      instructions: 'Qual coluna de critério o cliente MAIS enfatizou?',
+      instructions:
+        'Qual destas colunas o cliente MAIS enfatizou? Priorize CATEGORIA, CILINDRADA e POTÊNCIA — a MARCA, sozinha, quase nunca é a ênfase do pedido.',
       criteria: criteriaPrincipal,
     },
   };
@@ -94,7 +122,13 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
   for (const col of e.colunas) {
     perguntas[`exigidos_${col}`] = {
       type: 'noul',
-      instructions: `O cliente DECLAROU EXPLICITAMENTE a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
+      // A MARCA é a armadilha: em "Honda CB 250" ela aparece DENTRO do nome do
+      // modelo, não como filtro. Marcá-la como exigida faz o motor filtrar por
+      // marca e perder o MODELO (o defeito "só Honda"). Só conta como exigida
+      // quando o cliente pede a marca por si ("quero uma Honda").
+      instructions: ehColunaDeMarca(col)
+        ? 'O cliente exigiu a MARCA como FILTRO (ex.: "quero uma Honda")? Se a marca apareceu apenas DENTRO do nome de um modelo (ex.: "Honda CB 250"), responda NÃO — ali o que importa é o MODELO.'
+        : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
     };
   }
 
@@ -128,11 +162,26 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       criteria: criteriaModo,
     };
   }
+  if (e.colunas.some(ehColunaDePotencia)) {
+    perguntas.cx_potencia = {
+      type: 'choice',
+      instructions: 'Qual faixa de POTÊNCIA (cv) o cliente citou?',
+      criteria: rotulos(FAIXAS_DE_POTENCIA),
+    };
+    perguntas.modo_potencia = {
+      type: 'choice',
+      instructions: 'A potência foi um TETO (até) ou um INTERVALO (entre X e Y)?',
+      criteria: criteriaModo,
+    };
+  }
 
   e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
     perguntas[`parecida_${i}`] = {
       type: 'noul',
-      instructions: `Esta moto do ESTOQUE tem configuração PARECIDA com o que o cliente quer (na dúvida, sim)? "${m.nome}"`,
+      // O julgamento é por ATRIBUTO TÉCNICO, não por marca: "parecida" = mesma
+      // CATEGORIA e faixa de CILINDRADA/POTÊNCIA. Marca igual, sozinha, NÃO
+      // basta — foi o que fazia "CB 250" trazer qualquer Honda.
+      instructions: `Esta moto do ESTOQUE atende ao que o cliente quer em CATEGORIA, CILINDRADA e POTÊNCIA (e preço, se ele citou)? A MARCA IGUAL, sozinha, NÃO basta. (na dúvida, sim): "${m.nome}"`,
     };
   });
 
@@ -229,6 +278,18 @@ export function criteriosDaRespostaDeJev(
       MARGEM_NUMERICA_PCT,
     );
     if (f) faixas[ccCol] = f;
+  }
+  const potenciaCol = e.colunas.find(ehColunaDePotencia);
+  const potenciaResp = respostas.cx_potencia;
+  if (potenciaCol && potenciaResp?.type === 'choice') {
+    const f = aplicarMargem(
+      aplicarModo(
+        faixaEscolhida(potenciaResp.choice, FAIXAS_DE_POTENCIA),
+        modoDe(respostas, 'modo_potencia'),
+      ),
+      MARGEM_NUMERICA_PCT,
+    );
+    if (f) faixas[potenciaCol] = f;
   }
 
   const hipoteses: HipoteseDeMoto[] = [];

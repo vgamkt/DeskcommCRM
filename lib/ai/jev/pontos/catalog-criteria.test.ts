@@ -88,3 +88,36 @@ describe("criteriosDaRespostaDeJev", () => {
     });
   });
 });
+
+describe("potência (atributo-chave) e marca", () => {
+  const entradaPotencia: EntradaDeCriterios = {
+    colunas: ["categoria", "cilindrada", "potencia", "marca"],
+    estoque: [],
+  };
+
+  it("cria faixa de POTÊNCIA e a mapeia com margem ±30%", () => {
+    const q = perguntaDeCriteriosDeJev(entradaPotencia);
+    expect(q.cx_potencia?.type).toBe("choice");
+    expect(q.modo_potencia?.type).toBe("choice");
+    const r: RespostasDeJev = {
+      cx_potencia: { type: "choice", choice: "21 a 30", confidence: 1, probabilities: {} },
+    };
+    expect(criteriosDaRespostaDeJev(r, entradaPotencia).faixas.potencia).toEqual({
+      min: 15,
+      max: 39,
+    });
+  });
+
+  it("a exigência de MARCA avisa para não contar marca DENTRO do nome do modelo", () => {
+    const q = perguntaDeCriteriosDeJev(entradaPotencia);
+    expect(String(q["exigidos_marca"]?.instructions)).toMatch(/DENTRO do nome/i);
+  });
+
+  it("a hipótese 'parecida' pondera categoria/cilindrada/potência — marca sozinha não basta", () => {
+    const q = perguntaDeCriteriosDeJev({
+      colunas: ["categoria"],
+      estoque: [{ nome: "Honda CB 300" }],
+    });
+    expect(String(q["parecida_0"]?.instructions)).toMatch(/MARCA IGUAL, sozinha, NÃO basta/i);
+  });
+});
