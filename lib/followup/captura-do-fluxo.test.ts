@@ -195,3 +195,28 @@ describe("send_message nunca manda bolha em branco (achado 2026-09-19)", () => {
     expect(src).toMatch(/code: 'corpo_vazio'/);
   });
 });
+
+describe("campo com formato próprio pelo NOME (CPF) — o tipo `text` não basta", () => {
+  const cpf = { key: "cpf", label: "CPF", type: "text" as const };
+
+  it("recusa '3 mil' (valor da entrada) para um campo de CPF", () => {
+    // Medido ao vivo: "quero dar 3 mil de entrada" foi gravado como cpf="3 mil".
+    expect(valorBateComTipo(cpf, "3 mil")).toBe(false);
+    expect(valorBateComTipo(cpf, "3000")).toBe(false);
+  });
+
+  it("aceita um CPF de 11 dígitos (com ou sem máscara)", () => {
+    expect(valorBateComTipo(cpf, "123.456.789-09")).toBe(true);
+    expect(valorBateComTipo(cpf, "12345678909")).toBe(true);
+  });
+
+  it("recusa CPF de repetição (11111111111)", () => {
+    expect(valorBateComTipo(cpf, "11111111111")).toBe(false);
+  });
+
+  it("campo `text` comum segue aceitando texto livre", () => {
+    expect(valorBateComTipo({ key: "obs", label: "Observação", type: "text" }, "qualquer coisa")).toBe(
+      true,
+    );
+  });
+});

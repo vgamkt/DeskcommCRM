@@ -284,6 +284,21 @@ export function valorBateComTipo(campo: CampoPendenteParaCaptura, valor: unknown
   const v = typeof valor === "string" ? valor.trim() : valor;
   if (v === null || v === undefined || v === "") return false;
   const s = String(v).trim();
+
+  // ─── Régua por NOME do campo, antes do tipo ─────────────────────────────────
+  //
+  // Alguns campos têm formato PRÓPRIO que o `type` não expressa: o CPF do fluxo
+  // de Financiamento é `type: "text"` (o tipo `cpf` não existe no schema), então
+  // o texto livre aceitava qualquer coisa — medido ao vivo: o modelo gravou
+  // `cpf = "3 mil"` a partir de "quero dar 3 mil de entrada" (o valor da ENTRADA
+  // caiu no CPF). Aqui o nome do campo (key/rótulo) manda: se espera CPF, só
+  // aceita 11 dígitos válidos; o valor fica PENDENTE e o modelo repergunta.
+  const rotulo = normalizar(`${campo.key} ${campo.label}`);
+  if (/\bcpf\b/.test(rotulo)) {
+    const digitos = s.replace(/\D/g, "");
+    return digitos.length === 11 && !/^(\d)\1{10}$/.test(digitos);
+  }
+
   switch (campo.type) {
     case "number":
       // Aceita "120000", "120.000", "120 mil" — mas NÃO "ok".
