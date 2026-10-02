@@ -10,6 +10,15 @@ x-logging: &default-logging
     max-size: "10m"     # rotação: evita que o log encha o disco do VPS
     max-file: "3"
 
+# DNS PÚBLICO como padrão dos serviços. Os resolvedores da hospedagem
+# (195.179.224.53 / 209.126.15.53, via systemd-resolved) foram MEDIDOS como
+# intermitentes — travavam ~5s de vez em quando, e isso PENDURAVA as chamadas do
+# worker ao Supabase (pooler) e derrubava turnos. 1.1.1.1/8.8.8.8 resolvem em
+# ~15–65ms de forma estável. Ver C-120 no REGISTRO-DE-MODIFICACOES.md.
+x-dns: &default-dns
+  - 1.1.1.1
+  - 8.8.8.8
+
 services:
   app:
     # Teto de memória — 335 MiB de pico MEDIDO nesta VPS.
@@ -34,6 +43,7 @@ services:
     # topo da main pede `APP_IMAGE=…:latest` explicitamente.
     image: ${APP_IMAGE:-ghcr.io/vgamkt/deskcommcrm:stable}
     pull_policy: ${APP_PULL_POLICY:-always}
+    dns: *default-dns
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -94,6 +104,7 @@ services:
     # última release publicada — pareia com o app em vez de correr na frente.
     image: ${WORKER_IMAGE:-ghcr.io/vgamkt/deskcomm-worker:stable}
     pull_policy: ${WORKER_PULL_POLICY:-always}
+    dns: *default-dns
     build:
       context: .
       dockerfile: Dockerfile.worker
@@ -138,6 +149,7 @@ services:
     # o WhatsApp do cliente troca de motor. Bumpar faz parte do release.
     image: ${WAHA_IMAGE:-devlikeapro/waha:latest-2026.7.2}
     restart: unless-stopped
+    dns: *default-dns
     environment:
       # Prefixo sha512: faz o WAHA HASHEAR o X-Api-Key recebido e comparar com este
       # hash. Sem o prefixo ele compara literal → o app (que manda o plaintext) toma 401.
@@ -218,6 +230,7 @@ services:
     # justamente no momento em que a máquina está se recuperando de algo.
     image: ${SCHEDULER_IMAGE:-ghcr.io/vgamkt/deskcomm-scheduler:stable}
     pull_policy: ${SCHEDULER_PULL_POLICY:-always}
+    dns: *default-dns
     build:
       context: .
       dockerfile: Dockerfile.scheduler
