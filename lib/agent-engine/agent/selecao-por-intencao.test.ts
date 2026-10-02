@@ -779,3 +779,60 @@ describe('C-106: filtro ESTRITO por exigidos + faixa + ordem por preço', () => 
     expect(r.temMaisOpcoes).toBe(true);
   });
 });
+
+describe('selecionarPorIntencao — nomeiaModelo mantém a LINHA do modelo', () => {
+  const candidatos = [
+    moto('HONDA CBX 250 Twister', {
+      categoria: 'Naked, Street',
+      cilindrada: '249',
+      marca: 'HONDA',
+      preco: '9990',
+    }),
+    moto('HONDA CB 300 R', {
+      categoria: 'Street',
+      cilindrada: '293.5',
+      marca: 'HONDA',
+      preco: '12500',
+    }),
+    moto('HONDA CB 300 F Twister', {
+      categoria: 'Street',
+      cilindrada: '293.5',
+      marca: 'HONDA',
+      preco: '28990',
+    }),
+    moto('HONDA XRE 190', {
+      categoria: 'Trail',
+      cilindrada: '184',
+      marca: 'HONDA',
+      preco: '22500',
+    }),
+  ];
+  // Hipóteses da Jev: todas CB (perfil só "HONDA/Street/Naked").
+  const hipoteses = [
+    { nome: 'CB 300', marca: 'HONDA', categoria: 'Street', preco: '12500' },
+    { nome: 'CBX 250', marca: 'HONDA', categoria: 'Naked', preco: '9990' },
+  ];
+  const base = {
+    termoBase: 'Vocês têm a Honda CB 250?',
+    criterios: {},
+    intencao: 'pedido' as const,
+    motoAtual: null,
+    candidatos,
+    mapeamento: MAPEAMENTO,
+    quantidade: 4,
+    hipoteses,
+    filtrarPorComparacao: true,
+    principal: 'nome',
+  };
+
+  it('sem nomeiaModelo, o complemento pode trazer outra linha da MESMA marca (XRE)', () => {
+    const r = selecionarPorIntencao({ ...base });
+    expect(r.motos.map((m) => m.nome)).toContain('HONDA XRE 190');
+  });
+
+  it('com nomeiaModelo, o complemento fica na LINHA (CB) — sem XRE', () => {
+    const r = selecionarPorIntencao({ ...base, nomeiaModelo: true });
+    expect(r.motos.map((m) => m.nome)).not.toContain('HONDA XRE 190');
+    expect(r.motos.some((m) => m.nome.includes('CB'))).toBe(true);
+  });
+});

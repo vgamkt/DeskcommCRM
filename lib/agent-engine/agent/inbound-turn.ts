@@ -4171,6 +4171,11 @@ async function executarTurnoDoAgente(
               exigidos: exigidosDoTurno,
               // C-106: interruptor do agente (desligado = OR antigo).
               criteriosDinamicos,
+              // O cliente NOMEOU um modelo ("CB 250")? O complemento fica na
+              // mesma LINHA do modelo — não completa com qualquer marca.
+              nomeiaModelo:
+                pedeMotoExplicito(mensagemDoJob ?? '') ||
+                motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0,
             });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no
@@ -5615,6 +5620,9 @@ async function executarTurnoDoAgente(
             filtrarPorComparacao: extraidosPrefetch.intencao !== 'alternativa',
             toleranciaPct: agentConfig?.catalogConfig?.tolerancia_preco_pct ?? 30,
             criteriosDinamicos: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
+            nomeiaModelo:
+              pedeMotoExplicito(mensagemDoJob) ||
+              motosCitadasNoTexto(mensagemDoJob, candidatasPrefetch).length > 0,
           });
           for (const moto of selecaoPrefetch.motos) {
             if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);

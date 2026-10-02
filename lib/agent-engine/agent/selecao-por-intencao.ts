@@ -124,6 +124,37 @@ export interface EntradaSelecaoPorIntencao {
    * ignora `exigidos`/teto e volta ao OR pontuado (comportamento antigo).
    */
   criteriosDinamicos?: boolean;
+  /**
+   * O cliente NOMEOU um modelo (ex.: "CB 250")? Quando true, o COMPLEMENTO (a
+   * complementação até N, quando o filtro casa poucas) NÃO pode sair da LINHA do
+   * modelo — não adianta qualquer moto da mesma marca. Sem isto, "CB 250" com
+   * hipóteses só da Honda completava com qualquer Honda (ex.: XRE 190) — "só
+   * separou Honda". A linha é o TOKEN compartilhado entre o nome da moto e o nome
+   * das hipóteses.
+   */
+  nomeiaModelo?: boolean;
+}
+
+/** Tokens significativos (>=2 letras) do nome de uma moto, normalizados. */
+function tokensDoNome(nome: string): Set<string> {
+  return new Set(
+    normalizarNomeDeMoto(nome)
+      .split(' ')
+      .filter((t) => t.length >= 2),
+  );
+}
+
+/** A moto compartilha algum token significativo com o nome das hipóteses? (linha) */
+function compartilhaLinhaDoModelo(
+  nome: string,
+  hipoteses: readonly HipoteseDeMoto[],
+): boolean {
+  const alvo = tokensDoNome(nome);
+  for (const h of hipoteses) {
+    if (typeof h.nome !== 'string' || h.nome.trim() === '') continue;
+    for (const t of tokensDoNome(h.nome)) if (alvo.has(t)) return true;
+  }
+  return false;
 }
 
 export interface ResultadoSelecaoPorIntencao {
@@ -481,8 +512,16 @@ export function selecionarPorIntencao(
       );
     }
     if (casadas.length > 0) {
-      preferidos = new Set(casadas);
-      filtrados = casadas.length;
+      // Cliente nomeou um modelo: o conjunto PREFERIDO também fica na LINHA do
+      // modelo. Sem isto, o casamento por MARCA (comum a toda a hipótese Honda)
+      // traz outra linha (ex.: XRE) já pelos PONTOS — não só pelo complemento.
+      const naLinha =
+        input.nomeiaModelo === true
+          ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, input.hipoteses ?? []))
+          : casadas;
+      const preferidas = naLinha.length > 0 ? naLinha : casadas;
+      preferidos = new Set(preferidas);
+      filtrados = preferidas.length;
     }
   }
   const extras = Object.values(criterios)
@@ -550,7 +589,14 @@ export function selecionarPorIntencao(
     const jaTem = new Set(motos);
     const complemento = candidatos
       .filter((m) => !jaTem.has(m))
-      .filter((m) => casaPerfil(m, perfil));
+      .filter((m) => casaPerfil(m, perfil))
+      // Cliente nomeou um modelo → o complemento fica na MESMA linha (token do
+      // nome), não em qualquer moto da mesma marca. "CB 250" → só CB, não XRE.
+      .filter(
+        (m) =>
+          input.nomeiaModelo !== true ||
+          compartilhaLinhaDoModelo(m.nome, input.hipoteses ?? []),
+      );
     if (complemento.length > 0) {
       const resto = escolherComReferencia(termoFinal, complemento, {
         quantidade: quantidade - motos.length,

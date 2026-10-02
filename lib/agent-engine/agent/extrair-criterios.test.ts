@@ -8,6 +8,11 @@ import {
 } from './extrair-criterios';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 
+// Este arquivo exercita o extrator de CHAT. O `.env` da instalação (produção)
+// pode trazer `JEV_ENABLED=1`, que faria `extrairCriterios` tentar a Jev ANTES —
+// então garantimos a Jev desligada aqui, para o teste medir o que ele monta.
+delete process.env.JEV_ENABLED;
+
 describe('buildCriteriosPrompt', () => {
   it('lista as colunas e os valores possíveis', () => {
     const p = buildCriteriosPrompt('quero uma CB 300', ['marca', 'categoria', 'cilindrada'], {
