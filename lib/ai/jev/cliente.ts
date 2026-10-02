@@ -31,6 +31,28 @@ export const BASES_SYSTEMONE: Record<string, { baseUrl: string; modeloPadrao: st
 };
 
 /**
+ * O modelo escolhido no painel é um modelo de JEV (decisão estruturada)?
+ *
+ * POR QUE ISSO EXISTE: o painel de provedores guarda, no MESMO
+ * `ai_purpose_bindings`, tanto o modelo de CHAT de um ponto (ex.: OpenRouter +
+ * `openai/gpt-4o-mini` para o classificador de estágio) quanto a escolha da Jev.
+ * Sem esta checagem, o resolvedor tratava QUALQUER binding de provedor
+ * Jev-capaz como Jev e mandava um modelo de conversa para o endpoint
+ * `systemone` — HTTP 400 `schema`, tentativa desperdiçada em todo turno. A
+ * decisão certa: a classificação roda com o modelo que o operador escolheu na
+ * tela; se ele é de chat, quem decide é o caminho de chat (a Jev não entra).
+ *
+ * `typesafe` é a base OFICIAL da Jev — todo modelo dela é Jev. Para as demais, o
+ * id precisa denunciar a família (`jev` em `typesafe/jev-1.13`, `jev-1.13-free`,
+ * `jev-latest`).
+ */
+export function ehModeloDeJev(provider: string, model: string | null | undefined): boolean {
+  if (provider === "typesafe") return true;
+  if (model === null || model === undefined) return false;
+  return /(^|[/_:.-])jev/i.test(model.trim());
+}
+
+/**
  * Monta o endpoint de um provedor. Provedor SEM base conhecida (ex.: anthropic,
  * openai, opencode_go) devolve `null` — o card deixa selecionar, mas a tentativa
  * é descartada e o motor cai no fallback (decisão do dono).

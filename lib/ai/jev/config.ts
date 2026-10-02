@@ -48,3 +48,17 @@ export function alvosDeJevDe(env: Record<string, string | undefined>): AlvoDeJev
   if (fallback) alvos.push(fallback);
   return alvos;
 }
+
+/**
+ * O BRIEF do turno (Parte 1) está ligado? Flag PRÓPRIA e default DESLIGADA
+ * (`JEV_BRIEF_ENABLED`) para o rollout ser seguro: mesmo com a Jev ligada por
+ * binding/ambiente, o brief só entra quando o operador ligar explicitamente.
+ *
+ * Lê `JEV_BRIEF_ENABLED` (1/true). Ausente = desligado = o turno manda os blocos
+ * crus de sempre.
+ */
+export function briefDoTurnoDe(
+  env: Record<string, string | undefined>,
+): boolean {
+  return ligado(env.JEV_BRIEF_ENABLED);
+}

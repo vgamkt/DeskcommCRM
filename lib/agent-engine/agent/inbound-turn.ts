@@ -173,6 +173,9 @@ import {
   type FilaDeOpcoes,
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
+import { renderBriefDoTurno } from './brief-do-turno';
+import { briefDoTurnoDe } from '../../ai/jev/config';
+import { jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
   avancarObjecao,
   clienteConfirmouVer,
@@ -5444,9 +5447,14 @@ async function executarTurnoDoAgente(
     // único em que removê-los não custa nada. Logado porque "por que o prompt
     // deste turno é diferente do daquele?" precisa ter resposta no trace.
     const projetaContexto = turnoProjeta(mcpToolIdsDoTurno);
+    const blocoCatalogo = renderBlocoCatalogo(catalogoMapeamento);
     runLog.info('projeção do contexto do turno', {
       projeta: projetaContexto,
       mcp_tools_no_turno: mcpToolIdsDoTurno.length,
+      // Medição da Parte 1d: quanto pesa o MAPEAMENTO do catálogo no sufixo.
+      // `tokens_est` usa a heurística chars/4 do próprio repo (history.ts).
+      catalogo_bloco_chars: blocoCatalogo.length,
+      catalogo_bloco_tokens_est: Math.ceil(blocoCatalogo.length / 4),
     });
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
@@ -5545,6 +5553,46 @@ async function executarTurnoDoAgente(
       if (texto !== null) descricaoDaMoto = { nome: motoEmFoco.nome, texto };
     }
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    // ── PARTE 1: BRIEF DO TURNO (quando a Jev está ligada) ────────────────────
+    // A Jev já decidiu o essencial do turno; em vez de 4 blocos crus (estado,
+    // fluxo, hint de estágio, objeção), manda-se UM brief compacto — mesmos
+    // fatos. Gate: sem Jev ligada para o tenant, nada muda (blocos crus seguem).
+    const usaBriefDaJev =
+      preview?.kind !== 'sandbox' &&
+      briefDoTurnoDe(process.env) &&
+      (await jevLigadaParaBrief(pool, tenantId));
+    const blocoBriefDaJev = usaBriefDaJev
+      ? renderBriefDoTurno({
+          estagioHint: stageHintBlock,
+          objecaoBloco: blocoObjecaoTurno,
+          contact: effectiveContext.contact,
+          escolhida: catalogoDaConversa.escolhida,
+          valoresDoFluxo: fluxoAtendimento?.valores ?? {},
+          motoEmFoco,
+          descricaoDaMoto,
+          fluxo: fluxoAtendimento,
+          finalizacao: finalizacaoDoFluxo,
+        })
+      : '';
+    // Os 4 blocos crus (usados quando o brief NÃO está ativo; a soma de tamanho
+    // vai ao trace para medir o ganho real de contexto).
+    const blocoEstadoCru = renderBlocoDeEstado({
+      contact: effectiveContext.contact,
+      escolhida: catalogoDaConversa.escolhida,
+      valoresDoFluxo: fluxoAtendimento?.valores ?? {},
+      motoEmFoco,
+      descricaoDaMoto,
+    });
+    const blocoFluxoCru = fluxoAtendimento
+      ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo)
+      : '';
+    if (usaBriefDaJev) {
+      runLog.info('brief do turno ativo (Jev)', {
+        chars_brief: blocoBriefDaJev.length,
+        chars_blocos_crus:
+          blocoEstadoCru.length + blocoFluxoCru.length + blocoObjecaoTurno.length + stageHintBlock.length,
+      });
+    }
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
@@ -5564,22 +5612,18 @@ async function executarTurnoDoAgente(
       // Catálogo configurado pela tela: tabela e colunas REAIS (migration 0244).
       // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
       // prefixo fixo da persona.
-      renderBlocoCatalogo(catalogoMapeamento),
+      blocoCatalogo,
       // ESTADO DO ATENDIMENTO: o que JÁ sabemos (dados lidos de volta + moto
       // escolhida/trava). Determinístico, por-lead — evita reperguntar e reabrir a
       // escolha sem depender de o modelo garimpar o histórico.
-      renderBlocoDeEstado({
-        contact: effectiveContext.contact,
-        escolhida: catalogoDaConversa.escolhida,
-        valoresDoFluxo: fluxoAtendimento?.valores ?? {},
-        motoEmFoco,
-        descricaoDaMoto,
-      }),
-      fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
-      // C-071: bloco da OBJEÇÃO — a fase do turno OU o "mostrar" (o cliente já
-      // confirmou que quer ver as opções parecidas).
-      blocoObjecaoTurno,
-      stageHintBlock,
+      // Quando o brief da Jev está ativo, ESTADO + FLUXO + OBJEÇÃO + HINT de
+      // estágio cedem lugar a ele (mesmos fatos, texto compacto). Sem Jev,
+      // inalterado. O bloco de objeção (C-071) é a fase do turno OU o "mostrar"
+      // (o cliente já confirmou que quer ver as opções parecidas).
+      usaBriefDaJev ? blocoBriefDaJev : blocoEstadoCru,
+      usaBriefDaJev ? '' : blocoFluxoCru,
+      usaBriefDaJev ? '' : blocoObjecaoTurno,
+      usaBriefDaJev ? '' : stageHintBlock,
       splitHint,
       // C-100: o cliente pede por preço SEM citar valor (ex.: "qual o preço?") e
       // NÃO há moto atual — o motor instrui a IA a PERGUNTAR/confirmar a faixa,

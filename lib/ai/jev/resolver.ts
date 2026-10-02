@@ -8,14 +8,18 @@
  * credencial + o modelo — e grava em `ai_purpose_bindings`. Este resolvedor lê
  * esse binding e monta o alvo da Jev (com a chave decifrada).
  *
- * Regra: se houver binding Jev-capaz para o ponto, ele manda; senão cai na
- * configuração por AMBIENTE (`JEV_ENABLED`…) — default DESLIGADA.
+ * Regra (corrigida 2026-10-02): a UI MANDA. Se houver binding habilitado para o
+ * ponto, ele decide — e a Jev só entra se o modelo escolhido na tela for um
+ * modelo de JEV (`ehModeloDeJev`). Binding de CHAT (ex.: OpenRouter +
+ * `openai/gpt-4o-mini`) NÃO vira alvo da Jev: a classificação usa o modelo da
+ * tela pelo caminho de chat. Só quando NÃO há binding nenhum o ambiente
+ * (`JEV_ENABLED`…) vale — default DESLIGADA.
  */
 import type pg from 'pg';
 
 import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
 
-import { BASES_SYSTEMONE } from './cliente';
+import { BASES_SYSTEMONE, ehModeloDeJev } from './cliente';
 import { alvosDeJevDe } from './config';
 import type { AlvoDeJev } from './index';
 
@@ -74,16 +78,56 @@ export async function alvosDeJevDaOrg(
       [organizationId, purpose],
     );
     const b = rows[0];
-    const base = b !== undefined ? BASES_SYSTEMONE[b.provider] : undefined;
-    if (b !== undefined && base !== undefined) {
-      const apiKey = await chaveDaCredencial(db, organizationId, b.provider, b.credential_id);
-      if (apiKey !== null) {
-        return [{ provider: b.provider, apiKey, model: b.model_id ?? base.modeloPadrao }];
+    if (b !== undefined) {
+      // Há escolha EXPLÍCITA no painel para este ponto: ela manda. Se o modelo
+      // for de Jev, vira alvo; se for de CHAT, a Jev NÃO entra e o caminho de
+      // chat usa o modelo da tela — nunca se cai no ambiente por cima da UI.
+      const base = BASES_SYSTEMONE[b.provider];
+      const model = b.model_id ?? base?.modeloPadrao ?? null;
+      if (base !== undefined && model !== null && ehModeloDeJev(b.provider, model)) {
+        const apiKey = await chaveDaCredencial(db, organizationId, b.provider, b.credential_id);
+        if (apiKey !== null) return [{ provider: b.provider, apiKey, model }];
       }
+      return [];
     }
   } catch {
     // leitura do binding falhou → cai no ambiente
   }
-  // Sem binding Jev-capaz: usa a config global por ambiente (default off).
+  // Sem binding nenhum: usa a config global por ambiente (default off).
   return alvosDeJevDe(process.env);
+}
+
+/**
+ * A Jev está LIGADA para o tenant? Verdadeiro quando existe QUALQUER binding
+ * habilitado cujo modelo escolhido na tela seja de JEV (`ehModeloDeJev`) — ou,
+ * se não houver binding nenhum, quando o ambiente liga a Jev. Binding de CHAT
+ * não conta. É o gate do BRIEF do turno (Parte 1): sem Jev, o turno segue
+ * exatamente como sempre foi.
+ *
+ * Nunca lança: falha de leitura cai na configuração de ambiente.
+ */
+export async function jevLigadaParaBrief(
+  db: pg.Pool,
+  organizationId: string,
+): Promise<boolean> {
+  let temBinding = false;
+  try {
+    const { rows } = await db.query<{ provider: string; model_id: string | null }>(
+      `select provider, model_id
+         from ai_purpose_bindings
+        where organization_id = $1 and is_enabled`,
+      [organizationId],
+    );
+    temBinding = rows.length > 0;
+    for (const r of rows) {
+      const base = BASES_SYSTEMONE[r.provider];
+      const model = r.model_id ?? base?.modeloPadrao ?? null;
+      if (base !== undefined && model !== null && ehModeloDeJev(r.provider, model)) return true;
+    }
+  } catch {
+    // leitura do binding falhou → decide pelo ambiente abaixo
+  }
+  // Com binding(s) mas nenhum de Jev, a UI manda: não cai no ambiente.
+  if (temBinding) return false;
+  return alvosDeJevDe(process.env).length > 0;
 }

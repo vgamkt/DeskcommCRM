@@ -705,32 +705,32 @@ export function renderBlocoCatalogo(m: CatalogoMapeamento | null): string {
     ['cilindrada', m.colCilindrada],
     ['tipo', m.colTipo],
   ];
-  const mapa = rotulos
+  const colunas = rotulos
     .filter(([, col]) => col !== null)
-    .map(([rotulo, col]) => `- ${rotulo}: ${col}`)
-    .join('\n');
+    .map(([rotulo, col]) => `${rotulo}=${col}`)
+    .join('; ');
   const nomeComposto = colunasDoNome(m);
   const dicaNome =
     nomeComposto.length > 1
-      ? `O nome completo da moto é a junção de ${nomeComposto.map((c) => `"${c}"`).join(' + ')}.`
+      ? `Nome completo = ${nomeComposto.map((c) => `"${c}"`).join(' + ')}.`
       : '';
   const dicaLegenda =
     m.legenda !== undefined && m.legenda.length > 0
-      ? `A legenda enviada com a foto mostra: ${m.legenda.join(', ')} (não omita estas colunas na consulta).`
+      ? `Legenda da foto: ${m.legenda.join(', ')} (não omita estas colunas na consulta).`
       : '';
   // Definições curtas dos conceitos usuais de catálogo de moto — ajudam o modelo
   // a interpretar colunas como `versao`, `cilindrada`, `categoria` mesmo sem papel.
   const DEFINICOES: ReadonlyArray<[RegExp, string]> = [
-    [/vers(ao|ão|ion)/i, 'versão: variação de um mesmo modelo, diferenciada por acabamento, equipamentos, motorização ou configuração (ex.: "FLEX", "ABS", "ED").'],
-    [/cilindr|\bcc\b/i, 'cilindrada: volume total do motor em cm³ (ex.: 300).'],
-    [/categoria|tipo|segmento/i, 'tipo/categoria: segmento de uso da moto (ex.: Naked, Street, Esportiva, Trail/Adventure, Scooter).'],
-    [/preco|preço|valor/i, 'preço: valor de venda da moto.'],
-    [/quilometragem|\bkm\b|odometro/i, 'quilometragem: distância já rodada, em km (moto usada/seminova).'],
-    [/estoque|quantidade|\bqtd\b/i, 'estoque: quantidade disponível para venda.'],
+    [/vers(ao|ão|ion)/i, 'versão: variação de um mesmo modelo (acabamento/motorização; ex. FLEX/ABS).'],
+    [/cilindr|\bcc\b/i, 'cilindrada: volume total do motor em cm³.'],
+    [/categoria|tipo|segmento/i, 'tipo/categoria: segmento de uso (ex. Naked, Street, Trail, Scooter).'],
+    [/preco|preço|valor/i, 'preço: valor de venda.'],
+    [/quilometragem|\bkm\b|odometro/i, 'quilometragem: distância já rodada (km).'],
+    [/estoque|quantidade|\bqtd\b/i, 'estoque: quantidade disponível.'],
     [/\bano\b|ano_modelo|ano_fabricacao/i, 'ano: ano do modelo/fabricação.'],
     [/\bcor\b/i, 'cor: cor da moto.'],
-    [/imagem|foto|url/i, 'foto: URL da imagem da moto.'],
-    [/^(nome|modelo|titulo)$/i, 'nome/modelo: o nome comercial da moto.'],
+    [/imagem|foto|url/i, 'foto: URL da imagem.'],
+    [/^(nome|modelo|titulo)$/i, 'nome/modelo: nome comercial.'],
   ];
   const nomesConfigurados = configEfetiva(m).map((c) => c.coluna);
   const definicoes = [
@@ -741,23 +741,19 @@ export function renderBlocoCatalogo(m: CatalogoMapeamento | null): string {
     ),
   ];
   const dicaGlossario =
-    definicoes.length > 0
-      ? `O que significa cada coluna:\n${definicoes.map((d) => `- ${d}`).join('\n')}`
-      : '';
+    definicoes.length > 0 ? `Glossário: ${definicoes.join(' ')}` : '';
   const criterios = criteriosDaIA(m);
   const dicaCriterios =
     criterios.length > 0
       ? `Colunas de CRITÉRIO para a busca ampla (use quando não achar o pedido): ${criterios.join(', ')}.`
       : '';
   const instrucaoAmpliar = criterios.length > 0
-    ? `Ao consultar o catálogo, informe SEMPRE o parâmetro \`criterios\` com o que você deduziu do pedido, por coluna (ex.: {"marca":"Yamaha","categoria":"Naked","cilindrada":689}). Se o modelo pedido NÃO existir, o sistema usa esses critérios para ordenar as motos parecidas e oferecer as melhores — não pare em "não temos". Se a ferramenta devolver \`valores_dos_criterios\`, escolha o valor que MAIS se parece com o que o cliente quer (ex.: naked → "Naked"; trail → "Adventure / Trilha") e REFAÇA a consulta com \`criterios\` preenchido. O SISTEMA já prioriza automaticamente as motos equivalentes cadastradas na loja — não invente modelos nem ofereça motos que não vieram do banco.`
+    ? `Informe SEMPRE \`criterios\` ao consultar (o que deduziu por coluna). Se o modelo pedido não existir, o sistema ordena as parecidas por esses critérios — não pare em "não temos". Com \`valores_dos_criterios\`, escolha o valor mais parecido e refaça. Não invente modelos.`
     : '';
   return [
-    '## Catálogo da loja (configurado nesta conta)',
-    `Tabela: ${m.tableName} (agrupamento ${m.schemaName}).`,
-    `Coluna de busca (nome): ${m.colNome}, operador "${m.buscaOperador}".`,
-    'Colunas disponíveis:',
-    mapa,
+    '## Catálogo da loja',
+    `Tabela: ${m.tableName} (agrupamento ${m.schemaName}). Busca: coluna "${m.colNome}", operador "${m.buscaOperador}".`,
+    `Colunas: ${colunas}.`,
     ...(dicaNome !== '' ? [dicaNome] : []),
     ...(dicaLegenda !== '' ? [dicaLegenda] : []),
     ...(dicaCriterios !== '' ? [dicaCriterios] : []),
@@ -766,13 +762,13 @@ export function renderBlocoCatalogo(m: CatalogoMapeamento | null): string {
     // O sistema JÁ usa as colunas configuradas quando `colunas` é omitido (evita
     // `select *` e a resposta estourar o teto de bytes e vir truncada). Pedir
     // colunas explícitas fica permitido, mas omitir é o caminho seguro.
-    'Para apresentar o catálogo, consulte a tabela acima SEM informar `colunas` (o sistema já usa as colunas configuradas) e filtre pela coluna de nome com o operador indicado. NUNCA invente nome de tabela ou coluna; use exatamente estes.',
+    'Consulte SEM informar `colunas` (o sistema usa as configuradas) e filtre pela coluna de nome. NUNCA invente tabela/coluna.',
     // Erro de filtro incompleto NÃO é indisponibilidade — o modelo (lite) já
     // respondeu "instabilidade técnica" ao cliente por causa disto (medido).
-    'Se a ferramenta responder `filtro_sem_valor`, refaça a consulta na hora incluindo `valor` no filtro; NUNCA diga ao cliente que o sistema está instável ou fora do ar.',
+    'Se a ferramenta responder `filtro_sem_valor`, refaça com `valor`; NUNCA diga que o sistema está instável/fora do ar.',
     // O motor envia as fotos sozinho (uma por moto escolhida). O modelo não sabe
     // quantas serão — então a abertura NÃO deve cravar um número, senão o texto
     // ("separei a CB 300") não bate com as fotos enviadas (medido ao vivo).
-    `Ao oferecer motos semelhantes sem mandar foto, o SISTEMA envia uma foto por moto escolhida (hoje até ${m.similaresQtd ?? 3}). Na sua abertura, NÃO diga o número exato nem cite só uma — diga "algumas opções" — para o texto bater com as fotos que forem enviadas.`,
+    `Ao oferecer motos semelhantes sem foto, o SISTEMA envia 1 foto por moto escolhida (hoje até ${m.similaresQtd ?? 3}). Na abertura, NÃO crave o número — diga "algumas opções".`,
   ].join('\n');
 }

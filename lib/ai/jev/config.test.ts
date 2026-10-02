@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alvosDeJevDe } from "./config";
+import { alvosDeJevDe, briefDoTurnoDe } from "./config";
 
 describe("alvosDeJevDe", () => {
   it("Jev desligada por padrão (sem JEV_ENABLED) → nenhum alvo", () => {
@@ -58,5 +58,19 @@ describe("alvosDeJevDe", () => {
         JEV_FALLBACK_PROVIDER: "openrouter",
       }),
     ).toEqual([{ provider: "opencode", apiKey: "a" }]);
+  });
+});
+
+describe("briefDoTurnoDe", () => {
+  it("desligado por padrão (sem JEV_BRIEF_ENABLED)", () => {
+    expect(briefDoTurnoDe({})).toBe(false);
+    expect(briefDoTurnoDe({ JEV_ENABLED: "1" })).toBe(false);
+  });
+
+  it("aceita 1/true; rejeita 0/vazio/lixo", () => {
+    expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: "1" })).toBe(true);
+    expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: "true" })).toBe(true);
+    expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: " FALSE " })).toBe(false);
+    expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: "0" })).toBe(false);
   });
 });

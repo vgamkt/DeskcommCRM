@@ -6,7 +6,8 @@ vi.mock("@/lib/crypto/aes_gcm", () => ({
 }));
 
 import type pg from "pg";
-import { alvosDeJevDaOrg } from "./resolver";
+import { alvosDeJevDaOrg, jevLigadaParaBrief } from "./resolver";
+import { ehModeloDeJev } from "./cliente";
 
 type QueryResp = { rows: Record<string, unknown>[] };
 function dbMock(respostas: QueryResp[] | (() => QueryResp)): pg.Pool {
@@ -63,5 +64,51 @@ describe("alvosDeJevDaOrg", () => {
     expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([
       { provider: "opencode", apiKey: "k" },
     ]);
+  });
+
+  it("binding de provedor Jev-capaz com modelo de CHAT NÃO vira alvo (a UI manda; não cai no ambiente)", async () => {
+    process.env.JEV_ENABLED = "1";
+    process.env.JEV_PROVIDER = "opencode";
+    process.env.JEV_API_KEY = "k";
+    const db = dbMock([
+      { rows: [{ provider: "openrouter", credential_id: "c1", model_id: "openai/gpt-4o-mini" }] },
+    ]);
+    expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([]);
+  });
+
+  it("binding Jev-capaz sem modelo explícito usa o modelo padrão da base Jev", async () => {
+    const db = dbMock([
+      { rows: [{ provider: "opencode", credential_id: "c1", model_id: null }] },
+      { rows: [{ api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" }] },
+    ]);
+    expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([
+      { provider: "opencode", apiKey: "CHAVE-DECIFRADA", model: "jev-1.13-free" },
+    ]);
+  });
+});
+
+describe("ehModeloDeJev", () => {
+  it("reconhece a família Jev e rejeita modelos de chat", () => {
+    expect(ehModeloDeJev("opencode", "jev-1.13-free")).toBe(true);
+    expect(ehModeloDeJev("openrouter", "typesafe/jev-1.13")).toBe(true);
+    expect(ehModeloDeJev("typesafe", "qualquer-coisa")).toBe(true);
+    expect(ehModeloDeJev("openrouter", "openai/gpt-4o-mini")).toBe(false);
+    expect(ehModeloDeJev("anthropic", "claude-sonnet-4-5")).toBe(false);
+    expect(ehModeloDeJev("openai", null)).toBe(false);
+  });
+});
+
+describe("jevLigadaParaBrief", () => {
+  it("true com binding de modelo Jev; false com binding só de chat", async () => {
+    const dbJev = dbMock([{ rows: [{ provider: "opencode", model_id: "jev-1.13-free" }] }]);
+    expect(await jevLigadaParaBrief(dbJev, "org")).toBe(true);
+    const dbChat = dbMock([{ rows: [{ provider: "openrouter", model_id: "openai/gpt-4o-mini" }] }]);
+    expect(await jevLigadaParaBrief(dbChat, "org")).toBe(false);
+  });
+
+  it("sem binding nenhum, decide pelo ambiente", async () => {
+    delete process.env.JEV_ENABLED;
+    const db = dbMock([{ rows: [] }]);
+    expect(await jevLigadaParaBrief(db, "org")).toBe(false);
   });
 });
