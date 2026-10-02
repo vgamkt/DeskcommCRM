@@ -174,8 +174,9 @@ import {
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno } from './brief-do-turno';
-import { briefDoTurnoDe } from '../../ai/jev/config';
-import { jevLigadaParaBrief } from '../../ai/jev/resolver';
+import { renderCandidatasDoTurno } from './candidatas-do-turno';
+import { briefDoTurnoDe, prefetchDeJevDe } from '../../ai/jev/config';
+import { alvosDeJevDaOrg, jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
   avancarObjecao,
   clienteConfirmouVer,
@@ -5552,6 +5553,81 @@ async function executarTurnoDoAgente(
       );
       if (texto !== null) descricaoDaMoto = { nome: motoEmFoco.nome, texto };
     }
+    // ── PARTE 1d: PRÉ-BUSCA DO CATÁLOGO PELA JEV (top-k) — EXPERIMENTAL ───────
+    // Flag própria (default OFF). Quando ligada e a Jev de catálogo disponível, o
+    // MOTOR decide o filtro ANTES do turno, pré-busca as candidatas e as injeta;
+    // o MAPEAMENTO do catálogo sai do prompt (o modelo não consulta coluna a
+    // coluna). A/B controlado — NÃO promover sem medir tokens × acerto.
+    const usaPrefetchDaJev =
+      preview?.kind !== 'sandbox' &&
+      prefetchDeJevDe(process.env) &&
+      catalogoMapeamento !== null &&
+      (await alvosDeJevDaOrg(pool, tenantId, 'catalog_criteria')).length > 0;
+    let blocoCandidatas = '';
+    if (usaPrefetchDaJev && catalogoMapeamento !== null && mensagemDoJob.trim() !== '') {
+      const colunasCriterioPrefetch = camposDeBusca(catalogoMapeamento, {
+        dinamico: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
+        enviarTodas: agentConfig?.catalogConfig?.enviar_todas_que_casam === true,
+      });
+      if (colunasCriterioPrefetch.length > 0) {
+        const estoquePrefetch = await carregarCatalogoDoBanco(
+          deps.crmCfg.supabase,
+          tenantId,
+          catalogoMapeamento,
+          colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
+        );
+        const candidatasPrefetch = mesclarMotos(estoquePrefetch, catalogoDaConversa.motos);
+        if (candidatasPrefetch.length > 0) {
+          const extraidosPrefetch = await extrairCriterios(
+            pool,
+            deps.llmCfg,
+            {
+              tenantId,
+              leadId: leadId || null,
+              jobId: job?.id ?? null,
+              model: agentConfig?.model ?? '',
+              provider: agentConfig?.provider ?? null,
+              mensagem:
+                motoAtualDaConversa !== null && preEscolhaDescricao !== undefined
+                  ? `${mensagemDoJob}\n(moto atual da conversa: ${motoAtualDaConversa.nome})`
+                  : mensagemDoJob,
+              colunas: colunasCriterioPrefetch,
+              valores: valoresDasColunas(candidatasPrefetch, colunasCriterioPrefetch),
+              estoque: candidatasPrefetch,
+              bloquearAno:
+                agentConfig?.catalogConfig?.bloquear_ano_ia !== false && !clienteCitouAno,
+            },
+            { log: runLog },
+          );
+          const selecaoPrefetch = selecionarPorIntencao({
+            termoBase: mensagemDoJob,
+            criterios: extraidosPrefetch.criterios,
+            intencao: extraidosPrefetch.intencao,
+            motoAtual: motoAtualDaConversa,
+            candidatos: candidatasPrefetch,
+            mapeamento: catalogoMapeamento,
+            quantidade: agentConfig?.catalogConfig?.similares_qtd ?? 3,
+            aplicarLimite: agentConfig?.catalogConfig?.usar_limite_quantidade !== false,
+            hipoteses: extraidosPrefetch.hipoteses,
+            faixas: extraidosPrefetch.faixas,
+            principal: extraidosPrefetch.principal,
+            exigidos: extraidosPrefetch.exigidos,
+            filtrarPorComparacao: extraidosPrefetch.intencao !== 'alternativa',
+            toleranciaPct: agentConfig?.catalogConfig?.tolerancia_preco_pct ?? 30,
+            criteriosDinamicos: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
+          });
+          for (const moto of selecaoPrefetch.motos) {
+            if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
+          }
+          blocoCandidatas = renderCandidatasDoTurno(selecaoPrefetch.motos);
+          runLog.info('prefetch de catálogo (Jev) — candidatas injetadas', {
+            candidatas: selecaoPrefetch.motos.length,
+            chars_bloco: blocoCandidatas.length,
+            mapeamento_removido: true,
+          });
+        }
+      }
+    }
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
     // ── PARTE 1: BRIEF DO TURNO (quando a Jev está ligada) ────────────────────
     // A Jev já decidiu o essencial do turno; em vez de 4 blocos crus (estado,
@@ -5612,7 +5688,8 @@ async function executarTurnoDoAgente(
       // Catálogo configurado pela tela: tabela e colunas REAIS (migration 0244).
       // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
       // prefixo fixo da persona.
-      blocoCatalogo,
+      // 1d: com candidatas pré-buscadas, o MAPEAMENTO do catálogo sai do prompt.
+      usaPrefetchDaJev && blocoCandidatas !== '' ? blocoCandidatas : blocoCatalogo,
       // ESTADO DO ATENDIMENTO: o que JÁ sabemos (dados lidos de volta + moto
       // escolhida/trava). Determinístico, por-lead — evita reperguntar e reabrir a
       // escolha sem depender de o modelo garimpar o histórico.

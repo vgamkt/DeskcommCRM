@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alvosDeJevDe, briefDoTurnoDe, fallbackDeJevDe } from "./config";
+import { alvosDeJevDe, briefDoTurnoDe, fallbackDeJevDe, prefetchDeJevDe } from "./config";
 import { motorDeJevDe } from "./motor";
 
 describe("alvosDeJevDe", () => {
@@ -122,5 +122,14 @@ describe("briefDoTurnoDe", () => {
     expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: "true" })).toBe(true);
     expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: " FALSE " })).toBe(false);
     expect(briefDoTurnoDe({ JEV_BRIEF_ENABLED: "0" })).toBe(false);
+  });
+});
+
+describe("prefetchDeJevDe", () => {
+  it("desligado por padrão; 1/true liga", () => {
+    expect(prefetchDeJevDe({})).toBe(false);
+    expect(prefetchDeJevDe({ JEV_PREFETCH_ENABLED: "0" })).toBe(false);
+    expect(prefetchDeJevDe({ JEV_PREFETCH_ENABLED: "1" })).toBe(true);
+    expect(prefetchDeJevDe({ JEV_PREFETCH_ENABLED: "true" })).toBe(true);
   });
 });

@@ -75,3 +75,13 @@ export function briefDoTurnoDe(
 ): boolean {
   return ligado(env.JEV_BRIEF_ENABLED);
 }
+
+/**
+ * A PRÉ-BUSCA do catálogo pela Jev (Parte 1d) está ligada? Flag própria e
+ * default DESLIGADA (`JEV_PREFETCH_ENABLED`): o sistema decide o filtro antes do
+ * turno, pré-busca top-k e injeta; o mapeamento do catálogo sai do prompt.
+ * Experimental — só promover depois de A/B medido.
+ */
+export function prefetchDeJevDe(env: Record<string, string | undefined>): boolean {
+  return ligado(env.JEV_PREFETCH_ENABLED);
+}

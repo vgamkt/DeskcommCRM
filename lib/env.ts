@@ -209,6 +209,9 @@ const schema = z.object({
   // Circuit breaker: após esgotar por TPM/instabilidade, quanto tempo a Jev fica
   // "indisponível" (ms) antes de tentar de novo. `0` desliga. Vazio = 30000.
   JEV_COOLDOWN_MS: z.string().optional().default(""),
+  // Parte 1d (experimental): pré-busca top-k pela Jev e remove o mapeamento do
+  // catálogo do prompt. Default DESLIGADO — só ligar com A/B medido.
+  JEV_PREFETCH_ENABLED: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron
