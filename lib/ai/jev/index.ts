@@ -7,7 +7,12 @@
  * usa o último recurso (regex/LLM). Não lança.
  */
 import { chamarSystemone, endpointDeJev, type FazerRequisicao } from "./cliente";
-import { decidirComTentativas, type Fonte, type OpcoesDoMotor } from "./motor";
+import {
+  decidirComTentativas,
+  motorDeJevDe,
+  type Fonte,
+  type OpcoesDoMotor,
+} from "./motor";
 import type { PerguntasDeJev, RespostasDeJev, UsoDeJev } from "./tipos";
 
 export interface AlvoDeJev {
@@ -74,7 +79,12 @@ export async function decidir(args: ArgsDeDecisao): Promise<DecisaoDeJev | null>
     });
   }
 
-  const r = await decidirComTentativas(fontes, args.opcoes);
+  // Política do motor: a do AMBIENTE (ajustável ao TPM) como base; o que o
+  // chamador passou vence. Sem env, vale o `MOTOR_PADRAO` (12 tentativas, 2min).
+  const r = await decidirComTentativas(fontes, {
+    ...motorDeJevDe(process.env),
+    ...(args.opcoes ?? {}),
+  });
   if (!r) return null;
   return { ...r.valor, provider: r.provider, tentativas: r.tentativas };
 }

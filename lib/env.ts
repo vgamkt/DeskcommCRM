@@ -198,6 +198,14 @@ const schema = z.object({
   JEV_FALLBACK_PROVIDER: z.string().optional().default(""),
   JEV_FALLBACK_API_KEY: z.string().optional().default(""),
   JEV_FALLBACK_MODEL: z.string().optional().default(""),
+  // Política do motor da Jev (TPM): tudo OPCIONAL — vazio = MOTOR_PADRAO.
+  // `JEV_MAX_TENTATIVAS` abaixo de 10 é ignorado (regra do dono: a Jev insiste).
+  // Lido por `motorDeJevDe` (lib/ai/jev/motor.ts).
+  JEV_MAX_TENTATIVAS: z.string().optional().default(""),
+  JEV_TIMEOUT_MS: z.string().optional().default(""),
+  JEV_CAP_TOTAL_MS: z.string().optional().default(""),
+  JEV_BASE_MS: z.string().optional().default(""),
+  JEV_MAX_MS: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron

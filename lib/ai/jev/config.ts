@@ -50,6 +50,19 @@ export function alvosDeJevDe(env: Record<string, string | undefined>): AlvoDeJev
 }
 
 /**
+ * O alvo de FALLBACK vindo do ambiente, lido SEM exigir `JEV_ENABLED`.
+ *
+ * Serve ao caso em que o alvo PRIMÁRIO veio de um binding da tela: mesmo com a
+ * Jev desligada por ambiente, um `JEV_FALLBACK_*` configurado deve dar para onde
+ * correr se o provedor do binding der 429/esgotar. Assim a Jev tem sempre um
+ * segundo caminho, que é a garantia "se um cair, uso o outro".
+ */
+export function fallbackDeJevDe(env: Record<string, string | undefined>): AlvoDeJev[] {
+  const f = montarAlvo(env.JEV_FALLBACK_PROVIDER, env.JEV_FALLBACK_API_KEY, env.JEV_FALLBACK_MODEL);
+  return f ? [f] : [];
+}
+
+/**
  * O BRIEF do turno (Parte 1) está ligado? Flag PRÓPRIA e default DESLIGADA
  * (`JEV_BRIEF_ENABLED`) para o rollout ser seguro: mesmo com a Jev ligada por
  * binding/ambiente, o brief só entra quando o operador ligar explicitamente.

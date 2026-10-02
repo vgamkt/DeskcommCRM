@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { alvosDeJevDe, briefDoTurnoDe } from "./config";
+import { alvosDeJevDe, briefDoTurnoDe, fallbackDeJevDe } from "./config";
+import { motorDeJevDe } from "./motor";
 
 describe("alvosDeJevDe", () => {
   it("Jev desligada por padrão (sem JEV_ENABLED) → nenhum alvo", () => {
@@ -58,6 +59,55 @@ describe("alvosDeJevDe", () => {
         JEV_FALLBACK_PROVIDER: "openrouter",
       }),
     ).toEqual([{ provider: "opencode", apiKey: "a" }]);
+  });
+});
+
+describe("fallbackDeJevDe", () => {
+  it("monta o fallback SEM exigir JEV_ENABLED (serve ao primário vindo do binding)", () => {
+    expect(
+      fallbackDeJevDe({ JEV_FALLBACK_PROVIDER: "openrouter", JEV_FALLBACK_API_KEY: "k" }),
+    ).toEqual([{ provider: "openrouter", apiKey: "k" }]);
+  });
+
+  it("vazio quando incompleto", () => {
+    expect(fallbackDeJevDe({ JEV_FALLBACK_PROVIDER: "openrouter" })).toEqual([]);
+    expect(fallbackDeJevDe({})).toEqual([]);
+  });
+});
+
+describe("motorDeJevDe", () => {
+  it("vazio sem env (usa o MOTOR_PADRAO)", () => {
+    expect(motorDeJevDe({})).toEqual({});
+  });
+
+  it("lê as chaves válidas", () => {
+    expect(
+      motorDeJevDe({
+        JEV_MAX_TENTATIVAS: "20",
+        JEV_TIMEOUT_MS: "3000",
+        JEV_CAP_TOTAL_MS: "90000",
+        JEV_BASE_MS: "250",
+        JEV_MAX_MS: "5000",
+      }),
+    ).toEqual({
+      maxTentativas: 20,
+      timeoutPorTentativaMs: 3000,
+      capTotalMs: 90000,
+      baseMs: 250,
+      maxMs: 5000,
+    });
+  });
+
+  it("ignora JEV_MAX_TENTATIVAS < 10 (regra do dono: a Jev insiste)", () => {
+    expect(motorDeJevDe({ JEV_MAX_TENTATIVAS: "3" })).toEqual({});
+  });
+
+  it("clampa JEV_MAX_TENTATIVAS em 100", () => {
+    expect(motorDeJevDe({ JEV_MAX_TENTATIVAS: "9999" })).toEqual({ maxTentativas: 100 });
+  });
+
+  it("ignora valores inválidos/negativos", () => {
+    expect(motorDeJevDe({ JEV_TIMEOUT_MS: "abc", JEV_CAP_TOTAL_MS: "-5" })).toEqual({});
   });
 });
 

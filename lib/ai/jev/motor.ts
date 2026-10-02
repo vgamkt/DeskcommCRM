@@ -45,6 +45,43 @@ export const MOTOR_PADRAO: OpcoesDoMotor = {
   aleatorio: () => Math.random(),
 };
 
+/** Número inteiro positivo da env, ou `undefined` (ausente/ inválido). */
+function inteiroDaEnv(env: Record<string, string | undefined>, chave: string): number | undefined {
+  const n = Number(env[chave]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
+/**
+ * Política do motor vinda do AMBIENTE — para o operador ajustar ao limite de
+ * tokens por minuto (TPM) do provedor SEM deploy. O plano da Jev é "prever desde
+ * o começo": com TPM apertado, mais tentativas/teto maior; com TPM folgado,
+ * menos espera. Só as chaves preenchidas entram (o resto fica no `MOTOR_PADRAO`).
+ *
+ * - `JEV_MAX_TENTATIVAS` (mínimo 10, teto 100 — regra do dono: a Jev tem de
+ *   INSISTIR antes de desistir);
+ * - `JEV_TIMEOUT_MS` por tentativa; `JEV_CAP_TOTAL_MS` teto total do turno;
+ * - `JEV_BASE_MS` / `JEV_MAX_MS` do backoff exponencial.
+ *
+ * NUNCA menor que 10 tentativas: um valor abaixo disso é ignorado (não se
+ * configura a Jev para desistir cedo, que é justamente o que não pode falhar).
+ */
+export function motorDeJevDe(
+  env: Record<string, string | undefined>,
+): Partial<OpcoesDoMotor> {
+  const out: Partial<OpcoesDoMotor> = {};
+  const tent = inteiroDaEnv(env, "JEV_MAX_TENTATIVAS");
+  if (tent !== undefined && tent >= 10) out.maxTentativas = Math.min(100, tent);
+  const timeout = inteiroDaEnv(env, "JEV_TIMEOUT_MS");
+  if (timeout !== undefined) out.timeoutPorTentativaMs = timeout;
+  const cap = inteiroDaEnv(env, "JEV_CAP_TOTAL_MS");
+  if (cap !== undefined) out.capTotalMs = cap;
+  const base = inteiroDaEnv(env, "JEV_BASE_MS");
+  if (base !== undefined) out.baseMs = base;
+  const max = inteiroDaEnv(env, "JEV_MAX_MS");
+  if (max !== undefined) out.maxMs = max;
+  return out;
+}
+
 /** Espera antes da tentativa `n` (1-based). `retryAfterMs` vence o backoff calculado. */
 export function calcularEspera(
   n: number,

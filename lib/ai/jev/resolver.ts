@@ -20,7 +20,7 @@ import type pg from 'pg';
 import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
 
 import { BASES_SYSTEMONE, ehModeloDeJev } from './cliente';
-import { alvosDeJevDe } from './config';
+import { alvosDeJevDe, fallbackDeJevDe } from './config';
 import type { AlvoDeJev } from './index';
 
 interface LinhaBinding {
@@ -86,7 +86,16 @@ export async function alvosDeJevDaOrg(
       const model = b.model_id ?? base?.modeloPadrao ?? null;
       if (base !== undefined && model !== null && ehModeloDeJev(b.provider, model)) {
         const apiKey = await chaveDaCredencial(db, organizationId, b.provider, b.credential_id);
-        if (apiKey !== null) return [{ provider: b.provider, apiKey, model }];
+        if (apiKey !== null) {
+          const primario: AlvoDeJev = { provider: b.provider, apiKey, model };
+          // Fallback do ambiente (JEV_FALLBACK_*) entra como SEGUNDO alvo: o
+          // binding não tem noção de failover, mas a Jev não pode ficar sem para
+          // onde correr se o provedor escolhido der 429/esgotar.
+          const fallbacks = fallbackDeJevDe(process.env).filter(
+            (a) => a.provider !== primario.provider,
+          );
+          return [primario, ...fallbacks];
+        }
       }
       return [];
     }

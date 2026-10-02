@@ -24,6 +24,9 @@ afterEach(() => {
   delete process.env.JEV_ENABLED;
   delete process.env.JEV_PROVIDER;
   delete process.env.JEV_API_KEY;
+  delete process.env.JEV_FALLBACK_PROVIDER;
+  delete process.env.JEV_FALLBACK_API_KEY;
+  delete process.env.JEV_FALLBACK_MODEL;
 });
 
 describe("alvosDeJevDaOrg", () => {
@@ -74,6 +77,19 @@ describe("alvosDeJevDaOrg", () => {
       { rows: [{ provider: "openrouter", credential_id: "c1", model_id: "openai/gpt-4o-mini" }] },
     ]);
     expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([]);
+  });
+
+  it("binding Jev-capaz ganha o FALLBACK do ambiente como segundo alvo (failover)", async () => {
+    process.env.JEV_FALLBACK_PROVIDER = "opencode";
+    process.env.JEV_FALLBACK_API_KEY = "fk";
+    const db = dbMock([
+      { rows: [{ provider: "openrouter", credential_id: "c1", model_id: "typesafe/jev-1.13" }] },
+      { rows: [{ api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" }] },
+    ]);
+    expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([
+      { provider: "openrouter", apiKey: "CHAVE-DECIFRADA", model: "typesafe/jev-1.13" },
+      { provider: "opencode", apiKey: "fk" },
+    ]);
   });
 
   it("binding Jev-capaz sem modelo explícito usa o modelo padrão da base Jev", async () => {
