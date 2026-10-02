@@ -98,11 +98,22 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     };
   }
 
+  const criteriaModo = {
+    teto: 'TETO/limite superior (até, no máximo, uns)',
+    intervalo: 'INTERVALO (entre X e Y)',
+    nao_citou: 'não citou esse número',
+  } as const;
   if (e.colunas.some((c) => detectarPapelColuna(c) === 'preco')) {
     perguntas.cx_preco = {
       type: 'choice',
       instructions: 'Qual faixa de PREÇO o cliente citou?',
       criteria: rotulos(FAIXAS_DE_PRECO),
+    };
+    perguntas.modo_preco = {
+      type: 'choice',
+      instructions:
+        'O preço foi um TETO (até/uns) ou um INTERVALO (entre X e Y)? "até 20 mil" = teto.',
+      criteria: criteriaModo,
     };
   }
   if (e.colunas.some((c) => detectarPapelColuna(c) === 'cilindrada')) {
@@ -110,6 +121,11 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       type: 'choice',
       instructions: 'Qual faixa de CILINDRADA o cliente citou?',
       criteria: rotulos(FAIXAS_DE_CILINDRADA),
+    };
+    perguntas.modo_cilindrada = {
+      type: 'choice',
+      instructions: 'A cilindrada foi um TETO (até) ou um INTERVALO (entre X e Y)?',
+      criteria: criteriaModo,
     };
   }
 
@@ -133,6 +149,25 @@ function faixaEscolhida(
     ...(opt.min !== undefined ? { min: opt.min } : {}),
     ...(opt.max !== undefined ? { max: opt.max } : {}),
   };
+}
+
+/**
+ * Ajusta a faixa ao MODO dito pelo cliente: em "teto" (até), vale só o LIMITE
+ * SUPERIOR — sem inventar um mínimo que ele não pediu (ex.: "até 20 mil" não
+ * pode virar "15 a 20 mil"). Em "intervalo", min e max valem.
+ */
+function aplicarModo(
+  f: { min?: number; max?: number } | null,
+  modo: string | undefined,
+): { min?: number; max?: number } | null {
+  if (!f) return null;
+  if (modo === 'teto') return f.max !== undefined ? { max: f.max } : f;
+  return f;
+}
+
+function modoDe(respostas: RespostasDeJev, chave: string): string | undefined {
+  const a = respostas[chave];
+  return a?.type === 'choice' ? a.choice : undefined;
 }
 
 /** Converte as respostas da Jev no `CriteriosExtraidos` do motor. */
@@ -162,13 +197,19 @@ export function criteriosDaRespostaDeJev(
   const precoCol = e.colunas.find((c) => detectarPapelColuna(c) === 'preco');
   const precoResp = respostas.cx_preco;
   if (precoCol && precoResp?.type === 'choice') {
-    const f = faixaEscolhida(precoResp.choice, FAIXAS_DE_PRECO);
+    const f = aplicarModo(
+      faixaEscolhida(precoResp.choice, FAIXAS_DE_PRECO),
+      modoDe(respostas, 'modo_preco'),
+    );
     if (f) faixas[precoCol] = f;
   }
   const ccCol = e.colunas.find((c) => detectarPapelColuna(c) === 'cilindrada');
   const ccResp = respostas.cx_cilindrada;
   if (ccCol && ccResp?.type === 'choice') {
-    const f = faixaEscolhida(ccResp.choice, FAIXAS_DE_CILINDRADA);
+    const f = aplicarModo(
+      faixaEscolhida(ccResp.choice, FAIXAS_DE_CILINDRADA),
+      modoDe(respostas, 'modo_cilindrada'),
+    );
     if (f) faixas[ccCol] = f;
   }
 

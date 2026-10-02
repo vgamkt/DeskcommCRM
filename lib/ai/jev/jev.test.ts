@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { chamarSystemone, endpointDeJev, type FazerRequisicao, type RespostaHttpLike } from "./cliente";
-import { decidirComTentativas } from "./motor";
+import { calcularEspera, decidirComTentativas } from "./motor";
 import { decidir } from "./index";
 import { ErroDeJev, type PerguntasDeJev } from "./tipos";
 
@@ -264,5 +264,64 @@ describe("decidir (failover de provedores + perguntas obrigatorias)", () => {
     });
     expect(r).toBeNull();
     expect(fazer).not.toHaveBeenCalled();
+  });
+
+  it("decidir sem alvos → null", async () => {
+    expect(await decidir({ alvos: [], state: "s", questions: perguntas })).toBeNull();
+  });
+});
+
+describe("bordas do motor e do cliente", () => {
+  const semEspera = { dormir: async () => {}, aleatorio: () => 0 } as const;
+
+  it("calcularEspera: backoff cresce até o teto, soma jitter e o Retry-After domina quando maior", () => {
+    const o = { baseMs: 500, maxMs: 10000, jitterMs: 100, aleatorio: () => 0 };
+    expect(calcularEspera(1, o)).toBe(500);
+    expect(calcularEspera(2, o)).toBe(1000);
+    expect(calcularEspera(10, o)).toBe(10000); // cap em maxMs
+    expect(calcularEspera(1, { ...o, aleatorio: () => 1 })).toBe(600); // +jitter
+    expect(calcularEspera(1, o, 5000)).toBe(5000); // retry-after domina
+  });
+
+  it("erro inesperado (não-ErroDeJev) é fatal e passa para a próxima fonte", async () => {
+    const quebrada = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const boa = vi.fn(async () => "ok");
+    const r = await decidirComTentativas(
+      [
+        { provider: "typesafe", tentar: quebrada },
+        { provider: "openrouter", tentar: boa },
+      ],
+      { ...semEspera, maxTentativas: 12 },
+    );
+    expect(r?.provider).toBe("openrouter");
+    expect(quebrada).toHaveBeenCalledTimes(1);
+  });
+
+  it("todas as fontes fatais → null, sem lançar", async () => {
+    const fatal = async () => {
+      throw new ErroDeJev("auth", "sem chave");
+    };
+    const r = await decidirComTentativas(
+      [
+        { provider: "a", tentar: fatal },
+        { provider: "b", tentar: fatal },
+      ],
+      { ...semEspera, maxTentativas: 12 },
+    );
+    expect(r).toBeNull();
+  });
+
+  it("500 vira rede retentável; 429 sem header não tem retryAfterMs", async () => {
+    const ep = endpointDeJev("typesafe", "k")!;
+    await expect(
+      chamarSystemone(ep, "s", perguntas, { fazerRequisicao: async () => httpRes(500, {}) }),
+    ).rejects.toMatchObject({ motivo: "network" });
+    const err = await chamarSystemone(ep, "s", perguntas, {
+      fazerRequisicao: async () => httpRes(429, {}),
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(ErroDeJev);
+    expect((err as ErroDeJev).retryAfterMs).toBeUndefined();
   });
 });

@@ -23,6 +23,8 @@ describe("perguntaDeCriteriosDeJev", () => {
     expect(q["exigidos_marca"]?.type).toBe("noul");
     expect(q.cx_preco?.type).toBe("choice");
     expect(q.cx_cilindrada?.type).toBe("choice");
+    expect(q.modo_preco?.type).toBe("choice");
+    expect(q.modo_cilindrada?.type).toBe("choice");
     expect(q["parecida_0"]?.type).toBe("noul");
     expect(q["parecida_1"]?.type).toBe("noul");
   });
@@ -64,5 +66,24 @@ describe("criteriosDaRespostaDeJev", () => {
       cx_preco: { type: "choice", choice: "não citou", confidence: 1, probabilities: {} },
     };
     expect(criteriosDaRespostaDeJev(respostas, entrada).faixas).toEqual({});
+  });
+
+  it("'teto' (até) usa só o limite superior — não inventa um mínimo", () => {
+    const respostas: RespostasDeJev = {
+      cx_preco: { type: "choice", choice: "15 a 20 mil", confidence: 1, probabilities: {} },
+      modo_preco: { type: "choice", choice: "teto", confidence: 1, probabilities: {} },
+    };
+    expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({ max: 20000 });
+  });
+
+  it("'intervalo' mantém min e max", () => {
+    const respostas: RespostasDeJev = {
+      cx_preco: { type: "choice", choice: "15 a 20 mil", confidence: 1, probabilities: {} },
+      modo_preco: { type: "choice", choice: "intervalo", confidence: 1, probabilities: {} },
+    };
+    expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({
+      min: 15000,
+      max: 20000,
+    });
   });
 });
