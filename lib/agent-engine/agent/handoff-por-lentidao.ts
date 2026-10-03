@@ -3,14 +3,17 @@
  * tentativas (travou). É a parte de AVISAR da trava anti-travamento: o turno
  * segue sem segurar a fila e o responsável recebe o alerta.
  *
- * Usa o MESMO caminho do resumo de conversas: destino em
- * `conversation_summary_settings.destination` (o número que o dono cadastrou
- * para receber avisos), contato de destino resolvido/criado e envio pelo
- * `sendMessageHandler`. Best-effort: falha só loga (o turno já terminou).
+ * Envia para o NÚMERO PRÓPRIO configurado na tela do agente
+ * (`handoffNotificationNumber`, coluna `ai_agent_versions.handoff_notification_number`).
+ * Deixou de usar `conversation_summary_settings.destination` (número de RESUMOS):
+ * são coisas diferentes, e o dono quer poder separá-las.
+ *
+ * A sessão de envio (o número que MANDA) vem do canal do agente — o mesmo que
+ * atende o cliente. Best-effort: falha só loga (o turno já terminou).
  */
 import { canonicalPhoneBR } from '@/lib/channels/phone-variants';
 import { encontrarContatoPorTelefone } from '@/lib/channels/contato-por-telefone';
-import { ensureConversation, sessaoProntaParaEnvio } from '@/lib/automation/start-conversation';
+import { ensureConversation } from '@/lib/automation/start-conversation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { semFronteiraDeAtendimento } from '@/lib/atendimento/fronteira-server';
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
@@ -21,6 +24,10 @@ export async function enviarHandoffPorLentidao(
   _pool: unknown,
   args: {
     tenantId: string;
+    /** Canal que ENVIA o aviso — o mesmo do agente que travou. */
+    channelSessionId: string | null;
+    /** Telefone (só dígitos) que RECEBE o aviso. Vazio = não avisa. */
+    notificationNumber: string | null;
     conversationId: string;
     contactId: string | null;
     tentativas: number;
@@ -52,33 +59,23 @@ export async function enviarHandoffPorLentidao(
       return;
     }
 
-    // 1) Destino dos avisos + sessão de envio.
-    const { data: cfg } = await admin
-      .from('conversation_summary_settings')
-      .select('channel_session_id, destination, destination_is_group')
-      .eq('organization_id', args.tenantId)
-      .maybeSingle();
-    const destino = (cfg?.destination ?? '').trim();
-    if (!destino) {
-      args.log.warn('handoff por lentidão: sem destino de avisos cadastrado — não avisei', {
+    // 1) Número de destino (só dígitos) + canal que envia.
+    const digits = (args.notificationNumber ?? "").replace(/\D/g, '');
+    if (!digits) {
+      args.log.warn('handoff por lentidão: agente sem número de aviso configurado — não avisei', {
         conversation_id: args.conversationId,
       });
       return;
     }
-    const sessionId = cfg?.channel_session_id ?? (await sessaoProntaParaEnvio(admin, args.tenantId));
+    const sessionId = args.channelSessionId;
     if (!sessionId) {
-      args.log.warn('handoff por lentidão: sem sessão de canal', { tenant_id: args.tenantId });
-      return;
-    }
-    if (cfg?.destination_is_group) {
-      // Grupo exigiria caminho próprio; para o aviso simples, só loga e segue.
-      args.log.warn('handoff por lentidão: destino é grupo — pulei o envio', { tenant_id: args.tenantId });
+      args.log.warn('handoff por lentidão: sem sessão de canal para enviar', {
+        tenant_id: args.tenantId,
+      });
       return;
     }
 
     // 2) Contato de destino (resolve/cria) — mesmo padrão do resumo.
-    const digits = destino.replace(/\D/g, '');
-    if (!digits) return;
     const existente = await encontrarContatoPorTelefone(admin as never, args.tenantId, digits);
     let contactId = existente?.id ?? null;
     if (!contactId) {

@@ -5985,6 +5985,10 @@ async function executarTurnoDoAgente(
         aoEsgotar: async ({ tentativas }) => {
           await enviarHandoffPorLentidao(pool, {
             tenantId,
+            // O aviso vai para o número configurado na TELA do agente (não mais
+            // para o destino de resumos), saindo pelo canal que atende o cliente.
+            channelSessionId: input.channelSessionId,
+            notificationNumber: agentConfig?.handoffNotificationNumber ?? null,
             conversationId: input.conversationId,
             contactId: leadId || null,
             tentativas,

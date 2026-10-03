@@ -345,3 +345,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261003000000` | `0260_negotiation_state` | Estado ESTRUTURADO da negociação de objeção por contato (`negotiation_state`): `topic` (`objecao:<motivo>:<moto>`), `motivo`, `attempts`, `valor_proposta_cents`, `status`, `awaiting_confirmation`, `encaminhado_at`. Sobrevive à conversa/dias. RLS por org (`fn_user_org_ids`), trigger `fn_set_updated_at`. Baseline idempotente. |
 
 | `20261003010000` | `0261_turn_resiliencia` | Resiliência do turno: `ai_agent_versions.turn_model_timeout_ms` (timeout por tentativa, default 45000) e `turn_model_max_tentativas` (default 2). Trava anti-travamento: se o modelo empacar, libera a fila e avisa o humano. Configurável na tela do agente. Aditiva; baseline idempotente. |
+
+| `20261003020000` | `0262_handoff_notificacao` | `ai_agent_versions.handoff_notification_number` (texto, telefone só dígitos): número PRÓPRIO que recebe o aviso de handoff/erro, configurável na tela do agente. Deixa de reutilizar `conversation_summary_settings.destination` (resumos). Vazio/NULL = não avisa. Aditiva; baseline idempotente. |

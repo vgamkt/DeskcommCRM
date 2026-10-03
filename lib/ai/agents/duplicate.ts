@@ -24,7 +24,7 @@ export const DUPLICATE_AGENT_COLUMNS =
  * basta, se o INSERT não a escreve a cópia nasce com o default do banco.
  */
 export const DUPLICATE_VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, turn_model_timeout_ms, turn_model_max_tentativas, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, turn_model_timeout_ms, turn_model_max_tentativas, handoff_notification_number, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
 
 export type DuplicateAgentError =
   | "not_found"
@@ -71,6 +71,7 @@ function versionPayloadFrom(src: Record<string, unknown>) {
     history_message_window: src.history_message_window,
     history_token_window: src.history_token_window,
     handoff_keywords: src.handoff_keywords,
+    handoff_notification_number: src.handoff_notification_number,
     handoff_tool_enabled: src.handoff_tool_enabled,
     cases_enabled: src.cases_enabled,
     // Papel Operador (spec 16). Duplicar um agente tem de duplicar o papel

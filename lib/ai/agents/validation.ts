@@ -113,6 +113,19 @@ const versionShapeSchema = z
       .array(z.string().trim().min(1).max(60))
       .max(20)
       .default(["falar com humano", "atendente", "pessoa real"]),
+    /**
+     * Número PRÓPRIO que recebe o aviso quando o agente não consegue responder
+     * (handoff por lentidão/erro), configurado na tela. Só dígitos (E.164, sem
+     * `+`). Vazio/`null` = não avisa. Deixou de reutilizar o destino de resumos.
+     */
+    handoff_notification_number: z
+      .string()
+      .trim()
+      .max(20)
+      .regex(/^\d*$/, { message: "handoff_notification_number_invalid" })
+      .transform((v) => (v === "" ? null : v))
+      .nullable()
+      .default(null),
     handoff_tool_enabled: z.boolean().default(true),
     cases_enabled: z.boolean().default(false),
     // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas

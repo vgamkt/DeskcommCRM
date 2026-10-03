@@ -154,6 +154,7 @@ interface FormState {
   history_message_window: number;
   history_token_window: number;
   handoff_keywords: string[];
+  handoff_notification_number: string;
   handoff_tool_enabled: boolean;
   cases_enabled: boolean;
   split_messages: boolean;
@@ -219,6 +220,8 @@ function buildState(args: {
       "atendente",
       "pessoa real",
     ],
+    // "" na tela onde o banco guarda null (vira null no payload).
+    handoff_notification_number: version?.handoff_notification_number ?? "",
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -274,6 +277,10 @@ function toVersionPayload(s: FormState) {
     history_message_window: s.history_message_window,
     history_token_window: s.history_token_window,
     handoff_keywords: s.handoff_keywords,
+    handoff_notification_number:
+      s.handoff_notification_number.trim() === ""
+        ? null
+        : s.handoff_notification_number.replace(/\D/g, ""),
     handoff_tool_enabled: s.handoff_tool_enabled,
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,
@@ -1094,6 +1101,25 @@ export function AgentForm(props: Props) {
               onChange={(v) => patch({ handoff_keywords: v })}
               disabled={disabled}
             />
+            <div className="space-y-1">
+              <Label htmlFor="handoff_notification_number">
+                {t("Número que recebe o aviso quando ele não conseguir responder (só números, com DDD/país)")}
+              </Label>
+              <Input
+                id="handoff_notification_number"
+                type="tel"
+                inputMode="numeric"
+                placeholder={t("Ex.: 5511999999999")}
+                value={form.handoff_notification_number}
+                onChange={(e) => patch({ handoff_notification_number: e.target.value })}
+                disabled={disabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Quando o agente falhar (modelo sem resposta), avisamos este número para alguém assumir. Deixe vazio para não avisar.",
+                )}
+              </p>
+            </div>
           </Card>
 
           {/* Casos humanos */}

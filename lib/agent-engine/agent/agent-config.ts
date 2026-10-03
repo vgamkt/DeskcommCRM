@@ -38,6 +38,11 @@ export interface PublishedAgentConfig {
   historyMessageWindow: number;
   historyTokenWindow: number;
   handoffKeywords: string[];
+  /**
+   * Telefone (só dígitos) que recebe o aviso quando o agente não consegue
+   * responder (handoff por lentidão/erro). Configurado na tela. `null` = não avisa.
+   */
+  handoffNotificationNumber: string | null;
   handoffToolEnabled: boolean;
   splitMessages: boolean;
   splitMaxChars: number;
@@ -124,6 +129,7 @@ interface Row {
   history_message_window: number;
   history_token_window: number;
   handoff_keywords: string[] | null;
+  handoff_notification_number: string | null;
   handoff_tool_enabled: boolean;
   split_messages: boolean;
   split_max_chars: number;
@@ -155,6 +161,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.history_message_window,
             v.history_token_window,
             v.handoff_keywords,
+            v.handoff_notification_number,
             v.handoff_tool_enabled,
             v.split_messages,
             v.split_max_chars,
@@ -219,6 +226,11 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     handoffKeywords: (r.handoff_keywords ?? [])
       .map((k) => k.toLowerCase().trim())
       .filter((k) => k !== ''),
+    handoffNotificationNumber:
+      typeof r.handoff_notification_number === 'string' &&
+      r.handoff_notification_number.trim() !== ''
+        ? r.handoff_notification_number.replace(/\D/g, '')
+        : null,
     handoffToolEnabled: r.handoff_tool_enabled,
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,

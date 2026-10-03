@@ -24890,3 +24890,9 @@ alter table public.ai_agent_versions
 alter table public.ai_agent_versions
   add constraint ai_agent_versions_turn_tent_check
     check (turn_model_max_tentativas between 1 and 20);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0262 · Handoff para um número próprio (apêndice idempotente)
+-- ════════════════════════════════════════════════════════════════════════════
+alter table public.ai_agent_versions
+  add column if not exists handoff_notification_number text;

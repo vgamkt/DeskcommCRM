@@ -24,6 +24,7 @@ export interface AgentVersionRow {
   history_message_window: number;
   history_token_window: number;
   handoff_keywords: string[];
+  handoff_notification_number: string | null;
   handoff_tool_enabled: boolean;
   cases_enabled: boolean;
   operator_enabled: boolean;

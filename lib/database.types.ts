@@ -743,6 +743,7 @@ export type Database = {
           credential_id: string | null
           followup: Json
           handoff_keywords: string[]
+          handoff_notification_number: string | null
           handoff_tool_enabled: boolean
           history_message_window: number
           history_token_window: number
@@ -782,6 +783,7 @@ export type Database = {
           credential_id?: string | null
           followup?: Json
           handoff_keywords?: string[]
+          handoff_notification_number?: string | null
           handoff_tool_enabled?: boolean
           history_message_window?: number
           history_token_window?: number
@@ -821,6 +823,7 @@ export type Database = {
           credential_id?: string | null
           followup?: Json
           handoff_keywords?: string[]
+          handoff_notification_number?: string | null
           handoff_tool_enabled?: boolean
           history_message_window?: number
           history_token_window?: number
