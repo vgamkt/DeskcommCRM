@@ -150,6 +150,15 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { selecionarSkillsComJev } from './skill-select-jev';
 import { rotearConhecimentoComJev } from './knowledge-route-jev';
 import { decidirOfertaComJev } from './oferta-jev';
+import { decidirNegociacaoComJev, faseDaAcao } from './negociacao-jev';
+import {
+  carregarNegociacao,
+  marcarAguardandoConfirmacao,
+  marcarEncaminhado,
+  registrarTentativa,
+  topicDeObjecao,
+  type NegotiationState,
+} from '@/lib/negotiation/estado';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
@@ -2857,14 +2866,55 @@ async function executarTurnoDoAgente(
   const descontoTurno =
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
   const motivoObjecaoTurno = ehObjecaoTurno ? motivoDaObjecao(mensagemDoJob) : null;
-  const faseObjecaoTurno: FaseObjecao | null =
+  // ── ESTADO ESTRUTURADO DA NEGOCIAÇÃO (banco) ─────────────────────────────
+  // Fonte do CONTROLE DE NÚMEROS: sobrevive à conversa/dias. A Jev informa a
+  // ação; o motor registra e analisa a próxima.
+  const negociacaoAnterior: NegotiationState | null =
+    preview || !leadId ? null : await carregarNegociacao(pool, tenantId, leadId);
+  const motoDaObjecao =
+    catalogoDaConversa.escolhida?.nome ??
+    catalogoDaConversa.referencia?.nome ??
+    (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]!.nome : null);
+  const topicNegociacao =
     motivoObjecaoTurno !== null
-      ? faseDoTurno(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno)
+      ? topicDeObjecao(motivoObjecaoTurno, motoDaObjecao)
       : null;
+  const mesmoTopico = negociacaoAnterior !== null && negociacaoAnterior.topic === topicNegociacao;
+  // Aguardando a resposta à pergunta da 3ª? (senão, é uma objeção nova/tentativa)
+  const aguardavaConfirmacao = mesmoTopico && negociacaoAnterior!.awaitingConfirmation;
+  // A Jev decide a AÇÃO quando há objeção. `attempts` = já feitas (do banco).
+  const decisaoNegociacao =
+    ehObjecaoTurno && motivoObjecaoTurno !== null && !preview
+      ? await decidirNegociacaoComJev(
+          pool,
+          tenantId,
+          {
+            motivo: motivoObjecaoTurno,
+            attempts: mesmoTopico ? negociacaoAnterior!.attempts : 0,
+            confirmou: aguardavaConfirmacao && clienteConfirmouVer(mensagemDoJob),
+            negou: aguardavaConfirmacao && !clienteConfirmouVer(mensagemDoJob),
+            desconto: descontoTurno,
+          },
+          runLog,
+        )
+      : null;
+  // A AÇÃO da Jev (ou a fase por regex como fallback).
+  const acaoNegociacao = decisaoNegociacao?.acao ?? null;
+  const faseObjecaoTurno: FaseObjecao | null =
+    acaoNegociacao !== null
+      ? faseDaAcao(acaoNegociacao)
+      : motivoObjecaoTurno !== null
+        ? faseDoTurno(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno)
+        : null;
   // Já perguntamos ("é só essa ou posso mostrar outras?") na 3ª objeção e o
-  // cliente CONFIRMOU → só agora a oferta sai. Até confirmar, NÃO se mostra.
+  // cliente CONFIRMOU → só agora a oferta sai. Com a Jev, a ação `mostrar_opcoes`
+  // já é a confirmação; o caminho por regex usa `tentativas>=3`.
   const confirmouOpcoes =
-    (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && clienteConfirmouVer(mensagemDoJob);
+    acaoNegociacao !== null
+      ? acaoNegociacao === 'mostrar_opcoes'
+      : (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && clienteConfirmouVer(mensagemDoJob);
+  // Negou a oferta? (a Jev encaminha e encerra a objeção, mas segue atendendo.)
+  const negouOpcoes = acaoNegociacao === 'encaminhar_e_encerrar';
   // Valor (R$) que o cliente citou NESTE turno — vira limite máximo da oferta
   // (evita mandar moto acima da proposta/orçamento, ex.: 41 mil para quem deu 27
   // mil). Independe de ser objeção: um pedido "até 20 mil" também limita.
@@ -4432,6 +4482,41 @@ async function executarTurnoDoAgente(
             orcamentoTurno,
             pedidosDeOpcoesTurno,
           );
+        }
+        // ── PERSISTÊNCIA ESTRUTURADA DA NEGOCIAÇÃO (banco) ───────────────────
+        // Além do jsonb da conversa, o estado fica em `negotiation_state` (por
+        // contato+tópico) para o sistema RECONHECER dias depois. Só quando há
+        // objeção neste turno e não é preview.
+        if (!preview && leadId && motivoObjecaoTurno !== null && topicNegociacao !== null) {
+          void (async () => {
+            if (aguardavaConfirmacao && negouOpcoes) {
+              await marcarEncaminhado(pool, tenantId, leadId, topicNegociacao);
+            } else if (aguardavaConfirmacao && confirmouOpcoes) {
+              // Confirmou: mantém o estado e libera a oferta neste turno.
+              await registrarTentativa(pool, {
+                organizationId: tenantId,
+                contactId: leadId,
+                conversationId: input.conversationId,
+                topic: topicNegociacao,
+                motivo: motivoObjecaoTurno,
+                valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
+              });
+            } else {
+              // Objeção nova/insistência: registra a tentativa e, se a ação foi a
+              // 3ª (perguntar), marca que estamos aguardando a resposta.
+              const st = await registrarTentativa(pool, {
+                organizationId: tenantId,
+                contactId: leadId,
+                conversationId: input.conversationId,
+                topic: topicNegociacao,
+                motivo: motivoObjecaoTurno,
+                valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
+              });
+              if (acaoNegociacao === 'persuadir_3_e_perguntar' || st?.attempts === 3) {
+                await marcarAguardandoConfirmacao(pool, tenantId, leadId, topicNegociacao);
+              }
+            }
+          })().catch(() => {});
         }
         const fotos = fotosDeclaradas;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
