@@ -5804,6 +5804,9 @@ async function executarTurnoDoAgente(
         chars: diretrizDoTurno.length,
       });
     }
+    // PRIORIDADE DA OBJEÇÃO SOBRE O FLUXO (declarado aqui para o brief e os blocos).
+    const objecaoTemPrioridade =
+      acaoNegociacao !== null && acaoNegociacao !== 'mostrar_opcoes';
     const blocoBriefDaJev = usaBriefDaJev
       ? renderBriefDoTurno({
           estagioHint: stageHintBlock,
@@ -5813,7 +5816,7 @@ async function executarTurnoDoAgente(
           valoresDoFluxo: fluxoAtendimento?.valores ?? {},
           motoEmFoco,
           descricaoDaMoto,
-          fluxo: fluxoAtendimento,
+          fluxo: objecaoTemPrioridade ? null : fluxoAtendimento,
           finalizacao: finalizacaoDoFluxo,
           ...(diretrizDoTurno !== '' ? { diretriz: diretrizDoTurno } : {}),
         })
@@ -5827,9 +5830,10 @@ async function executarTurnoDoAgente(
       motoEmFoco,
       descricaoDaMoto,
     });
-    const blocoFluxoCru = fluxoAtendimento
-      ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo)
-      : '';
+    const blocoFluxoCru =
+      fluxoAtendimento && !objecaoTemPrioridade
+        ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo)
+        : '';
     if (usaBriefDaJev) {
       runLog.info('brief do turno ativo (Jev)', {
         chars_brief: blocoBriefDaJev.length,
