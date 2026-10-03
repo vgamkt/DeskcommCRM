@@ -10,7 +10,6 @@
  */
 import type pg from 'pg';
 
-import { normalizarNomeDeMoto } from '@/lib/agent-engine/agent/fotos-do-catalogo';
 
 export type MotivoNegociacao = 'preco' | 'km' | 'ano' | 'outro';
 export type StatusNegociacao = 'negociando' | 'aguardando_confirmacao' | 'encaminhado' | 'encerrado';
@@ -28,11 +27,15 @@ export interface NegotiationState {
   encaminhadoAt: string | null;
 }
 
-/** Chave do estado: `objecao:<motivo>:<moto normalizada>` (moto vazia vira `_`). */
-export function topicDeObjecao(motivo: string, motoNome: string | null | undefined): string {
-  const m = (motoNome ?? '').trim();
-  const moto = m === '' ? '_' : normalizarNomeDeMoto(m);
-  return `objecao:${motivo}:${moto}`;
+/**
+ * Chave do estado: `objecao:<motivo>` — a contagem é POR TIPO de objeção, como
+ * decidido pelo dono. A MOTO NÃO entra na chave: entre turnos a moto em foco
+ * muda (vazia → apresentada), e incluí-la fazia cada turno virar um tópico novo
+ * e a contagem reiniciar sempre (medido ao vivo 2026-10-03: as 3 objeções de
+ * preço ficaram todas em `persuadir_1`). Mudou o TIPO → novo tópico (reinicia).
+ */
+export function topicDeObjecao(motivo: string): string {
+  return `objecao:${motivo}`;
 }
 
 interface LinhaBruta {

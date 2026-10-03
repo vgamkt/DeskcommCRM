@@ -2871,13 +2871,9 @@ async function executarTurnoDoAgente(
   // ação; o motor registra e analisa a próxima.
   const negociacaoAnterior: NegotiationState | null =
     preview || !leadId ? null : await carregarNegociacao(pool, tenantId, leadId);
-  const motoDaObjecao =
-    catalogoDaConversa.escolhida?.nome ??
-    catalogoDaConversa.referencia?.nome ??
-    (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]!.nome : null);
   const topicNegociacao =
     motivoObjecaoTurno !== null
-      ? topicDeObjecao(motivoObjecaoTurno, motoDaObjecao)
+      ? topicDeObjecao(motivoObjecaoTurno)
       : null;
   const mesmoTopico = negociacaoAnterior !== null && negociacaoAnterior.topic === topicNegociacao;
   // Aguardando a resposta à pergunta da 3ª? (senão, é uma objeção nova/tentativa)

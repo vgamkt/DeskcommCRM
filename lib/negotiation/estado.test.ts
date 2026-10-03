@@ -9,8 +9,8 @@ function dbMock(rows: unknown[]): pg.Pool {
 
 describe('topicDeObjecao', () => {
   it('monta o tópico com motivo e moto normalizada', () => {
-    expect(topicDeObjecao('preco', 'HONDA CB 300')).toBe('objecao:preco:honda cb 300');
-    expect(topicDeObjecao('km', null)).toBe('objecao:km:_');
+    expect(topicDeObjecao('preco')).toBe('objecao:preco');
+    expect(topicDeObjecao('km')).toBe('objecao:km');
   });
 });
 
