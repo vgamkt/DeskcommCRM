@@ -186,7 +186,7 @@ import {
   type FilaDeOpcoes,
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
-import { renderBriefDoTurno } from './brief-do-turno';
+import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import { perguntaDeMaisOpcoes } from './mais-opcoes';
 import { briefDoTurnoDe, prefetchDeJevDe } from '../../ai/jev/config';
@@ -5786,6 +5786,24 @@ async function executarTurnoDoAgente(
       preview?.kind !== 'sandbox' &&
       briefDoTurnoDe(process.env) &&
       (await jevLigadaParaBrief(pool, tenantId));
+    // DIRETRIZ DO TURNO (da ação da Jev) — a instrução acionável ao GLM. Existe
+    // mesmo sem o brief completo: entra no sufixo independentemente.
+    const diretrizDoTurno =
+      acaoNegociacao !== null && motivoObjecaoTurno !== null
+        ? renderDiretrizDoTurno({
+            acao: acaoNegociacao,
+            motivo: motivoObjecaoTurno,
+            attempts: (mesmoTopico ? negociacaoAnterior?.attempts ?? 0 : 0) + 1,
+            pedirValor: decisaoNegociacao?.pedirValor ?? false,
+          })
+        : '';
+    if (diretrizDoTurno !== '') {
+      runLog.info('diretriz do turno aplicada (negociação Jev)', {
+        acao: acaoNegociacao,
+        motivo: motivoObjecaoTurno,
+        chars: diretrizDoTurno.length,
+      });
+    }
     const blocoBriefDaJev = usaBriefDaJev
       ? renderBriefDoTurno({
           estagioHint: stageHintBlock,
@@ -5797,6 +5815,7 @@ async function executarTurnoDoAgente(
           descricaoDaMoto,
           fluxo: fluxoAtendimento,
           finalizacao: finalizacaoDoFluxo,
+          ...(diretrizDoTurno !== '' ? { diretriz: diretrizDoTurno } : {}),
         })
       : '';
     // Os 4 blocos crus (usados quando o brief NÃO está ativo; a soma de tamanho
@@ -5846,6 +5865,9 @@ async function executarTurnoDoAgente(
       // estágio cedem lugar a ele (mesmos fatos, texto compacto). Sem Jev,
       // inalterado. O bloco de objeção (C-071) é a fase do turno OU o "mostrar"
       // (o cliente já confirmou que quer ver as opções parecidas).
+      // A DIRETRIZ (ação da Jev) entra SEMPRE — com ou sem brief. É a instrução
+      // que faz o GLM seguir a decisão (ex.: 3ª objeção = convencer E perguntar).
+      diretrizDoTurno,
       usaBriefDaJev ? blocoBriefDaJev : blocoEstadoCru,
       usaBriefDaJev ? '' : blocoFluxoCru,
       usaBriefDaJev ? '' : blocoObjecaoTurno,

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { EstadoDeAtendimento } from '@/lib/followup/atendimento';
 import type { FlowNode } from '@/lib/followup/graph-schema';
 
-import { renderBriefDoTurno } from './brief-do-turno';
+import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBlocoDeAtendimento } from '@/lib/followup/atendimento';
 import { renderBlocoObjecao } from './objecao-de-valor';
@@ -190,5 +190,30 @@ describe('renderBriefDoTurno', () => {
       ...estadoInput,
     });
     expect(brief.length).toBeLessThan(crus.length);
+  });
+});
+
+describe('renderDiretrizDoTurno', () => {
+  it('1ª/2ª: convencer, NÃO oferecer motos', () => {
+    const d = renderDiretrizDoTurno({ acao: 'persuadir_1', motivo: 'preco', attempts: 1, pedirValor: true });
+    expect(d).toContain('objeção de PREÇO');
+    expect(d).toContain('NÃO liste motos');
+  });
+
+  it('3ª: convencer E perguntar (com valor se preço)', () => {
+    const d = renderDiretrizDoTurno({ acao: 'persuadir_3_e_perguntar', motivo: 'preco', attempts: 3, pedirValor: true });
+    expect(d).toContain('NA MESMA mensagem');
+    expect(d).toContain('qual valor');
+    expect(d).toContain('NÃO chame handoff');
+  });
+
+  it('mostrar_opcoes: anunciar, não listar nomes', () => {
+    expect(renderDiretrizDoTurno({ acao: 'mostrar_opcoes', motivo: 'km', attempts: 3, pedirValor: false })).toContain('CONFIRMOU');
+  });
+
+  it('encaminhar: handoff sem prometer', () => {
+    const d = renderDiretrizDoTurno({ acao: 'encaminhar_e_encerrar', motivo: 'preco', attempts: 3, pedirValor: false });
+    expect(d).toContain('encaminhar ao responsável');
+    expect(d).toContain('NÃO ofereça desconto');
   });
 });
