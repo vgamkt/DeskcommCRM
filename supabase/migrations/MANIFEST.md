@@ -347,3 +347,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261003010000` | `0261_turn_resiliencia` | Resiliência do turno: `ai_agent_versions.turn_model_timeout_ms` (timeout por tentativa, default 45000) e `turn_model_max_tentativas` (default 2). Trava anti-travamento: se o modelo empacar, libera a fila e avisa o humano. Configurável na tela do agente. Aditiva; baseline idempotente. |
 
 | `20261003020000` | `0262_handoff_notificacao` | `ai_agent_versions.handoff_notification_number` (texto, telefone só dígitos): número PRÓPRIO que recebe o aviso de handoff/erro, configurável na tela do agente. Deixa de reutilizar `conversation_summary_settings.destination` (resumos). Vazio/NULL = não avisa. Aditiva; baseline idempotente. |
+
+| `20261003030000` | `0263_imutabilidade_colunas_resiliencia` | Recria `fn_ai_agent_version_content_immutable` (0051) incluindo as colunas novas de conteúdo: `turn_model_timeout_ms`, `turn_model_max_tentativas` (0261) e `handoff_notification_number` (0262). A lista era explícita e ficou para trás; sem isto, um UPDATE numa versão publicada podia mudar o timeout/aviso. Baseline idempotente. |

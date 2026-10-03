@@ -116,6 +116,12 @@ describe("o trigger de imutabilidade", () => {
       ["split_max_chars", 500], // default 600
       ["multimodal_input", false], // default TRUE — invertido de propósito
       ["video_frames_enabled", true], // default false
+      // Resiliência do turno (0261) e número do aviso (0262): a lista do trigger
+      // era explícita e ficou para trás — a 0263 a trouxe para cá. Sem isto, o
+      // timeout/tentativas/número de aviso de uma versão PUBLICADA eram editáveis.
+      ["turn_model_timeout_ms", 60000], // default 45000
+      ["turn_model_max_tentativas", 5], // default 2
+      ["handoff_notification_number", "5511999999999"], // default null
     ];
     for (const [coluna, valor] of casos) {
       await expect(

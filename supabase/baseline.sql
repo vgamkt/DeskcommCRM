@@ -7131,6 +7131,9 @@ begin
     or new.trigger_config         is distinct from old.trigger_config
     or new.channel_session_id     is distinct from old.channel_session_id
     or new.max_steps              is distinct from old.max_steps
+    or new.turn_model_timeout_ms        is distinct from old.turn_model_timeout_ms
+    or new.turn_model_max_tentativas    is distinct from old.turn_model_max_tentativas
+    or new.handoff_notification_number  is distinct from old.handoff_notification_number
     or new.token_budget           is distinct from old.token_budget
     or new.cost_budget_cents      is distinct from old.cost_budget_cents
     or new.history_message_window is distinct from old.history_message_window
@@ -7516,6 +7519,9 @@ begin
     or new.trigger_config         is distinct from old.trigger_config
     or new.channel_session_id     is distinct from old.channel_session_id
     or new.max_steps              is distinct from old.max_steps
+    or new.turn_model_timeout_ms        is distinct from old.turn_model_timeout_ms
+    or new.turn_model_max_tentativas    is distinct from old.turn_model_max_tentativas
+    or new.handoff_notification_number  is distinct from old.handoff_notification_number
     or new.token_budget           is distinct from old.token_budget
     or new.cost_budget_cents      is distinct from old.cost_budget_cents
     or new.history_message_window is distinct from old.history_message_window
@@ -11715,6 +11721,9 @@ begin
     or new.trigger_config         is distinct from old.trigger_config
     or new.channel_session_id     is distinct from old.channel_session_id
     or new.max_steps              is distinct from old.max_steps
+    or new.turn_model_timeout_ms        is distinct from old.turn_model_timeout_ms
+    or new.turn_model_max_tentativas    is distinct from old.turn_model_max_tentativas
+    or new.handoff_notification_number  is distinct from old.handoff_notification_number
     or new.token_budget           is distinct from old.token_budget
     or new.cost_budget_cents      is distinct from old.cost_budget_cents
     or new.history_message_window is distinct from old.history_message_window
@@ -16598,6 +16607,9 @@ begin
     or new.trigger_config         is distinct from old.trigger_config
     or new.channel_session_id     is distinct from old.channel_session_id
     or new.max_steps              is distinct from old.max_steps
+    or new.turn_model_timeout_ms        is distinct from old.turn_model_timeout_ms
+    or new.turn_model_max_tentativas    is distinct from old.turn_model_max_tentativas
+    or new.handoff_notification_number  is distinct from old.handoff_notification_number
     or new.token_budget           is distinct from old.token_budget
     or new.cost_budget_cents      is distinct from old.cost_budget_cents
     or new.history_message_window is distinct from old.history_message_window
