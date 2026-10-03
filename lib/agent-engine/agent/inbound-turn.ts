@@ -3077,7 +3077,7 @@ async function executarTurnoDoAgente(
   // Quando ligada, é ela quem escolhe QUAIS skills entram (o matcher por keyword
   // traz corpo demais/errado). O matcher segue rodando para a EXCLUSÃO
   // (`unless_keywords`) e a telemetria de near-miss. Fallback = matcher.
-  const skillMatch = !preview
+  let skillMatch = !preview
     ? await selecionarSkillsComJev(
         pool,
         tenantId,
@@ -3087,6 +3087,22 @@ async function executarTurnoDoAgente(
         escolhidas === null ? skillMatchBase : matchSkillsPorNomes(skills, escolhidas),
       )
     : skillMatchBase;
+  // ── COERÊNCIA COM A OFERTA ────────────────────────────────────────────────
+  // A Jev negou a oferta (ex.: objeção de preço)? Então a skill de CATÁLOGO não
+  // pode entrar — ela instrui a apresentar motos e fazia o modelo oferecer por
+  // cima do veredito (medido ao vivo 2026-10-03: objeção recebeu motos porque a
+  // skill `catalogo-apresentacao` foi escolhida junto de `objecao-preco`).
+  if (vereditoOfertaJev !== null && !vereditoOfertaJev.oferecer) {
+    const semCatalogo = skillMatch.matched.filter(
+      (s) => !/catalogo|apresenta|oferta|semelhant/i.test(s.name),
+    );
+    if (semCatalogo.length !== skillMatch.matched.length) {
+      runLog.info('skill de catálogo removida — a Jev negou a oferta neste turno', {
+        removidas: skillMatch.matched.filter((s) => !semCatalogo.includes(s)).map((s) => s.name),
+      });
+      skillMatch = { ...skillMatch, matched: semCatalogo };
+    }
+  }
   // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
   // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
   // por keyword vence, e a mesma skill não entra duas vezes. A skill da
@@ -3902,14 +3918,11 @@ async function executarTurnoDoAgente(
         // RÉGUA ÚNICA. Note que `catalogoDoTurno.length > 0` (o MODELO consultou
         // o catálogo) NÃO entra mais como autorização — era o furo que fez o
         // cliente responder "De sao paulo" e receber 5 motos.
-        const decisaoOferta = podeOferecerMotos({
-          mensagem: mensagemDoJob ?? '',
-          temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-          temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
-          estadoObjecaoAnterior: catalogoDaConversa.objecao,
-          pediuOutraMoto,
-          confirmouVerOpcoes: confirmouOpcoes,
-        });
+        // A MESMA autoridade dos outros caminhos: a Jev (quando ligada) decide; a
+        // régua de regex é fallback. Antes esta linha chamava `podeOferecerMotos`
+        // DIRETO — era o furo que deixava a objeção mandar motos mesmo com a Jev
+        // negando no helper.
+        const decisaoOferta = decidirOfertaDoTurno(mensagemDoJob ?? '');
         const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
         // DIAGNÓSTICO: registra as ENTRADAS da régua neste turno — sem isto não há
         // como saber POR QUE um turno ofereceu (o motivo sozinho não mostra qual
