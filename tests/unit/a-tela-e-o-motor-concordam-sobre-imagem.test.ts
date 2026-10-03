@@ -95,9 +95,9 @@ describe("ponto FIXO anuncia o que ele mesmo usa", () => {
     expect(d.modelId, "voltou a anunciar o modelo de conversa").not.toBe("claude-sonnet-5");
   });
 
-  it("o ponto fixo ignora até um binding salvo — a escolha do painel não se aplica", () => {
-    // Controle: alguém pode ter um binding antigo gravado para este ponto. Ele
-    // não pode ressuscitar o comportamento errado.
+  it("o ponto fixo ACEITA binding salvo — a UI manda (decisão do dono 2026-10-03)", () => {
+    // Virada deliberada: antes o ponto fixo ignorava qualquer binding; agora um
+    // binding habilitado VENCE o padrão do produto, com a `razao` como AVISO.
     const d = decidirBinding({
       pontoId: "transcricao_de_audio",
       binding: {
@@ -112,7 +112,10 @@ describe("ponto FIXO anuncia o que ele mesmo usa", () => {
       modeloDeAmbiente: undefined,
       padraoDaOrganizacao: { provider: "anthropic", defaultModel: "claude-sonnet-5" },
     });
-    expect(d.modelId).toBe("whisper-1");
+    expect(d.origem).toBe("binding");
+    expect(d.modelId).toBe("gpt-5.6-sol");
+    // A razão do produto vira aviso (o risco de trocar continua visível).
+    expect(d.avisos.join(" ")).toMatch(/OpenAI|transcri/i);
   });
 
   it("ponto NÃO fixo segue a cadeia normal (controle positivo)", () => {

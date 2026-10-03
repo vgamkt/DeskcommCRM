@@ -164,22 +164,38 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
   const ponto = PONTO_POR_ID.get(entrada.pontoId);
   const avisos: string[] = [];
 
-  // 0 · Ponto FIXO responde por si, antes de qualquer cadeia.
+  // 0 · Ponto FIXO é o PADRÃO do produto — mas a UI MANDA.
   //
-  // ⚠️ Sem este degrau, um ponto fixo percorria a resolução inteira e caía no
-  // padrão da organização — e a tela anunciava `claude-sonnet-5` em "Ouvir o
-  // áudio do cliente", ao lado do texto que diz "usa o padrão de transcrição
-  // da OpenAI". A mesma tela afirmando duas coisas incompatíveis.
-  //
-  // Modelo de conversa não transcreve áudio: anunciar um ali manda quem opera
-  // caçar um problema que não existe, ou trocar o modelo errado.
-  if (ponto?.fixo?.usa) {
+  // Decisão do dono (2026-10-03): "os que não estão configuráveis ainda na UI
+  // devem ficar configuráveis no mesmo local". Antes, `fixo` respondia antes de
+  // qualquer cadeia e um binding era ignorado — a tela não deixava editar.
+  // Agora, um binding habilitado VENCE o padrão do produto; sem binding, vale o
+  // `fixo.usa` (ex.: transcrição = whisper-1), que é o que a tela mostra como
+  // ponto de partida. A `razao` vira AVISO quando o operador troca.
+  const bindingHabilitado =
+    entrada.binding !== null && entrada.binding.is_enabled &&
+    !ehModeloDeJev(entrada.binding.provider, entrada.binding.model_id);
+  if (ponto?.fixo?.usa && !bindingHabilitado) {
     return {
       provider: ponto.fixo.usa.provider,
       modelId: ponto.fixo.usa.modelId,
       credentialId: null,
       baseUrl: null,
       origem: "fixo_do_produto",
+      avisos,
+    };
+  }
+  if (ponto?.fixo?.usa && bindingHabilitado && entrada.binding !== null) {
+    // Trocou um ponto que o produto resolvia sozinho: avisa o risco (ex.:
+    // embedding tem que casar entre indexar e buscar).
+    avisos.push(ponto.fixo.razao);
+    avisos.push(...avisosDeCapacidade(ponto, entrada.binding.model_id));
+    return {
+      provider: entrada.binding.provider,
+      modelId: entrada.binding.model_id,
+      credentialId: entrada.binding.credential_id,
+      baseUrl: entrada.binding.base_url,
+      origem: "binding",
       avisos,
     };
   }

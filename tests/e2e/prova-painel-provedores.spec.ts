@@ -89,16 +89,24 @@ test("F0/F1 — o painel abre agrupado, explica os pontos e diz a origem", async
   await page.screenshot({ path: "evidence/provedores/02-configuracao-avancada.png", fullPage: true });
 });
 
-test("F1 — ponto fixo mostra a RAZÃO, não um cadeado mudo", async ({ page }) => {
+test("F1 — ponto que o produto resolvia sozinho agora é configurável na UI", async ({ page }) => {
+  // Decisão do dono (2026-10-03): "os que não estavam configuráveis na UI devem
+  // ficar configuráveis no mesmo local". O embedding (que exige o MESMO modelo
+  // entre indexar e buscar) agora aceita troca, com aviso.
   await page.goto("/app/ai/providers");
   await page.waitForSelector('[data-testid="painel-de-provedores"]');
   await page.click('[data-testid="avancado-lembrar"]');
-  await expect(page.locator('[data-testid="razao-fixo-embedding_indexar"]')).toContainText(
-    "mesmo modelo",
-  );
-  // E o ponto fixo NÃO oferece seletor — oferecer e ignorar seria a tela que mente.
-  await expect(page.locator('[data-testid="provider-embedding_indexar"]')).toHaveCount(0);
-  await page.screenshot({ path: "evidence/provedores/03-ponto-fixo-com-razao.png", fullPage: true });
+  await expect(page.locator('[data-testid="provider-embedding_indexar"]')).toHaveCount(1);
+  await page.screenshot({ path: "evidence/provedores/03-ponto-configuravel.png", fullPage: true });
+});
+
+test("F1b — o interruptor decide a fonte: Jev (recomendado) ou modelo próprio", async ({ page }) => {
+  await page.goto("/app/ai/providers");
+  await page.waitForSelector('[data-testid="painel-de-provedores"]');
+  await page.click('[data-testid="avancado-entender"]');
+  // Pontos com Jev oferecem o interruptor de fonte.
+  await expect(page.locator('[data-testid="fonte-stage_classifier"]')).toHaveCount(1);
+  await page.screenshot({ path: "evidence/provedores/03b-interruptor-fonte.png", fullPage: true });
 });
 
 test("F3 — a OpenRouter é oferecida e seus modelos estão no seletor", async ({ page }) => {

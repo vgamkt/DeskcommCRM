@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Ponto {
@@ -190,10 +191,18 @@ export function PainelDeProvedores() {
     <div className="mx-auto w-full max-w-5xl p-6" data-testid="painel-de-provedores">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">{t("Provedores de IA")}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
           {t("Seu sistema usa inteligência artificial em")} {dados.pontos.length}{" "}
           {t("lugares diferentes. Aqui você vê qual está atendendo cada um — e troca, se quiser.")}
         </p>
+        <div className="mt-3 max-w-3xl rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          <p className="font-medium">{t("A Jev é a cabeça; o modelo é o plano B")}</p>
+          <p className="mt-1 text-muted-foreground">
+            {t(
+              "Cada ponto abaixo pode ser decidido pela Jev (decisão estruturada — o recomendado) ou por um modelo próprio. Use o interruptor de cada ponto: ligado, a Jev decide; desligado, o modelo que você escolher decide. O modelo próprio nunca some — ele fica como handoff de segurança e entra só se a Jev falhar.",
+            )}
+          </p>
+        </div>
       </header>
 
       {semChave && (
@@ -277,174 +286,6 @@ function ResumoDoGrupo({ pontos }: { pontos: Ponto[] }) {
   );
 }
 
-/**
- * DECISÃO ESTRUTURADA (Jev) do ponto — binding PRÓPRIO (`<id>__jev`), separado do
- * chat. A Jev decide ANTES do modelo de conversa; se ela esgotar, o chat assume.
- * Salvar aqui NÃO toca no modelo de chat do ponto.
- */
-function SecaoDeJev({
-  ponto,
-  dados,
-  aoSalvar,
-}: {
-  ponto: Ponto;
-  dados: Dados;
-  aoSalvar: () => Promise<void>;
-}) {
-  const t = useT();
-  const [provider, setProvider] = useState(
-    ponto.jev?.provider ?? dados.provedoresJev[0]?.id ?? "typesafe",
-  );
-  const [modelId, setModelId] = useState(ponto.jev?.modelId ?? "");
-  const [credentialId, setCredentialId] = useState(ponto.jev?.credentialId ?? "");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [salvando, setSalvando] = useState(false);
-
-  const provedorAtual = dados.provedoresJev.find((p) => p.id === provider);
-  const creds = dados.credenciais.filter((c) => c.provider === provider);
-
-  async function salvar(isEnabled: boolean) {
-    setSalvando(true);
-    try {
-      const res = await fetch("/api/v1/ai/providers", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          purpose: `${ponto.id}__jev`,
-          provider,
-          model_id: modelId,
-          credential_id: credentialId || null,
-          base_url: baseUrl.trim() !== "" ? baseUrl.trim() : null,
-          is_enabled: isEnabled,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
-        return;
-      }
-      toast.success(
-        isEnabled
-          ? t("Decisão estruturada (Jev) ligada neste ponto")
-          : t("Decisão estruturada (Jev) desligada neste ponto"),
-      );
-      await aoSalvar();
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <div className="mt-4 rounded-md border p-3" data-testid={`jev-${ponto.id}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <Label className="text-xs font-medium">{t("Decisão estruturada (Jev)")}</Label>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Quem decide este ponto ANTES do modelo de conversa. Se a Jev esgotar, o chat assume — o cliente sempre é respondido.",
-            )}
-          </p>
-        </div>
-        {ponto.jev?.isEnabled && (
-          <Badge variant="secondary" className="text-xs">
-            {t("ligada")}
-          </Badge>
-        )}
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <div>
-          <Label className="text-xs">{t("Provedor (Jev)")}</Label>
-          <Select
-            value={provider}
-            onValueChange={(v) => {
-              setProvider(v);
-              // Usa o modelo PADRÃO da base (sem "afinação") — o operador pode
-              // trocar pelo modelo que quiser.
-              setModelId(dados.provedoresJev.find((p) => p.id === v)?.modeloPadrao ?? "");
-              setCredentialId("");
-            }}
-          >
-            <SelectTrigger data-testid={`jev-provider-${ponto.id}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {dados.provedoresJev.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.rotulo}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label className="text-xs">{t("Modelo (Jev)")}</Label>
-          {/*
-            Modelo é TEXTO LIVRE de propósito: não existe catálogo de modelos de
-            Jev em `ai_models` e não fazemos "afinação" de nome. O padrão da base
-            aparece como sugestão; o operador escolhe o modelo do provedor.
-          */}
-          <Input
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            placeholder={provedorAtual?.modeloPadrao || t("modelo do provedor")}
-            data-testid={`jev-modelo-${ponto.id}`}
-          />
-        </div>
-
-        <div>
-          <Label className="text-xs">{t("Chave")}</Label>
-          <Select value={credentialId} onValueChange={setCredentialId}>
-            <SelectTrigger data-testid={`jev-chave-${ponto.id}`}>
-              <SelectValue placeholder={t("da instalação")} />
-            </SelectTrigger>
-            <SelectContent>
-              {creds.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.label} ••{c.api_key_last4 ?? "??"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="sm:col-span-3">
-          <Label className="text-xs">{t("URL do endpoint systemone (só se não for base conhecida)")}</Label>
-          <Input
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={provedorAtual?.modeloPadrao ? t("base conhecida — deixe em branco") : "https://api.provedor.com/v1/systemone"}
-            data-testid={`jev-base-url-${ponto.id}`}
-          />
-        </div>
-
-        <div className="flex gap-2 sm:col-span-3">
-          <Button
-            size="sm"
-            disabled={salvando || !modelId}
-            onClick={() => void salvar(true)}
-            data-testid={`jev-salvar-${ponto.id}`}
-          >
-            {salvando ? t("Salvando…") : t("Ligar Jev neste ponto")}
-          </Button>
-          {ponto.jev?.isEnabled && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={salvando}
-              onClick={() => void salvar(false)}
-              data-testid={`jev-desligar-${ponto.id}`}
-            >
-              {t("Desligar")}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CartaoDoPonto({
   ponto,
   dados,
@@ -455,52 +296,102 @@ function CartaoDoPonto({
   aoSalvar: () => Promise<void>;
 }) {
   const t = useT();
+  // ── A FONTE do ponto: a Jev (principal) OU um modelo próprio (segurança) ──
+  // Decisão do dono (2026-10-03): a Jev é a cabeça que DECIDE (recomendada); o
+  // modelo próprio é o HANDOFF de segurança, que só entra se a Jev esgotar.
+  const temJev = ponto.ofereceJev;
+  const [fonte, setFonte] = useState<"jev" | "modelo">(
+    temJev && (ponto.jev?.isEnabled ?? false) ? "jev" : "modelo",
+  );
+  // Campos do modelo PRÓPRIO (fallback de chat).
   const [provider, setProvider] = useState(ponto.efetivo.provider);
   const [modelId, setModelId] = useState(ponto.efetivo.modelId ?? "");
   const [credentialId, setCredentialId] = useState(ponto.efetivo.credentialId ?? "");
   const [baseUrl, setBaseUrl] = useState(ponto.efetivo.baseUrl ?? "");
+  // Campos da JEV.
+  const [jevProvider, setJevProvider] = useState(
+    ponto.jev?.provider ?? dados.provedoresJev[0]?.id ?? "typesafe",
+  );
+  const [jevModelId, setJevModelId] = useState(ponto.jev?.modelId ?? "");
+  const [jevCredentialId, setJevCredentialId] = useState(ponto.jev?.credentialId ?? "");
   const [salvando, setSalvando] = useState(false);
 
   const modelosDoProvider = dados.modelos.filter((m) => m.provider === provider);
   const credsDoProvider = dados.credenciais.filter((c) => c.provider === provider);
-  // Endpoint próprio só faz sentido em provedor compatível com a API da OpenAI
-  // — é a mesma condição que `lib/ai/pontos/provedores.ts` declara e que o
-  // registry aplica junto da allowlist do egress.
+  const provedorJevAtual = dados.provedoresJev.find((p) => p.id === jevProvider);
+  const credsJev = dados.credenciais.filter((c) => c.provider === jevProvider);
   const aceitaEndpointProprio =
     dados.provedores.find((p) => p.id === provider)?.aceitaEndpointProprio === true;
 
-  const editavel = dados.podeEditar && ponto.fixo === null && !ponto.mandadoPeloAgente;
+  // Todo ponto é configurável aqui, EXCETO os que SÃO o agente (esses seguem na
+  // versão publicada, com atalho).
+  const editavel = dados.podeEditar && !ponto.mandadoPeloAgente;
+
+  async function put(body: Record<string, unknown>): Promise<boolean> {
+    const res = await fetch("/api/v1/ai/providers", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
+      return false;
+    }
+    const avisos: string[] = json?.data?.avisos ?? [];
+    avisos.forEach((a) => toast.warning(t(a)));
+    return true;
+  }
 
   async function salvar() {
     setSalvando(true);
     try {
-      const res = await fetch("/api/v1/ai/providers", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      if (temJev && fonte === "jev") {
+        // A Jev decide; o modelo próprio continua salvo como HANDOFF de
+        // segurança (não o apagamos). Só habilitamos o binding `__jev`.
+        const okJev = await put({
+          purpose: `${ponto.id}__jev`,
+          provider: jevProvider,
+          model_id: jevModelId || provedorJevAtual?.modeloPadrao || "",
+          credential_id: jevCredentialId || null,
+          base_url: null,
+          is_enabled: true,
+        });
+        if (!okJev) return;
+        // Garante um handoff de segurança salvo (se o usuário já escolheu um).
+        if (modelId) {
+          await put({
+            purpose: ponto.id,
+            provider,
+            model_id: modelId,
+            credential_id: credentialId || null,
+            base_url: aceitaEndpointProprio && baseUrl.trim() !== "" ? baseUrl.trim() : null,
+          });
+        }
+        toast.success(`"${t(ponto.rotulo)}" ${t("agora usa a Jev")}`);
+      } else {
+        // "Este modelo" manda: salva o modelo próprio E desliga a Jev neste ponto.
+        const okModelo = await put({
           purpose: ponto.id,
           provider,
           model_id: modelId,
           credential_id: credentialId || null,
-          // A coluna existia, o PUT a aceitava e o registry a honrava — e nada
-          // na tela a enviava. Quem quisesse apontar para um gateway próprio (o
-          // caso declarado como motivação da coluna, e o degrau para modelo
-          // local) só conseguia pela API. Configuração sem superfície é
-          // capacidade que ninguém alcança.
           base_url: aceitaEndpointProprio && baseUrl.trim() !== "" ? baseUrl.trim() : null,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        // A mensagem do servidor é escrita para leigo (ver validar-binding.ts).
-        // `t()` repassa direto quando não há entrada no dicionário — não é
-        // traduzir de novo, é a mesma degradação graciosa do resto do app.
-        toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
-        return;
+        });
+        if (!okModelo) return;
+        if (temJev) {
+          // Desliga o binding `__jev` (mantém os campos salvos).
+          await put({
+            purpose: `${ponto.id}__jev`,
+            provider: ponto.jev?.provider ?? jevProvider,
+            model_id: ponto.jev?.modelId ?? (jevModelId || provedorJevAtual?.modeloPadrao || ""),
+            credential_id: ponto.jev?.credentialId ?? jevCredentialId ?? null,
+            base_url: null,
+            is_enabled: false,
+          });
+        }
+        toast.success(`"${t(ponto.rotulo)}" ${t("agora usa")} ${modelId}`);
       }
-      const avisos: string[] = json?.data?.avisos ?? [];
-      if (avisos.length > 0) avisos.forEach((a) => toast.warning(t(a)));
-      else toast.success(`"${t(ponto.rotulo)}" ${t("agora usa")} ${modelId}`);
       await aoSalvar();
     } finally {
       setSalvando(false);
@@ -518,21 +409,19 @@ function CartaoDoPonto({
                 {t("precisa de ferramentas")}
               </Badge>
             )}
-            {ponto.fixo && (
-              <Badge variant="secondary" className="text-xs">
-                {t("fixo")}
-              </Badge>
-            )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{t(ponto.oQueFaz)}</p>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <div className="font-mono">{ponto.efetivo.modelId ?? "—"}</div>
+          <div className="font-mono">
+            {temJev && fonte === "jev"
+              ? `${t("Jev")}: ${ponto.jev?.modelId ?? "—"}`
+              : (ponto.efetivo.modelId ?? "—")}
+          </div>
           <div data-testid={`origem-${ponto.id}`}>{t(ponto.efetivo.porQue)}</div>
         </div>
       </div>
 
-      {/* O que a pessoa VÊ quando este ponto falha. É a razão de a tela existir. */}
       <p className="mt-3 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
         <span className="font-medium">{t("Se falhar:")}</span> {t(ponto.sintomaDeFalha)}
       </p>
@@ -547,12 +436,6 @@ function CartaoDoPonto({
         </p>
       ))}
 
-      {ponto.fixo && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid={`razao-fixo-${ponto.id}`}>
-          {t(ponto.fixo.razao)}
-        </p>
-      )}
-
       {ponto.mandadoPeloAgente && (
         <p className="mt-2 text-xs text-muted-foreground">
           {t("Este ponto usa o modelo definido na versão publicada do agente.")}{" "}
@@ -562,10 +445,94 @@ function CartaoDoPonto({
         </p>
       )}
 
-      {editavel && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      {/* ── O INTERRUPTOR: quem decide este ponto? ─────────────────────────── */}
+      {editavel && temJev && (
+        <div className="mt-4 flex items-center gap-3 rounded-md border p-3">
+          <Switch
+            id={`fonte-${ponto.id}`}
+            checked={fonte === "jev"}
+            onCheckedChange={(v) => setFonte(v ? "jev" : "modelo")}
+            disabled={salvando}
+            data-testid={`fonte-${ponto.id}`}
+          />
+          <div className="min-w-0 flex-1">
+            <Label htmlFor={`fonte-${ponto.id}`} className="text-sm font-medium">
+              {fonte === "jev"
+                ? t("Jev decide este ponto (recomendado)")
+                : t("Este modelo decide este ponto")}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {fonte === "jev"
+                ? t(
+                    "A Jev (decisão estruturada) é a cabeça deste ponto. O modelo abaixo fica como handoff de segurança: entra só se a Jev falhar.",
+                  )
+                : t(
+                    "Este ponto usa o modelo que você escolher abaixo. A Jev fica desligada aqui (ela é o recomendado).",
+                  )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Campos da JEV (quando a fonte é a Jev) ──────────────────────────── */}
+      {editavel && temJev && fonte === "jev" && (
+        <div className="mt-3 grid gap-3 rounded-md border border-primary/30 bg-primary/5 p-3 sm:grid-cols-3">
           <div>
-            <Label className="text-xs">{t("Provedor")}</Label>
+            <Label className="text-xs">{t("Provedor (Jev)")}</Label>
+            <Select
+              value={jevProvider}
+              onValueChange={(v) => {
+                setJevProvider(v);
+                setJevModelId(dados.provedoresJev.find((p) => p.id === v)?.modeloPadrao ?? "");
+                setJevCredentialId("");
+              }}
+            >
+              <SelectTrigger data-testid={`jev-provider-${ponto.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {dados.provedoresJev.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.rotulo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">{t("Modelo (Jev)")}</Label>
+            <Input
+              value={jevModelId}
+              onChange={(e) => setJevModelId(e.target.value)}
+              placeholder={provedorJevAtual?.modeloPadrao || t("modelo do provedor")}
+              data-testid={`jev-modelo-${ponto.id}`}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">{t("Chave (Jev)")}</Label>
+            <Select value={jevCredentialId} onValueChange={setJevCredentialId}>
+              <SelectTrigger data-testid={`jev-chave-${ponto.id}`}>
+                <SelectValue placeholder={t("da instalação")} />
+              </SelectTrigger>
+              <SelectContent>
+                {credsJev.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label} ••{c.api_key_last4 ?? "??"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+
+      {/* ── Campos do MODELO próprio (fonte OU handoff de segurança) ─────────── */}
+      {editavel && (fonte === "modelo" || temJev) && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div>
+            <Label className="text-xs">
+              {temJev && fonte === "jev" ? t("Handoff: provedor") : t("Provedor")}
+            </Label>
             <Select
               value={provider}
               onValueChange={(v) => {
@@ -588,31 +555,16 @@ function CartaoDoPonto({
           </div>
 
           <div>
-            <Label className="text-xs">{t("Modelo")}</Label>
-            {/*
-              Catálogo vazio não pode ser beco sem saída. O `baseline.sql` semeia
-              `ai_models` só para anthropic/openai/google; os da OpenRouter só
-              chegam quando o cron diário roda. Numa VPS recém-instalada, quem
-              escolhia OpenRouter via um combo com zero opções e o Salvar
-              desabilitado — travado até as 04h15 do dia seguinte, e para sempre
-              num deploy sem scheduler. Aqui o campo vira texto livre: a API já
-              aceita modelo fora do catálogo e devolve o aviso de que não
-              conhece (`validar-binding.ts`, `conhecido: false`).
-            */}
+            <Label className="text-xs">
+              {temJev && fonte === "jev" ? t("Handoff: modelo") : t("Modelo")}
+            </Label>
             {modelosDoProvider.length === 0 ? (
-              <>
-                <Input
-                  value={modelId}
-                  onChange={(e) => setModelId(e.target.value)}
-                  placeholder="ex.: meta-llama/llama-3.3-70b-instruct"
-                  data-testid={`modelo-${ponto.id}`}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t(
-                    "O catálogo deste provedor ainda não foi baixado. Digite o identificador do modelo como o provedor o nomeia — a lista completa aparece sozinha depois da primeira sincronização.",
-                  )}
-                </p>
-              </>
+              <Input
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                placeholder="ex.: glm-5.3-flash"
+                data-testid={`modelo-${ponto.id}`}
+              />
             ) : (
               <Select value={modelId} onValueChange={setModelId}>
                 <SelectTrigger data-testid={`modelo-${ponto.id}`}>
@@ -631,7 +583,9 @@ function CartaoDoPonto({
           </div>
 
           <div>
-            <Label className="text-xs">{t("Chave")}</Label>
+            <Label className="text-xs">
+              {temJev && fonte === "jev" ? t("Handoff: chave") : t("Chave")}
+            </Label>
             <Select value={credentialId} onValueChange={setCredentialId}>
               <SelectTrigger data-testid={`chave-${ponto.id}`}>
                 <SelectValue placeholder={t("da instalação")} />
@@ -652,7 +606,7 @@ function CartaoDoPonto({
               <Input
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://mi-gateway.ejemplo.com/v1"
+                placeholder="https://meu-gateway.exemplo.com/v1"
                 data-testid={`base-url-${ponto.id}`}
               />
               <p className="mt-1 text-xs text-muted-foreground">
@@ -662,22 +616,20 @@ function CartaoDoPonto({
               </p>
             </div>
           )}
-
-          <div className="sm:col-span-3">
-            <Button
-              size="sm"
-              disabled={salvando || !modelId}
-              onClick={() => void salvar()}
-              data-testid={`salvar-${ponto.id}`}
-            >
-              {salvando ? t("Salvando…") : t("Salvar")}
-            </Button>
-          </div>
         </div>
       )}
 
-      {editavel && ponto.ofereceJev && (
-        <SecaoDeJev ponto={ponto} dados={dados} aoSalvar={aoSalvar} />
+      {editavel && (
+        <div className="mt-4">
+          <Button
+            size="sm"
+            disabled={salvando || (fonte === "modelo" && !modelId) || (temJev && fonte === "jev" && !jevModelId)}
+            onClick={() => void salvar()}
+            data-testid={`salvar-${ponto.id}`}
+          >
+            {salvando ? t("Salvando…") : t("Salvar")}
+          </Button>
+        </div>
       )}
     </Card>
   );
