@@ -17,6 +17,8 @@ export interface AgentVersionRow {
   trigger_config: Record<string, unknown> | null;
   channel_session_id: string;
   max_steps: number;
+  turn_model_timeout_ms: number;
+  turn_model_max_tentativas: number;
   token_budget: number;
   cost_budget_cents: number;
   history_message_window: number;

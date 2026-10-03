@@ -151,6 +151,8 @@ import { selecionarSkillsComJev } from './skill-select-jev';
 import { rotearConhecimentoComJev } from './knowledge-route-jev';
 import { decidirOfertaComJev } from './oferta-jev';
 import { decidirNegociacaoComJev, faseDaAcao } from './negociacao-jev';
+import { chamarTurnoComResiliencia } from './turno-com-resiliencia';
+import { enviarHandoffPorLentidao } from './handoff-por-lentidao';
 import {
   carregarNegociacao,
   marcarAguardandoConfirmacao,
@@ -2036,6 +2038,10 @@ async function executarTurnoDoAgente(
   // começa o fluxo para o contato. O estado do fluxo é carregado logo abaixo
   // (depois das skills), então ele já guia ESTE turno.
   if (!preview && routed.flowPointerId) {
+    runLog.info('fluxo: iniciado pelo ROTEADOR de intenção', {
+      flow_pointer_id: routed.flowPointerId,
+      intent: routed.intentName ?? null,
+    });
     try {
       await iniciarFluxoDeAtendimento(pool, {
         organizationId: tenantId,
@@ -2307,6 +2313,10 @@ async function executarTurnoDoAgente(
         }
         if (alvo !== null) {
           const restante = fila.filter((f) => f.pointer_id !== alvo.id);
+          runLog.info('fluxo: iniciado no turno (IA/gatilho/fila)', {
+            flow_pointer_id: alvo.id,
+            nome: alvo.nome,
+          });
           await iniciarFluxoDeAtendimento(pool, {
             organizationId: tenantId,
             contactId: leadId,
@@ -5929,35 +5939,66 @@ async function executarTurnoDoAgente(
     // este corpo inteiro. Escoltar aqui deixaria de fora as chamadas de modelo dos
     // auxiliares (`classifyStage`, `maybeCompact`), que rodam ANTES desta e por
     // isso são as que estouram primeiro.
-    const turn = await runModelCall(
-      pool,
-      deps.llmCfg,
+    // ── TRAVA ANTI-TRAVAMENTO: timeout por tentativa + retry + handoff ────────
+    // Se o modelo empacar, este turno não pode segurar a fila (nem os outros
+    // clientes). `turnModelTimeoutMs`/`turnModelMaxTentativas` vêm da VERSÃO do
+    // agente (tela). Esgotou → avisa o humano e devolve `null` (turno termina
+    // limpo; a fila destrava no worker).
+    const timeoutMs = agentConfig?.turnModelTimeoutMs ?? 45000;
+    const maxTentativas = agentConfig?.turnModelMaxTentativas ?? 2;
+    const turn = await chamarTurnoComResiliencia(
+      () =>
+        runModelCall(
+          pool,
+          deps.llmCfg,
+          {
+            tenantId,
+            leadId: leadId || null,
+            jobId: job?.id,
+            // De quem é esta execução. Vai para `llm_calls.agent_id` e é o que permite
+            // a aba "Execuções" da tela do agente mostrar o que ELE fez — antes ela
+            // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
+            // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
+            agentId: agentConfig?.agentId ?? null,
+            purpose: preview ? 'agent_preview' : 'agent_turn',
+            system,
+            messages: openingMessages,
+            tools,
+            maxSteps,
+            timeoutMs,
+            ...(agentConfig !== null
+              ? {
+                  model: agentConfig.model,
+                  llmOverride: {
+                    provider: agentConfig.provider,
+                    credentialId: agentConfig.credentialId,
+                  },
+                }
+              : {}),
+          },
+          { registry: deps.registry, log: runLog },
+        ),
       {
-        tenantId,
-        leadId: leadId || null,
-        jobId: job?.id,
-        // De quem é esta execução. Vai para `llm_calls.agent_id` e é o que permite
-        // a aba "Execuções" da tela do agente mostrar o que ELE fez — antes ela
-        // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
-        // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
-        agentId: agentConfig?.agentId ?? null,
-        purpose: preview ? 'agent_preview' : 'agent_turn',
-        system,
-        messages: openingMessages,
-        tools,
-        maxSteps,
-        ...(agentConfig !== null
-          ? {
-              model: agentConfig.model,
-              llmOverride: {
-                provider: agentConfig.provider,
-                credentialId: agentConfig.credentialId,
-              },
-            }
-          : {}),
+        timeoutMs,
+        maxTentativas,
+        log: runLog,
+        aoEsgotar: async ({ tentativas }) => {
+          await enviarHandoffPorLentidao(pool, {
+            tenantId,
+            conversationId: input.conversationId,
+            contactId: leadId || null,
+            tentativas,
+            log: runLog,
+          }).catch(() => {});
+        },
       },
-      { registry: deps.registry, log: runLog },
     );
+    if (turn === null) {
+      // O modelo esgotou: o humano foi avisado (acima) e o turno termina aqui,
+      // sem erro (o worker dá o job como concluído e a fila segue).
+      runLog.warn('turno encerrado por esgotamento do modelo (handoff acionado)');
+      return;
+    }
 
     // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
     // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na

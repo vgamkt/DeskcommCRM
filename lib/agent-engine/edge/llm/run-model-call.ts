@@ -133,6 +133,11 @@ export interface RunModelCallInput {
    */
   maxSteps?: number;
   /**
+   * Timeout por chamada, em ms (opcional). Aborta a chamada se o modelo demorar
+   * mais que isso — trava anti-travamento do turno. Ausente = sem timeout.
+   */
+  timeoutMs?: number;
+  /**
    * Override de provider/credencial vindo da versão PUBLICADA do agente (Fase
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
    */
@@ -417,6 +422,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   });
 
   const startedAt = Date.now();
+  // TIMEOUT por chamada (opcional). Trava anti-travamento: um modelo que empaca
+  // é abortado em `input.timeoutMs` e vira erro `timeout` (retentável), em vez de
+  // prender o turno. Ausente = sem timeout (comportamento de antes).
+  const ctrl = input.timeoutMs !== undefined ? new AbortController() : null;
+  const timeoutTimer =
+    ctrl !== null ? setTimeout(() => ctrl.abort(), input.timeoutMs) : null;
   let result: Awaited<ReturnType<typeof generateText>>;
   try {
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
@@ -434,6 +445,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topP,
       topK,
       maxOutputTokens,
+      ...(ctrl !== null ? { abortSignal: ctrl.signal } : {}),
     });
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
@@ -469,6 +481,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       ...normalizarErro(err),
     });
     throw err;
+  } finally {
+    if (timeoutTimer !== null) clearTimeout(timeoutTimer);
   }
   const latencyMs = Date.now() - startedAt;
 

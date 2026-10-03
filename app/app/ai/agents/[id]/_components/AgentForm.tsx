@@ -147,6 +147,8 @@ interface FormState {
   tool_ids: string[];
   trigger_config: TriggerValue;
   max_steps: number;
+  turn_model_timeout_ms: number;
+  turn_model_max_tentativas: number;
   token_budget: number;
   cost_budget_cents: number;
   history_message_window: number;
@@ -205,6 +207,9 @@ function buildState(args: {
     tool_ids: version?.tool_ids ?? [],
     trigger_config: (version?.trigger_config as unknown as TriggerValue) ?? DEFAULT_TRIGGER,
     max_steps: version?.max_steps ?? 10,
+    // Resiliência anti-travamento (0261): defaults do banco.
+    turn_model_timeout_ms: version?.turn_model_timeout_ms ?? 45_000,
+    turn_model_max_tentativas: version?.turn_model_max_tentativas ?? 2,
     token_budget: version?.token_budget ?? 50_000,
     cost_budget_cents: version?.cost_budget_cents ?? 50,
     history_message_window: version?.history_message_window ?? 20,
@@ -262,6 +267,8 @@ function toVersionPayload(s: FormState) {
     trigger_config: s.trigger_config,
     channel_session_id: s.channel_session_id,
     max_steps: s.max_steps,
+    turn_model_timeout_ms: s.turn_model_timeout_ms,
+    turn_model_max_tentativas: s.turn_model_max_tentativas,
     token_budget: s.token_budget,
     cost_budget_cents: s.cost_budget_cents,
     history_message_window: s.history_message_window,
@@ -840,6 +847,45 @@ export function AgentForm(props: Props) {
                   disabled={disabled}
                 />
               </div>
+              <div className="space-y-1">
+                <Label htmlFor="turn_model_timeout_ms">
+                  {t("Tempo máximo por resposta (segundos)")}
+                </Label>
+                <Input
+                  id="turn_model_timeout_ms"
+                  type="number"
+                  min={1}
+                  max={600}
+                  value={Math.round(form.turn_model_timeout_ms / 1000)}
+                  onChange={(e) =>
+                    patch({
+                      turn_model_timeout_ms: Math.max(1, Number(e.target.value)) * 1000,
+                    })
+                  }
+                  disabled={disabled}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="turn_model_max_tentativas">
+                  {t("Tentativas antes de passar para um humano")}
+                </Label>
+                <Input
+                  id="turn_model_max_tentativas"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={form.turn_model_max_tentativas}
+                  onChange={(e) =>
+                    patch({ turn_model_max_tentativas: Number(e.target.value) })
+                  }
+                  disabled={disabled}
+                />
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">
+                {t(
+                  "Se o modelo demorar além disso, o sistema tenta de novo; esgotando, avisa o responsável no número de resumos.",
+                )}
+              </p>
               <div className="space-y-1">
                 <Label htmlFor="token_budget">{t("Volume de texto por atendimento")}</Label>
                 <Input

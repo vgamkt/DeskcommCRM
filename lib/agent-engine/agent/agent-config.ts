@@ -31,6 +31,10 @@ export interface PublishedAgentConfig {
   model: string;
   credentialId: string | null;
   maxSteps: number;
+  /** Timeout por tentativa do modelo do turno (trava anti-travamento), em ms. */
+  turnModelTimeoutMs: number;
+  /** Tentativas antes de liberar a fila e chamar o humano. */
+  turnModelMaxTentativas: number;
   historyMessageWindow: number;
   historyTokenWindow: number;
   handoffKeywords: string[];
@@ -115,6 +119,8 @@ interface Row {
   model: string;
   credential_id: string | null;
   max_steps: number;
+  turn_model_timeout_ms: number | null;
+  turn_model_max_tentativas: number | null;
   history_message_window: number;
   history_token_window: number;
   handoff_keywords: string[] | null;
@@ -144,6 +150,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.model,
             v.credential_id,
             v.max_steps,
+            v.turn_model_timeout_ms,
+            v.turn_model_max_tentativas,
             v.history_message_window,
             v.history_token_window,
             v.handoff_keywords,
@@ -204,6 +212,8 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     model: r.model,
     credentialId: r.credential_id,
     maxSteps: r.max_steps,
+    turnModelTimeoutMs: r.turn_model_timeout_ms ?? 45000,
+    turnModelMaxTentativas: r.turn_model_max_tentativas ?? 2,
     historyMessageWindow: r.history_message_window,
     historyTokenWindow: r.history_token_window,
     handoffKeywords: (r.handoff_keywords ?? [])

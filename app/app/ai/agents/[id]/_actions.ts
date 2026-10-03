@@ -38,7 +38,7 @@ import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, turn_model_timeout_ms, turn_model_max_tentativas, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
 
 type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -301,6 +301,8 @@ export async function saveAgentDraftAction(
         trigger_config: v.trigger_config ?? undefined,
         channel_session_id: v.channel_session_id,
         max_steps: v.max_steps,
+        turn_model_timeout_ms: v.turn_model_timeout_ms,
+        turn_model_max_tentativas: v.turn_model_max_tentativas,
         token_budget: v.token_budget,
         cost_budget_cents: v.cost_budget_cents,
         history_message_window: v.history_message_window,
@@ -508,6 +510,8 @@ export async function revertToVersionAction(
     trigger_config: Record<string, unknown> | null;
     channel_session_id: string;
     max_steps: number;
+    turn_model_timeout_ms: number;
+    turn_model_max_tentativas: number;
     token_budget: number;
     cost_budget_cents: number;
     history_message_window: number;
@@ -552,6 +556,8 @@ export async function revertToVersionAction(
         trigger_config: src.trigger_config ?? undefined,
         channel_session_id: src.channel_session_id,
         max_steps: src.max_steps,
+        turn_model_timeout_ms: src.turn_model_timeout_ms,
+        turn_model_max_tentativas: src.turn_model_max_tentativas,
         token_budget: src.token_budget,
         cost_budget_cents: src.cost_budget_cents,
         history_message_window: src.history_message_window,
@@ -706,6 +712,8 @@ export async function createMcpAgentAction(
     trigger_config: v.trigger_config ?? undefined,
     channel_session_id: v.channel_session_id,
     max_steps: v.max_steps,
+    turn_model_timeout_ms: v.turn_model_timeout_ms,
+    turn_model_max_tentativas: v.turn_model_max_tentativas,
     token_budget: v.token_budget,
     cost_budget_cents: v.cost_budget_cents,
     history_message_window: v.history_message_window,

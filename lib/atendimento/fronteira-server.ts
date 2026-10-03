@@ -59,7 +59,10 @@ export function setExecutionAgentOperation(context: AgentOperationContext): void
 export async function guardServiceEffect(): Promise<void> {
   const scope = execution.getStore();
   if (scope?.agentOperation) await assertAgentOperationPg(scope.db, scope.agentOperation);
-  if (scope) await requireCurrentServiceBoundary(scope.db, scope.boundary);
+  // Sem fronteira NÃO há atendimento a proteger — mesmo critério do cron, que
+  // roda sem escopo nenhum. O escopo com `boundary` nulo só existe para o
+  // trabalho explicitamente fora do atendimento (ver `semFronteiraDeAtendimento`).
+  if (scope?.boundary) await requireCurrentServiceBoundary(scope.db, scope.boundary);
   if (scope?.job?.kind === "transactional_delivery") {
     const claim = claimOfJob(scope.job);
     if (!claim) assertCurrentServiceBoundary(null, null);
@@ -79,6 +82,19 @@ export async function guardServiceEffect(): Promise<void> {
     });
   }
   await guardAgendaEffect();
+}
+/**
+ * Trabalho que NÃO é efeito no atendimento — um AVISO externo (ex.: o handoff
+ * por lentidão que avisa o responsável no número de resumos). Roda num escopo
+ * SEM fronteira, como um cron: `ensureConversation` CRIA o atendimento do
+ * destino em vez de herdar (e recusar) o do lead, e os guards de fronteira não
+ * se aplicam porque não há atendimento a proteger. Sem isto o aviso morria em
+ * `service_scope_mismatch`, porque o contato de destino != o contato do lead.
+ */
+export async function semFronteiraDeAtendimento<T>(action: () => Promise<T>): Promise<T> {
+  const scope = execution.getStore();
+  if (!scope) return action();
+  return execution.run({ db: scope.db, boundary: null }, action);
 }
 /** Continuação sem job (ex.: decisão humana sobre um caso já existente). */
 export async function withServiceBoundary<T>(

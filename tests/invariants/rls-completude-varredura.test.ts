@@ -226,6 +226,14 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "(migration 0244): controle positivo da própria org, 0 linhas da vizinha, " +
       "`agent` recusado ao escrever (policy exige `admin`) e `anon` sem SELECT.",
   },
+  {
+    tabela: "negotiation_state",
+    razao:
+      "tests/invariants/negotiation-state-rls.test.ts — estado estruturado da " +
+      "negociação de objeção (migration 0260): controle positivo da própria org, " +
+      "0 linhas da vizinha nos dois sentidos (countAs com JWT real) e escrita " +
+      "cruzada barrada pelo WITH CHECK da policy (writeCountAs em 0 linhas).",
+  },
 ];
 
 /**

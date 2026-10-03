@@ -24873,3 +24873,20 @@ drop trigger if exists negotiation_state_updated_at on public.negotiation_state;
 create trigger negotiation_state_updated_at
   before update on public.negotiation_state
   for each row execute function public.fn_set_updated_at();
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0261 · Resiliência do turno (apêndice idempotente) — timeout por tentativa + tentativas
+-- ════════════════════════════════════════════════════════════════════════════
+alter table public.ai_agent_versions
+  add column if not exists turn_model_timeout_ms integer not null default 45000,
+  add column if not exists turn_model_max_tentativas integer not null default 2;
+alter table public.ai_agent_versions
+  drop constraint if exists ai_agent_versions_turn_timeout_check;
+alter table public.ai_agent_versions
+  add constraint ai_agent_versions_turn_timeout_check
+    check (turn_model_timeout_ms between 1000 and 600000);
+alter table public.ai_agent_versions
+  drop constraint if exists ai_agent_versions_turn_tent_check;
+alter table public.ai_agent_versions
+  add constraint ai_agent_versions_turn_tent_check
+    check (turn_model_max_tentativas between 1 and 20);

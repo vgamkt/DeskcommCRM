@@ -82,6 +82,8 @@ function buildFieldChanges(a: AgentVersionRow, b: AgentVersionRow): FieldChange[
     ["model", "Model"],
     ["channel_session_id", "Canal"],
     ["max_steps", "max_steps"],
+    ["turn_model_timeout_ms", "turn_model_timeout_ms"],
+    ["turn_model_max_tentativas", "turn_model_max_tentativas"],
     ["token_budget", "token_budget"],
     ["cost_budget_cents", "cost_budget_cents"],
     ["history_message_window", "history_message_window"],

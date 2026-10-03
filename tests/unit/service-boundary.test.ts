@@ -4,7 +4,13 @@ import {
   assertCurrentServiceBoundary,
   type CurrentServiceBoundary,
 } from "@/lib/atendimento/fronteira";
-import { guardServiceTools, withServiceJob } from "@/lib/atendimento/fronteira-server";
+import {
+  currentExecutionBoundary,
+  guardServiceEffect,
+  guardServiceTools,
+  semFronteiraDeAtendimento,
+  withServiceJob,
+} from "@/lib/atendimento/fronteira-server";
 import type { JobRow, Queryable } from "@/lib/agent-engine/queue/queue";
 
 const boundary: CurrentServiceBoundary = {
@@ -99,6 +105,28 @@ describe("fronteira imutável de atendimento", () => {
       await expect(execute({}, {} as never)).rejects.toThrow("service_boundary_stale");
     });
     expect(received).toBe(0);
+  });
+  it("aviso fora do atendimento roda SEM fronteira (handoff ao número de resumos)", async () => {
+    const db = { query: async () => ({ rows: [boundary] }) } as unknown as Queryable;
+    const job = {
+      organization_id: "org",
+      contact_id: "contact",
+      kind: "inbound_turn",
+      payload: { service_boundary: boundary },
+    } as unknown as JobRow;
+    await withServiceJob(db, job, async () => {
+      // Dentro do turno a fronteira do lead está ativa...
+      expect(currentExecutionBoundary()).toEqual(boundary);
+      await semFronteiraDeAtendimento(async () => {
+        // ...e o aviso ao responsável roda como um cron: sem fronteira nenhuma,
+        // então `ensureConversation` cria o atendimento do DESTINO em vez de
+        // recusá-lo (`service_scope_mismatch`) e os guards não vetam.
+        expect(currentExecutionBoundary()).toBeNull();
+        await expect(guardServiceEffect()).resolves.toBeUndefined();
+      });
+      // O escopo do turno volta intacto depois do aviso.
+      expect(currentExecutionBoundary()).toEqual(boundary);
+    });
   });
   it("trabalho legado não ganha validade no claim", async () => {
     const db = { query: async () => ({ rows: [boundary] }) } as unknown as Queryable;

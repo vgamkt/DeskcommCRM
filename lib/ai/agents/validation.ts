@@ -101,6 +101,10 @@ const versionShapeSchema = z
     trigger_config: triggerConfigSchema.optional(),
     channel_session_id: UUID,
     max_steps: z.number().int().min(1).max(25).default(10),
+    // Resiliência anti-travamento do turno: timeout por tentativa (ms) e quantas
+    // tentativas antes de liberar a fila e avisar o humano. Defaults da 0261.
+    turn_model_timeout_ms: z.number().int().min(1000).max(600000).default(45000),
+    turn_model_max_tentativas: z.number().int().min(1).max(20).default(2),
     token_budget: z.number().int().min(1000).max(500000).default(50000),
     cost_budget_cents: z.number().int().min(1).max(10000).default(50),
     history_message_window: z.number().int().min(0).max(200).default(20),

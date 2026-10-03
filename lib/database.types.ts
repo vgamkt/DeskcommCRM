@@ -766,6 +766,8 @@ export type Database = {
           token_budget: number
           tool_ids: string[]
           trigger_config: Json
+          turn_model_max_tentativas: number
+          turn_model_timeout_ms: number
           version_number: number
           video_frames_enabled: boolean
         }
@@ -803,6 +805,8 @@ export type Database = {
           token_budget?: number
           tool_ids?: string[]
           trigger_config?: Json
+          turn_model_max_tentativas?: number
+          turn_model_timeout_ms?: number
           version_number: number
           video_frames_enabled?: boolean
         }
@@ -840,6 +844,8 @@ export type Database = {
           token_budget?: number
           tool_ids?: string[]
           trigger_config?: Json
+          turn_model_max_tentativas?: number
+          turn_model_timeout_ms?: number
           version_number?: number
           video_frames_enabled?: boolean
         }
@@ -5878,6 +5884,72 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "metrics_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negotiation_state: {
+        Row: {
+          attempts: number
+          awaiting_confirmation: boolean
+          contact_id: string
+          conversation_id: string | null
+          created_at: string
+          encaminhado_at: string | null
+          id: string
+          motivo: string
+          organization_id: string
+          status: string
+          topic: string
+          ultima_msg_em: string
+          updated_at: string
+          valor_proposta_cents: number | null
+        }
+        Insert: {
+          attempts?: number
+          awaiting_confirmation?: boolean
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string
+          encaminhado_at?: string | null
+          id?: string
+          motivo: string
+          organization_id: string
+          status?: string
+          topic: string
+          ultima_msg_em?: string
+          updated_at?: string
+          valor_proposta_cents?: number | null
+        }
+        Update: {
+          attempts?: number
+          awaiting_confirmation?: boolean
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          encaminhado_at?: string | null
+          id?: string
+          motivo?: string
+          organization_id?: string
+          status?: string
+          topic?: string
+          ultima_msg_em?: string
+          updated_at?: string
+          valor_proposta_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negotiation_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negotiation_state_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
