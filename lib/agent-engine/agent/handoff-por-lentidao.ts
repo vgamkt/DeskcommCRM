@@ -31,6 +31,11 @@ export async function enviarHandoffPorLentidao(
     conversationId: string;
     contactId: string | null;
     tentativas: number;
+    /**
+     * Contexto do aviso (mesma frase no WhatsApp). Default = lentidão do modelo;
+     * o encaminhamento por negociação (cliente negou as opções) reusa o canal.
+     */
+    motivo?: 'lentidao' | 'negociacao';
     log: Logger;
   },
 ): Promise<void> {
@@ -110,9 +115,13 @@ export async function enviarHandoffPorLentidao(
     }
 
     const texto =
-      `⚠️ Atendimento sem resposta automática\n` +
-      `O modelo não respondeu após ${args.tentativas} tentativa(s) (tempo esgotado). ` +
-      `${nome ? `Cliente: ${nome}. ` : ''}Assuma a conversa para responder o cliente.`;
+      args.motivo === 'negociacao'
+        ? `⚠️ Atendimento aguardando um humano\n` +
+          `O cliente não aceitou as opções apresentadas na negociação. ` +
+          `${nome ? `Cliente: ${nome}. ` : ''}Assuma a conversa para responder o cliente.`
+        : `⚠️ Atendimento sem resposta automática\n` +
+          `O modelo não respondeu após ${args.tentativas} tentativa(s) (tempo esgotado). ` +
+          `${nome ? `Cliente: ${nome}. ` : ''}Assuma a conversa para responder o cliente.`;
 
     // 4) Envia pelo caminho canônico (mesmo do resumo), FORA da fronteira do
     // atendimento do lead: o aviso é para o número de resumos do responsável,

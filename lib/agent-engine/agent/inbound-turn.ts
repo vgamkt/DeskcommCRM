@@ -6056,6 +6056,69 @@ async function executarTurnoDoAgente(
       }
     }
 
+    // ── ENCAMINHAMENTO POR NEGOCIAÇÃO (P2 §5) ──────────────────────────────
+    // O cliente NEGOU as opções: garante a MENSAGEM de encaminhamento (se o
+    // modelo não a enviou, o motor manda — mesmo padrão da trava da pergunta) e
+    // AVISA o responsável no número configurado na tela. A objeção fica
+    // `encaminhado` (acima) MAS o bot segue atendendo. Best-effort: falha aqui
+    // não derruba o turno que já respondeu.
+    if (!preview && leadId && negouOpcoes) {
+      const textoEncaminhamento =
+        'Vou encaminhar seu caso para o responsável, que te retorna por aqui. Pode aguardar?';
+      if (!perguntaSaiuNosTextos('encaminhar', corposEnviados) && seq < maxSendsPerTurn) {
+        try {
+          await runBeforeSend({
+            pool,
+            log: runLog,
+            agentOperation,
+            tenantId,
+            leadId,
+            jobId: liveJob().id,
+            channelSessionId: input.channelSessionId,
+            body: textoEncaminhamento,
+            optedOutThisTurn,
+            crmDailyLimit: null,
+            // Mensagem determinística do motor: não é blast, não gira.
+            enforceSpinning: false,
+            now: clock(),
+            ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+            ...(lgpd !== undefined ? { lgpd } : {}),
+            ...(deps.knobs.disclosureMode !== undefined
+              ? { disclosureMode: deps.knobs.disclosureMode }
+              : {}),
+            send: (finalBody: string) => {
+              seq += 1;
+              corposEnviados.push(finalBody);
+              return liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq,
+                conversationId: input.conversationId,
+                body: finalBody,
+              });
+            },
+          });
+        } catch (err) {
+          runLog.warn('encaminhamento da negociação falhou — o turno segue', {
+            error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+          });
+        }
+      }
+      await enviarHandoffPorLentidao(pool, {
+        tenantId,
+        channelSessionId: input.channelSessionId,
+        notificationNumber: agentConfig?.handoffNotificationNumber ?? null,
+        conversationId: input.conversationId,
+        contactId: leadId,
+        tentativas: 0,
+        motivo: 'negociacao',
+        log: runLog,
+      }).catch(() => {});
+    }
+
     if (runError !== null) {
       throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
     }
