@@ -149,6 +149,7 @@ import {
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { selecionarSkillsComJev } from './skill-select-jev';
 import { rotearConhecimentoComJev } from './knowledge-route-jev';
+import { decidirOfertaComJev } from './oferta-jev';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
@@ -2895,13 +2896,40 @@ async function executarTurnoDoAgente(
     catalogoDaConversa.escolhida ??
     catalogoDaConversa.referencia ??
     (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
+  // ─── A OFERTA DE MOTOS: A JEV É A AUTORIDADE (quando ligada) ─────────────
+  // Regra do dono (2026-10-03): só mostrar motos quando o cliente PEDE ou quando
+  // a moto pedida NÃO existe. A Jev decide isso melhor que a régua de regex; a
+  // régua continua como fallback quando a Jev não está ligada/indisponível.
+  const pedidoSemCorrespondencia =
+    catalogoDoTurno.length > 0 &&
+    motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno).length === 0;
+  const vereditoOfertaJev = preview
+    ? null
+    : await decidirOfertaComJev(
+        pool,
+        tenantId,
+        {
+          mensagem: mensagemDoJob ?? '',
+          pediuMaisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
+          temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+          temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
+          pedidoSemCorrespondencia,
+          clienteConfirmouOpcoes: (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && confirmouOpcoes,
+          motivoObjecaoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
+        },
+        runLog,
+      );
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
-  // O motor (apresentação automática) e as ferramentas da IA (`send_message` com
-  // `motos`, `crm_offer_similar_motos`) perguntam AQUI antes de oferecer motos.
-  // `pediuOutraMoto` fica de fora nesta versão (só é conhecido dentro do
-  // `send_message`); a mensagem do cliente já cobre esse sinal na própria régua.
-  const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta =>
-    podeOferecerMotos({
+  // Com veredito da Jev, ela MANDA; sem ele, a régua de regex decide.
+  const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
+    if (vereditoOfertaJev !== null) {
+      return {
+        pode: vereditoOfertaJev.oferecer,
+        motivo: vereditoOfertaJev.motivo,
+        criterio: vereditoOfertaJev.criterio === 'nenhum' ? null : vereditoOfertaJev.criterio,
+      };
+    }
+    return podeOferecerMotos({
       mensagem,
       temEscolhaTravada: catalogoDaConversa.escolhida !== null,
       temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
@@ -2909,6 +2937,7 @@ async function executarTurnoDoAgente(
       pediuOutraMoto: false,
       confirmouVerOpcoes: confirmouOpcoes,
     } satisfies SinaisDeOferta);
+  };
   // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
   // (ex.: "quero uma moto barata") e não há moto atual → a ação do turno é
   // PERGUNTAR o orçamento, NÃO apresentar catálogo. Determinístico: só a instrução
