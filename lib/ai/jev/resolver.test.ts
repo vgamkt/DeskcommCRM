@@ -74,17 +74,15 @@ describe("alvosDeJevDaOrg", () => {
     expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([]);
   });
 
-  it("sem binding usa o ambiente quando ligado", async () => {
+  it("sem binding NÃO usa o ambiente — Jev fica desligada (modelo só da UI)", async () => {
     process.env.JEV_ENABLED = "1";
     process.env.JEV_PROVIDER = "opencode";
     process.env.JEV_API_KEY = "k";
     const db = dbMock([{ rows: [] }]);
-    expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([
-      { provider: "opencode", apiKey: "k" },
-    ]);
+    expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([]);
   });
 
-  it("binding de provedor Jev-capaz com modelo de CHAT NÃO vira alvo (a UI manda; não cai no ambiente)", async () => {
+  it("binding de provedor Jev-capaz com modelo de CHAT NÃO vira alvo", async () => {
     process.env.JEV_ENABLED = "1";
     process.env.JEV_PROVIDER = "opencode";
     process.env.JEV_API_KEY = "k";
@@ -94,7 +92,7 @@ describe("alvosDeJevDaOrg", () => {
     expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([]);
   });
 
-  it("binding Jev-capaz ganha o FALLBACK do ambiente como segundo alvo (failover)", async () => {
+  it("binding Jev-capaz NÃO ganha fallback de ambiente (decisão do dono 2026-10-03)", async () => {
     process.env.JEV_FALLBACK_PROVIDER = "opencode";
     process.env.JEV_FALLBACK_API_KEY = "fk";
     const db = dbMock([
@@ -103,7 +101,6 @@ describe("alvosDeJevDaOrg", () => {
     ]);
     expect(await alvosDeJevDaOrg(db, "org", "stage_classifier")).toEqual([
       { provider: "openrouter", apiKey: "CHAVE-DECIFRADA", model: "typesafe/jev-1.13" },
-      { provider: "opencode", apiKey: "fk" },
     ]);
   });
 
@@ -137,8 +134,10 @@ describe("jevLigadaParaBrief", () => {
     expect(await jevLigadaParaBrief(dbChat, "org")).toBe(false);
   });
 
-  it("sem binding nenhum, decide pelo ambiente", async () => {
-    delete process.env.JEV_ENABLED;
+  it("sem binding nenhum fica false (não há mais fonte de ambiente)", async () => {
+    process.env.JEV_ENABLED = "1";
+    process.env.JEV_PROVIDER = "opencode";
+    process.env.JEV_API_KEY = "k";
     const db = dbMock([{ rows: [] }]);
     expect(await jevLigadaParaBrief(db, "org")).toBe(false);
   });

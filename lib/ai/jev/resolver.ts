@@ -20,7 +20,8 @@ import type pg from 'pg';
 import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
 
 import { BASES_SYSTEMONE, ehModeloDeJev } from './cliente';
-import { alvosDeJevDe, fallbackDeJevDe } from './config';
+// `alvosDeJevDe`/`fallbackDeJevDe` deixaram de ser usados aqui: o modelo da Jev
+// vem só do binding da UI (decisão do dono, 2026-10-03).
 import { purposeDeJev } from './provedores';
 import type { AlvoDeJev } from './index';
 
@@ -108,38 +109,37 @@ export async function alvosDeJevDaOrg(
             ...(model !== null ? { model } : {}),
             ...(baseUrl !== null && baseUrl.trim() !== '' ? { baseUrl } : {}),
           };
-          // Fallback do ambiente (JEV_FALLBACK_*) entra como SEGUNDO alvo: o
-          // binding não tem noção de failover, mas a Jev não pode ficar sem para
-          // onde correr se o provedor escolhido der 429/esgotar.
-          const fallbacks = fallbackDeJevDe(process.env).filter(
-            (a) => a.provider !== primario.provider,
-          );
-          return [primario, ...fallbacks];
+          // [REMOVIDO 2026-10-03] O fallback de ambiente (`JEV_FALLBACK_*`) NÃO
+          // entra mais: decisão do dono de que modelo de linguagem vem só da UI.
+          // Se o provedor escolhido no painel esgotar (429), o motor de
+          // tentativas/binding resolve, e o CHAT assume o ponto — nunca uma
+          // variável de `.env` escondida.
+          return [primario];
         }
       }
       return [];
     }
   } catch {
-    // leitura do binding falhou → cai no ambiente
+    // leitura do binding falhou → Jev desligada neste ponto (não cai no env)
   }
-  // Sem binding nenhum: usa a config global por ambiente (default off).
-  return alvosDeJevDe(process.env);
+  // [REMOVIDO 2026-10-03] Sem binding, a Jev fica DESLIGADA neste ponto — o
+  // modelo vem só da UI. Antes caía em `JEV_*` do ambiente; o dono decidiu que
+  // nada fora da tela escolhe modelo de linguagem. O CHAT assume o ponto.
+  return [];
 }
 
 /**
  * A Jev está LIGADA para o tenant? Verdadeiro quando existe QUALQUER binding
- * habilitado cujo modelo escolhido na tela seja de JEV (`ehModeloDeJev`) — ou,
- * se não houver binding nenhum, quando o ambiente liga a Jev. Binding de CHAT
- * não conta. É o gate do BRIEF do turno (Parte 1): sem Jev, o turno segue
- * exatamente como sempre foi.
+ * habilitado cujo modelo escolhido na tela seja de JEV (`ehModeloDeJev`). É o
+ * gate do BRIEF do turno (Parte 1). Não há mais fonte de ambiente: a Jev só
+ * liga pela UI.
  *
- * Nunca lança: falha de leitura cai na configuração de ambiente.
+ * Nunca lança: falha de leitura → `false` (Jev desligada neste tenant).
  */
 export async function jevLigadaParaBrief(
   db: pg.Pool,
   organizationId: string,
 ): Promise<boolean> {
-  let temBinding = false;
   try {
     const { rows } = await db.query<{ provider: string; model_id: string | null }>(
       `select provider, model_id
@@ -147,16 +147,13 @@ export async function jevLigadaParaBrief(
         where organization_id = $1 and is_enabled`,
       [organizationId],
     );
-    temBinding = rows.length > 0;
     for (const r of rows) {
       const base = BASES_SYSTEMONE[r.provider];
       const model = r.model_id ?? base?.modeloPadrao ?? null;
       if (base !== undefined && model !== null && ehModeloDeJev(r.provider, model)) return true;
     }
   } catch {
-    // leitura do binding falhou → decide pelo ambiente abaixo
+    // leitura do binding falhou → Jev desligada
   }
-  // Com binding(s) mas nenhum de Jev, a UI manda: não cai no ambiente.
-  if (temBinding) return false;
-  return alvosDeJevDe(process.env).length > 0;
+  return false;
 }

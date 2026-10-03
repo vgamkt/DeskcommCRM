@@ -69,10 +69,13 @@ describe("precedência entre origens", () => {
     expect(d.provider).toBe("openrouter");
   });
 
-  it("variável de ambiente vence padrão da organização", () => {
+  it("variável de ambiente NÃO escolhe mais modelo — cai no padrão da organização", () => {
+    // Decisão do dono (2026-10-03): modelo de linguagem vem da UI. O knob de
+    // env virou só AVISO.
     const d = decidirBinding(entrada({ modeloDeAmbiente: "claude-haiku-4-5" }));
-    expect(d.origem).toBe("variavel_de_ambiente");
-    expect(d.modelId).toBe("claude-haiku-4-5");
+    expect(d.origem).toBe("padrao_da_organizacao");
+    expect(d.modelId).toBe("claude-sonnet-5");
+    expect(d.avisos.join(" ")).toMatch(/Ignorando a variável de ambiente/);
   });
 
   it("agente publicado vence binding nos pontos que SÃO o agente", () => {
@@ -98,15 +101,15 @@ describe("precedência entre origens", () => {
     expect(d.provider).toBe("openrouter");
   });
 
-  it("binding desligado devolve o lugar para quem vem depois", () => {
+  it("binding desligado NÃO cai mais no env — cai no padrão da organização", () => {
     const d = decidirBinding(
       entrada({
         binding: binding({ is_enabled: false }),
         modeloDeAmbiente: "claude-haiku-4-5",
       }),
     );
-    expect(d.origem).toBe("variavel_de_ambiente");
-    expect(d.modelId).toBe("claude-haiku-4-5");
+    expect(d.origem).toBe("padrao_da_organizacao");
+    expect(d.modelId).toBe("claude-sonnet-5");
   });
 
   it("sem nenhuma origem, cai no padrão da organização", () => {
@@ -139,28 +142,21 @@ describe("modelo e credencial vêm do MESMO lugar (PR #151)", () => {
     expect(d.provider).not.toBe(PADRAO.provider);
   });
 
-  it("a variável de ambiente NÃO carrega credencial de outro provider", () => {
-    // O knob nasceu quando só havia um provider por instalação; ele pressupõe
-    // o padrão da org. Deixá-lo herdar credencial de um binding vizinho
-    // recriaria o cruzamento que o PR #151 consertou.
+  it("o env do ponto agora é ignorado — decisão é o padrão da organização (sem credencial)", () => {
     const d = decidirBinding(entrada({ modeloDeAmbiente: "claude-haiku-4-5" }));
+    expect(d.origem).toBe("padrao_da_organizacao");
     expect(d.provider).toBe(PADRAO.provider);
     expect(d.credentialId).toBeNull();
   });
 
-  it("binding DESLIGADO não vaza credencial para a variável de ambiente", () => {
-    // O caso acima passa com `binding: null`, então não pega uma implementação
-    // que lesse `entrada.binding?.credential_id` ao montar o ramo do env — a
-    // linha continua na entrada, só que desligada. É o cenário real de quem
-    // desliga o binding no painel e volta a depender do .env: a credencial
-    // errada viajaria com o modelo certo, que é a forma exata do PR #151.
+  it("binding DESLIGADO não vaza credencial — cai no padrão da organização", () => {
     const d = decidirBinding(
       entrada({
         binding: binding({ is_enabled: false }),
         modeloDeAmbiente: "claude-haiku-4-5",
       }),
     );
-    expect(d.origem).toBe("variavel_de_ambiente");
+    expect(d.origem).toBe("padrao_da_organizacao");
     expect(d.credentialId).toBeNull();
     expect(d.provider).toBe(PADRAO.provider);
     expect(d.baseUrl).toBeNull();
@@ -296,18 +292,19 @@ describe("o conjunto de pontos do agente publicado", () => {
     expect(d.origem).toBe("binding");
   });
 
-  it("binding de modelo JEV é PULADO no caminho de chat (usa ambiente/agente/padrão)", () => {
+  it("binding de modelo JEV é PULADO no caminho de chat (usa agente/padrão)", () => {
     // O mesmo binding serve a Jev e o chat: se o operador escolhe um modelo de
     // Jev no ponto, o FALLBACK de chat NÃO pode mandar esse modelo para a API de
-    // conversa (400). Ele é pulado e o fallback usa a origem seguinte.
+    // conversa (400). Ele é pulado e o fallback usa a origem seguinte — que,
+    // sem agente, é o padrão da organização (o env do ponto não decide mais).
     const d = decidirBinding(
       entrada({
         binding: binding({ provider: "openrouter", model_id: "typesafe/jev-1.13" }),
         modeloDeAmbiente: "claude-haiku-4-5",
       }),
     );
-    expect(d.origem).toBe("variavel_de_ambiente");
-    expect(d.modelId).toBe("claude-haiku-4-5");
+    expect(d.origem).toBe("padrao_da_organizacao");
+    expect(d.modelId).toBe("claude-sonnet-5");
   });
 
   it("binding de Jev cai no padrão da organização quando não há ambiente nem agente", () => {

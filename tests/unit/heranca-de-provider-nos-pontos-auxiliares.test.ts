@@ -124,16 +124,16 @@ describe("o ponto auxiliar não cruza provider de um com modelo de outro", () =>
     expect(d.provider).toBe("openrouter");
   });
 
-  it("a variável de ambiente continua vencendo a herança do agente", () => {
-    // `aux-model-args.ts` só empresta o modelo do agente quando o knob está
-    // VAZIO — knob preenchido é escolha consciente do operador. O resolvedor
-    // precisa respeitar a mesma ordem, senão as duas metades da regra brigam.
+  it("a herança do agente vence o env do ponto (env não escolhe mais modelo)", () => {
+    // Decisão do dono (2026-10-03): modelo vem da UI. O agente publicado é
+    // configurado na UI, então a herança dele é a fonte correta; o knob de
+    // ambiente do ponto é ignorado (vira aviso).
     const d = decidirBinding(
       entrada({ agentePublicado: agente(), modeloDeAmbiente: "claude-haiku-4-5" }),
     );
-    expect(d.origem).toBe("variavel_de_ambiente");
-    expect(d.modelId).toBe("claude-haiku-4-5");
-    expect(d.provider).toBe(PADRAO.provider);
+    expect(d.origem).toBe("herdado_de_quem_chamou");
+    expect(d.modelId).toBe("gpt-5.6-luna");
+    expect(d.provider).toBe("openai");
   });
 });
 

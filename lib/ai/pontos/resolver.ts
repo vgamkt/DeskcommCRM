@@ -246,18 +246,24 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
     };
   }
 
-  // 3 · O knob de ambiente. Herda provider/credencial do padrão da org, que é
-  // exatamente o que esse knob sempre pressupôs — ele nasceu quando só havia
-  // um provider por instalação.
+  // 3 · [REMOVIDO 2026-10-03] O knob de ambiente NÃO escolhe mais modelo.
+  //
+  // Decisão do dono: "modelo de linguagem tem que vir do que está setado na UI".
+  // O degrau `variavel_de_ambiente` (STAGE_CLASSIFIER_MODEL, COMPACTION_MODEL,
+  // etc.) permitia que uma variável do `.env` vencesse em silêncio a escolha da
+  // tela — exatamente o tipo de configuração que "mente". Quem usa o `.env` hoje
+  // continua funcionando: `runModelCall` só passa `modeloDeAmbiente` quando o
+  // call site o preenche, e os call sites passam o modelo do AGENTE PUBLICADO
+  // (herança, degrau 3.5). Se um ponto não tem binding e nem herança, cai no
+  // `organizations.settings.llm` (o padrão da ORG, também configurável).
+  //
+  // `entrada.modeloDeAmbiente` vira apenas AVISO quando contraria a UI, nunca
+  // decisão. Ver teste `pontos-de-ia-resolver.test.ts`.
   if (entrada.modeloDeAmbiente !== undefined) {
-    return {
-      provider: entrada.padraoDaOrganizacao.provider,
-      modelId: entrada.modeloDeAmbiente,
-      credentialId: null,
-      baseUrl: null,
-      origem: "variavel_de_ambiente",
-      avisos,
-    };
+    avisos.push(
+      `Ignorando a variável de ambiente do ponto ("${entrada.modeloDeAmbiente}"): ` +
+        `o modelo agora vem do painel de provedores (ou do agente publicado).`,
+    );
   }
 
   // 3.5 · A herança de quem disparou a chamada.
