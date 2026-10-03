@@ -72,8 +72,14 @@ export interface SentimentResult {
 
 export async function processSentiment(event: EventRow): Promise<SentimentResult> {
   try {
-    // ── Guard: AI Gateway configured ────────────────────────────────────────
-    if (!isAiGatewayConfigured()) {
+    // A JEV NÃO PRECISA DE GATEWAY. O guard `isAiGatewayConfigured()` cedo demais
+    // tornava a Jev (binding `sentiment_classify__jev`) INALCANÇÁVEL num clone que
+    // só usa a Jev — ela é chamada por HTTP próprio, não pelo gateway. O guard
+    // desce para DEPOIS de a Jev ter a chance (o `resolvido`/`sentimentModel`
+    // abaixo é do chat e continua exigindo o gateway).
+    const jevLigada = (await alvosDeJevDaOrg(getRequestPool(), event.organization_id, "sentiment_classify").catch(() => [])).length > 0 ||
+      alvosDeJevDe(process.env).length > 0;
+    if (!jevLigada && !isAiGatewayConfigured()) {
       return { skipped: true, reason: "ai_gateway_key_missing" };
     }
 
@@ -86,15 +92,17 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // oferecia "Medir o clima da conversa", aceitava a escolha e dizia
     // "salvo" — e este worker seguia usando o modelo padrão. Botão que não
     // controla nada é pior que botão ausente: gasta a confiança de quem clicou.
+    // Sem Jev, o chat exige modelo resolvido (gateway/chave). Com Jev, `resolvido`
+    // pode ser null — o caminho Jev, mais abaixo, assume a nota.
     const resolvido = await resolverModeloDoPonto(
       "sentiment_classify",
       event.organization_id,
       SENTIMENT_MODEL,
     );
-    if (!resolvido) {
+    if (!resolvido && !jevLigada) {
       return { skipped: true, reason: "ai_gateway_key_missing" };
     }
-    const sentimentModel = resolvido.model;
+    const sentimentModel = resolvido?.model ?? SENTIMENT_MODEL;
 
     const messageId =
       (event.payload?.["message_id"] as string | undefined) ?? event.entity_id ?? null;
@@ -219,7 +227,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     let result: { sentiment_score: number } | null = null;
     let promptTokens = 0;
     let completionTokens = 0;
-    let modeloUsado = resolvido.modelId;
+    let modeloUsado = resolvido?.modelId ?? SENTIMENT_MODEL;
 
     // Jev PRIMEIRO — configurada pelo BINDING do ponto (`sentiment_classify__jev`,
     // a tela de provedores); sem binding, cai no ambiente (default DESLIGADA). Se
