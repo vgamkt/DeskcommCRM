@@ -2970,8 +2970,16 @@ async function executarTurnoDoAgente(
         runLog,
       );
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
-  // Com veredito da Jev, ela MANDA; sem ele, a régua de regex decide.
+  // ORDEM: (1) objeção → a NEGOCIAÇÃO manda (só `mostrar_opcoes` oferece);
+  // (2) senão, o veredito de oferta da Jev; (3) fallback regex.
   const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
+    if (ehObjecaoTurno && acaoNegociacao !== null) {
+      return {
+        pode: acaoNegociacao === 'mostrar_opcoes',
+        motivo: `negociacao_${acaoNegociacao}`,
+        criterio: null,
+      };
+    }
     if (vereditoOfertaJev !== null) {
       return {
         pode: vereditoOfertaJev.oferecer,
@@ -4483,41 +4491,6 @@ async function executarTurnoDoAgente(
             pedidosDeOpcoesTurno,
           );
         }
-        // ── PERSISTÊNCIA ESTRUTURADA DA NEGOCIAÇÃO (banco) ───────────────────
-        // Além do jsonb da conversa, o estado fica em `negotiation_state` (por
-        // contato+tópico) para o sistema RECONHECER dias depois. Só quando há
-        // objeção neste turno e não é preview.
-        if (!preview && leadId && motivoObjecaoTurno !== null && topicNegociacao !== null) {
-          void (async () => {
-            if (aguardavaConfirmacao && negouOpcoes) {
-              await marcarEncaminhado(pool, tenantId, leadId, topicNegociacao);
-            } else if (aguardavaConfirmacao && confirmouOpcoes) {
-              // Confirmou: mantém o estado e libera a oferta neste turno.
-              await registrarTentativa(pool, {
-                organizationId: tenantId,
-                contactId: leadId,
-                conversationId: input.conversationId,
-                topic: topicNegociacao,
-                motivo: motivoObjecaoTurno,
-                valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
-              });
-            } else {
-              // Objeção nova/insistência: registra a tentativa e, se a ação foi a
-              // 3ª (perguntar), marca que estamos aguardando a resposta.
-              const st = await registrarTentativa(pool, {
-                organizationId: tenantId,
-                contactId: leadId,
-                conversationId: input.conversationId,
-                topic: topicNegociacao,
-                motivo: motivoObjecaoTurno,
-                valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
-              });
-              if (acaoNegociacao === 'persuadir_3_e_perguntar' || st?.attempts === 3) {
-                await marcarAguardandoConfirmacao(pool, tenantId, leadId, topicNegociacao);
-              }
-            }
-          })().catch(() => {});
-        }
         const fotos = fotosDeclaradas;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
@@ -5983,6 +5956,36 @@ async function executarTurnoDoAgente(
             jailbreak_level: jailbreakLevel,
           },
         );
+      }
+    }
+
+    // ── PERSISTÊNCIA ESTRUTURADA DA NEGOCIAÇÃO (uma vez por TURNO) ──────────
+    // Fora do loop de tools (o `send_message` roda N vezes; registrar ali inflava
+    // `attempts`). Aqui é o ponto único pós-modelo. Só com objeção e sem preview.
+    if (!preview && leadId && motivoObjecaoTurno !== null && topicNegociacao !== null) {
+      if (aguardavaConfirmacao && negouOpcoes) {
+        await marcarEncaminhado(pool, tenantId, leadId, topicNegociacao);
+      } else if (aguardavaConfirmacao && confirmouOpcoes) {
+        await registrarTentativa(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+          conversationId: input.conversationId,
+          topic: topicNegociacao,
+          motivo: motivoObjecaoTurno,
+          valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
+        });
+      } else {
+        const st = await registrarTentativa(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+          conversationId: input.conversationId,
+          topic: topicNegociacao,
+          motivo: motivoObjecaoTurno,
+          valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
+        });
+        if (acaoNegociacao === 'persuadir_3_e_perguntar' || st?.attempts === 3) {
+          await marcarAguardandoConfirmacao(pool, tenantId, leadId, topicNegociacao);
+        }
       }
     }
 

@@ -47,17 +47,20 @@ export function perguntaDeNegociacaoJev(ctx: ContextoDeNegociacao): PerguntasDeJ
     acao: {
       type: 'choice',
       instructions:
-        `Objeção de ${ctx.motivo}, com ${ctx.attempts} tentativa(s) de convencer já feitas. ` +
+        `Objeção de ${ctx.motivo}. Esta é a tentativa Nº ${ctx.attempts + 1} de CONVENCER ` +
+        `(já foram feitas ${ctx.attempts}). ` +
         (ctx.negou
-          ? 'O cliente NEGOU a oferta de ver outras opções — encaminhe ao responsável e encerre a objeção.'
+          ? 'O cliente NEGOU a oferta de ver outras opções — escolha "encaminhar_e_encerrar".'
           : ctx.confirmou
-            ? 'O cliente CONFIRMOU que quer ver outras opções — mostre.'
-            : 'Qual a AÇÃO deste turno?') +
-        ' Regra: 1ª e 2ª = só convencer; 3ª = convencer E perguntar se pode mostrar outras opções; ' +
-        'desconto/regra proibida = encaminhar.',
+            ? 'O cliente CONFIRMOU que quer ver outras opções — escolha "mostrar_opcoes".'
+            : ctx.desconto
+              ? 'O cliente pediu DESCONTO (regra proibida) — escolha "handoff".'
+              : 'Escolha a ação certa para ESTA tentativa:') +
+        ' Regras: tentativa 1 → persuadir_1; tentativa 2 → persuadir_2; tentativa 3 → ' +
+        'persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
       criteria: {
-        persuadir_1: '1ª tentativa: justificar com dados reais; NÃO oferecer motos',
-        persuadir_2: '2ª tentativa: convencer de novo com ângulo diferente; NÃO oferecer motos',
+        persuadir_1: '1ª tentativa de convencer: justificar com dados reais; NÃO oferecer motos',
+        persuadir_2: '2ª tentativa de convencer: ângulo diferente; NÃO oferecer motos',
         persuadir_3_e_perguntar:
           '3ª tentativa: convencer E, na MESMA mensagem, avisar o responsável + perguntar se pode mostrar opções',
         mostrar_opcoes: 'o cliente confirmou: mostrar opções que atacam o motivo',
