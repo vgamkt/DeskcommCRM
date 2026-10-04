@@ -29,6 +29,7 @@ import { decidir } from "@/lib/ai/jev";
 import { alvosDeJevDe } from "@/lib/ai/jev/config";
 import { alvosDeJevDaOrg } from "@/lib/ai/jev/resolver";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { ehObjecaoValor } from "@/lib/agent-engine/agent/objecao-de-valor";
 import {
   perguntaDeSentimentoDeJev,
   sentimentoDaRespostaDeJev,
@@ -375,7 +376,20 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     });
 
     // ── Emit alert if below threshold ────────────────────────────────────
-    if (result.sentiment_score < threshold) {
+    //
+    // EXCEÇÃO — objeção de valor: o alerta dispara `triggerHandoff('low_sentiment')`,
+    // que silencia o bot para sempre (`bot_silenced_until='infinity'`). Numa objeção
+    // ("achei caro", "muito rodada", "muito antiga") a escalação é da NEGOCIAÇÃO
+    // (persuade 1→2→3→encaminha), decidida pelo dono: o bot NÃO pode parar — só
+    // avisar o responsável depois de esgotar as tentativas. Medido ao vivo
+    // (2026-10-04): o 1º "achei caro" silenciou a conversa e os turnos seguintes
+    // ficaram mudos. Por isso a nota de sentimento é registrada (metadata abaixo),
+    // mas o ALERTA de handoff não sai quando a mensagem é objeção de valor.
+    if (result.sentiment_score < threshold && ehObjecaoValor(body)) {
+      console.warn("[ai-sentiment-worker] objeção de valor — handoff por sentimento suprimido (negociação cuida)", {
+        message_id: messageId,
+      });
+    } else if (result.sentiment_score < threshold) {
       const { error: emitErr } = await admin.rpc(
         "emit_event" as never,
         {
