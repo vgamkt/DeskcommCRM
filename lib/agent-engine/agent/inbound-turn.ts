@@ -5801,8 +5801,21 @@ async function executarTurnoDoAgente(
       prefetchDeJevDe(process.env) &&
       catalogoMapeamento !== null &&
       (await alvosDeJevDaOrg(pool, tenantId, 'catalog_criteria')).length > 0;
+    // Pré-filtro do prefetch (custo): só vale pré-buscar quando a mensagem PEDE
+    // moto/alternativa — em "bom dia", "qual o endereço" etc. a extração da Jev
+    // seria uma chamada `catalog_criteria` jogada fora. Mesma régua conservadora
+    // do extrator interno (`querMoto`, que já ignora acenos).
+    const prefetchRelevante =
+      querMoto(mensagemDoJob) ||
+      mencionaMoto(mensagemDoJob) ||
+      (motoAtualDaConversa !== null && querAlternativa(mensagemDoJob));
     let blocoCandidatas = '';
-    if (usaPrefetchDaJev && catalogoMapeamento !== null && mensagemDoJob.trim() !== '') {
+    if (
+      usaPrefetchDaJev &&
+      catalogoMapeamento !== null &&
+      prefetchRelevante &&
+      mensagemDoJob.trim() !== ''
+    ) {
       const colunasCriterioPrefetch = camposDeBusca(catalogoMapeamento, {
         dinamico: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
         enviarTodas: agentConfig?.catalogConfig?.enviar_todas_que_casam === true,
@@ -5861,6 +5874,11 @@ async function executarTurnoDoAgente(
             if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
           }
           blocoCandidatas = renderCandidatasDoTurno(selecaoPrefetch.motos);
+          // Anti-duplicação: a extração de critérios JÁ rodou aqui. Sem marcar o
+          // flag, o extrator INTERNO (dentro de `send_message`) rodaria de novo —
+          // DUAS chamadas `catalog_criteria` no mesmo turno e possível dupla
+          // filtragem. O prefetch existe para ANTECIPAR essa extração, não somá-la.
+          extraiuCriteriosNesteTurno = true;
           runLog.info('prefetch de catálogo (Jev) — candidatas injetadas', {
             candidatas: selecaoPrefetch.motos.length,
             chars_bloco: blocoCandidatas.length,
