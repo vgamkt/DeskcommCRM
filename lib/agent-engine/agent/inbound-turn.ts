@@ -2803,6 +2803,12 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  // Contador PRÓPRIO do bloco determinístico da apresentação (texto + fotos).
+  // Fica no closure do TURNO (não dentro do `send_message.execute`) para ser
+  // estável e compartilhado: re-run do turno reusa os mesmos seqs → o ledger
+  // (job_id, seq) reconhece `already_sent` e NÃO reenvia. Ver o bloco em
+  // `enviarApresentacao` para o porquê (anti-loop de envio medido ao vivo).
+  let seqApresentacao = 10_000;
   // Motos que `crm_query_external_data` devolveu NESTE turno (nome + fotos).
   // O modelo lite lista a moto em texto mas esquece de mandar a foto (medido:
   // gpt-4o-mini, gemini-2.5/3.1-flash-lite). O motor usa este índice para anexar
@@ -4604,9 +4610,14 @@ async function executarTurnoDoAgente(
           // mas PRECISA caber em `smallint` (send_ledger.seq): 10.000 dá folga de
           // sobra sobre `maxSendsPerTurn` (default 12) e sobre o teto físico do turno.
           const BASE_SEQ_APRESENTACAO = 10_000;
-          let seqApresentacao = BASE_SEQ_APRESENTACAO;
           // O seq do bloco da apresentação — estável por POSIÇÃO, nunca pelo
           // contador global. Só ele vai ao adapter nas mensagens deste bloco.
+          //
+          // RESETA para a base no INÍCIO de cada `enviarApresentacao`: assim o MESMO
+          // bloco (mesma sequência de itens) gera a MESMA lista de seqs em QUALQUER
+          // chamada e em QUALQUER re-run do turno — o ledger reconhece `already_sent`
+          // em vez de criar intenções novas. Sem o reset, uma 2ª chamada de
+          // `send_message` no mesmo turno avançaria o contador e furaria a dedupe.
           const proximoSeqApresentacao = (): number => (seqApresentacao += 1);
 
           const enviarTexto = async (txt: string): Promise<void> => {
@@ -4662,6 +4673,9 @@ async function executarTurnoDoAgente(
             textoDoModelo: string,
             agrupar: boolean,
           ): Promise<ChannelSendResult> => {
+            // Reset do contador do bloco: a MESMA apresentação gera os MESMOS seqs
+            // em qualquer chamada/re-run (dedupe pelo ledger). Ver o bloco acima.
+            seqApresentacao = BASE_SEQ_APRESENTACAO;
             const cfg = agentConfig?.catalogConfig;
             let introducao: string;
             let final = '';
