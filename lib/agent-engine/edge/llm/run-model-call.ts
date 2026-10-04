@@ -450,20 +450,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     const prepareStep =
       pruneBetween === undefined
         ? undefined
-        : ({ messages: stepMessages }: { messages: ModelMessage[] }): { messages: ModelMessage[] } => {
+        : ({ messages: stepMessages }: { messages: ModelMessage[] }): { messages: ModelMessage[] } => ({
             // A régua de poda do call site troca o resultado por stub (preserva
             // pareamento tool-call/result e o resumo). O override carrega para os
             // steps seguintes, então a fita para de crescer.
-            const podada = pruneBetween(stepMessages);
-            deps.log?.info('prune-entre-steps: fita podada', {
-              purpose,
-              msgs_antes: stepMessages.length,
-              msgs_depois: podada.length,
-              chars_antes: JSON.stringify(stepMessages).length,
-              chars_depois: JSON.stringify(podada).length,
-            });
-            return { messages: podada };
-          };
+            messages: pruneBetween(stepMessages),
+          });
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
     // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
     result = await generateText({
