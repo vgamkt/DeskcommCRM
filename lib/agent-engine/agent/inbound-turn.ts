@@ -6014,6 +6014,16 @@ async function executarTurnoDoAgente(
             admin: deps.crmCfg.supabase,
           });
     const openingTextOnly: ModelMessage[] = [{ role: 'user', content: openingText }];
+    // ── ENXUGAMENTO DO CHECKPOINT (alavanca D) ────────────────────────────────
+    // O fechamento só RESUME a conversa — não decide ação nem oferece motos. Ele
+    // NÃO precisa dos blocos SITUACIONAIS do turno (catálogo, objeção, skills,
+    // "mais opções", faixa de preço): isso é instrução de CONDUTA para a chamada
+    // principal, não contexto para resumir. Medido ao vivo (2026-10-04): a
+    // abertura domina o checkpoint (abertura ~8.8–11.5k chars × fita ~0.3k) e o
+    // sufixo é a maior parte dela. Mandar só a BASE (ritual + contexto/histórico)
+    // corta o checkpoint sem perder fato recuperável — o resultado do turno já
+    // vai na fita, e o resumo durável é o que a instrução pede.
+    const openingParaCheckpoint: ModelMessage[] = [{ role: 'user', content: openingBase }];
     const openingMessages: ModelMessage[] =
       nativeParts.length === 0
         ? openingTextOnly
@@ -6307,6 +6317,19 @@ async function executarTurnoDoAgente(
       deps.knobs.prune !== undefined
         ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
         : turn.result.response.messages;
+    // Observabilidade do fechamento (enxugamento de tokens): decompõe o prompt do
+    // checkpoint para saber o que realmente pesa — a abertura re-serializada, a
+    // fita de tool-results ou a instrução. Barato e sem conteúdo (só tamanhos).
+    const checkpointFitaChars = responseMessages.reduce(
+      (n, m) => n + JSON.stringify(m).length,
+      0,
+    );
+    runLog.info('checkpoint (composição)', {
+      abertura_chars: openingParaCheckpoint.reduce((n, m) => n + String(m.content).length, 0),
+      abertura_completa_chars: openingTextOnly.reduce((n, m) => n + String(m.content).length, 0),
+      fita_chars: checkpointFitaChars,
+      instrucao_chars: CHECKPOINT_INSTRUCTION.length,
+    });
 
     // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
     //
@@ -6334,9 +6357,10 @@ async function executarTurnoDoAgente(
           : {}),
         system,
         messages: [
-          // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-          // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-          ...openingTextOnly,
+          // Enxugamento (alavanca D): o checkpoint usa só a BASE da abertura — sem os
+          // blocos situacionais do turno (ver `openingParaCheckpoint`). A mídia nativa
+          // (cara) já fez seu trabalho na 1ª chamada e não vai de novo.
+          ...openingParaCheckpoint,
           ...responseMessages,
           { role: 'user', content: CHECKPOINT_INSTRUCTION },
         ],
