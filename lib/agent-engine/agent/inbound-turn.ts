@@ -589,6 +589,23 @@ export const MAX_VETOS_DE_MULETA = 2;
 export const MAX_VETOS_DE_FALSO_VAZIO = 2;
 
 /**
+ * O mesmo degrau para o veto de `mass_identical` (anti-spam de template repetido).
+ *
+ * POR QUE ISTO EXISTE (medido ao vivo 2026-10-04): quando o modelo tenta reenviar
+ * a MESMA legenda de moto (o texto da legenda é gerado pelo sistema e é idêntico
+ * toda vez), o gate `spinning` vetava — e, ao contrário dos outros gates, NÃO
+ * tinha plano B. O modelo insistia, o veto voltava, e o breaker DESLIGAVA
+ * `send_message` pelo resto do turno → o cliente ficava SEM RESPOSTA. A Jev
+ * negava a oferta corretamente (`jev_negou`); a causa do silêncio era este gate
+ * sem saída. Depois de N vetos no MESMO turno, o fail-safe SOLTA o envio (o
+ * anti-spam é proteção contra BLAST entre números, não contra repetir a mesma
+ * moto para o mesmo cliente que já está na conversa).
+ *
+ * Soltar não é soltar calado: o fail-safe registra `runLog.warn`.
+ */
+export const MAX_VETOS_DE_SPINNING = 2;
+
+/**
  * C-107 (decisão do dono, 2026-09-29): pergunta de ORÇAMENTO determinística.
  * Quando o cliente fala de preço SEM citar valor ("quero uma moto barata") e não
  * há moto atual, o motor NÃO apresenta catálogo e envia ESTA pergunta — o texto
@@ -3066,6 +3083,11 @@ async function executarTurnoDoAgente(
   // (com registro) — mesma doutrina do vazamento de vocabulário: cliente mudo
   // nunca é desfecho.
   let muletaVetoCount = 0;
+  // Contador do fail-safe do anti-spam (`mass_identical`): 1º veto no turno
+  // ensina o modelo a variar; persistiu, SOLTA o envio (com registro). Sem isto,
+  // reenviar a mesma legenda de moto prendia o turno até o breaker desligar
+  // `send_message` → cliente sem resposta (medido ao vivo 2026-10-04).
+  let spinningVetoCount = 0;
   // Uma recusa deste tipo devolve o texto confirmado ao modelo para que ele
   // reescreva antes de falar com o cliente. Não gasta envio nem toca no canal.
   let falseEmptyInboundVetoCount = 0;
@@ -4867,6 +4889,28 @@ async function executarTurnoDoAgente(
               openedCaseThisTurn,
               hasOpenCase: hasOpenCase || openedCaseThisTurn,
               enforceInternalVocabulary: false,
+            });
+          }
+          if (chain.status === 'vetoed' && chain.code === 'mass_identical') {
+            // ANTI-SPAM COM SAÍDA (medido ao vivo 2026-10-04): o gate `spinning`
+            // vetava a MESMA legenda de moto reenviada e, sem plano B, o modelo
+            // insistia até o breaker desligar `send_message` → cliente SEM
+            // RESPOSTA. A regra do dono: repetir a MESMA moto para o MESMO cliente
+            // que já está na conversa não é "blast de template" (o blast é entre
+            // NÚMEROS). 1º veto ensina o modelo a variar; persistiu, o envio sai
+            // com SÓ este gate desarmado — os demais continuam valendo.
+            spinningVetoCount += 1;
+            if (spinningVetoCount < MAX_VETOS_DE_SPINNING) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            runLog.warn('fail-safe do anti-spam: envio liberado após vetos seguidos', {
+              vetos: spinningVetoCount,
+            });
+            chain = await runBeforeSend({
+              ...beforeSendArgs,
+              openedCaseThisTurn,
+              hasOpenCase: hasOpenCase || openedCaseThisTurn,
+              enforceSpinning: false,
             });
           }
           if (chain.status === 'vetoed' && chain.code === 'muleta_mecanica') {
