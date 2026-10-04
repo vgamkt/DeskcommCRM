@@ -16,7 +16,7 @@ import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, pruneMessages, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
@@ -136,15 +136,14 @@ export interface RunModelCallInput {
    * ENXUGAMENTO ENTRE STEPS (opcional). No loop de tools, cada step reenvia a
    * fita INTEIRA de tool-calls/results acumulada — é o multiplicador que faz um
    * turno de conversa passar de 30k tokens de input. Quando presente, o
-   * `prepareStep` do SDK aplica esta função à fita antes de cada step seguinte.
+   * `prepareStep` do SDK poda os tool-results ANTIGOS antes de cada step seguinte,
+   * mantendo as últimas `keepLastToolMessages` íntegras (o resultado corrente
+   * nunca é podado — o SDK cuida do pareamento tool-call/result).
    *
-   * A FUNÇÃO vem de fora (call site) de propósito: o seam não conhece a régua de
-   * poda (que troca o resultado por um STUB e preserva o pareamento). O SDK
-   * `pruneMessages` NÃO serve aqui — ele REMOVE os results de verdade (medido:
-   * `toolCalls:'all'` deixa a fita só com a 1ª mensagem), e no meio do turno o
-   * modelo perderia o resultado que acabou de receber.
+   * Cumulativo entre steps (o override carrega adiante), então a fita para de
+   * crescer. Ausente = comportamento de antes (fita inteira em todo step).
    */
-  pruneBetweenSteps?: (messages: ModelMessage[]) => ModelMessage[];
+  pruneBetweenSteps?: { keepLastToolMessages: number };
   /**
    * Timeout por chamada, em ms (opcional). Aborta a chamada se o modelo demorar
    * mais que isso — trava anti-travamento do turno. Ausente = sem timeout.
@@ -447,14 +446,20 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // O `keepLastToolMessages` conta a partir do fim, então a rodada corrente fica
     // íntegra. Se o knob não veio, `prepareStep` é undefined (comportamento de antes).
     const pruneBetween = input.pruneBetweenSteps;
+    const keep = Math.max(1, Math.floor(pruneBetween?.keepLastToolMessages ?? 1));
     const prepareStep =
       pruneBetween === undefined
         ? undefined
         : ({ messages: stepMessages }: { messages: ModelMessage[] }): { messages: ModelMessage[] } => ({
-            // A régua de poda do call site troca o resultado por stub (preserva
-            // pareamento tool-call/result e o resumo). O override carrega para os
-            // steps seguintes, então a fita para de crescer.
-            messages: pruneBetween(stepMessages),
+            messages: pruneMessages({
+              messages: stepMessages,
+              // Mantém íntegras as tool-messages das últimas `keep` rodadas;
+              // as ANTERIORES viram um stub que preserva o pareamento tool-call/result
+              // (o SDK é quem garante que o passo corrente nunca é podado).
+              toolCalls: `before-last-${keep}-messages`,
+              reasoning: 'before-last-message',
+              emptyMessages: 'remove',
+            }),
           });
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
     // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
