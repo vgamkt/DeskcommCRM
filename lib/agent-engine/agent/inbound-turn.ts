@@ -4600,8 +4600,10 @@ async function executarTurnoDoAgente(
           // MESMA mensagem, na MESMA posição, gera o MESMO `seq` nas duas execuções —
           // e o adapter (que já deduplica por (job_id, seq) no ledger) devolve
           // `already_sent` no re-run, SEM reenviar. A base é alta para não colidir
-          // com os seqs do texto do modelo (que usa o contador global a partir de 1).
-          const BASE_SEQ_APRESENTACAO = 1_000_000;
+          // com os seqs do texto do modelo (que usa o contador global a partir de 1),
+          // mas PRECISA caber em `smallint` (send_ledger.seq): 10.000 dá folga de
+          // sobra sobre `maxSendsPerTurn` (default 12) e sobre o teto físico do turno.
+          const BASE_SEQ_APRESENTACAO = 10_000;
           let seqApresentacao = BASE_SEQ_APRESENTACAO;
           // O seq do bloco da apresentação — estável por POSIÇÃO, nunca pelo
           // contador global. Só ele vai ao adapter nas mensagens deste bloco.
