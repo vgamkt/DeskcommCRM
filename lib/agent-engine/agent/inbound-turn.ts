@@ -6066,6 +6066,11 @@ async function executarTurnoDoAgente(
     // limpo; a fila destrava no worker).
     const timeoutMs = agentConfig?.turnModelTimeoutMs ?? 45000;
     const maxTentativas = agentConfig?.turnModelMaxTentativas ?? 2;
+    // Quantas rodadas de tool-results ficam íntegras a cada step do loop. `0` =
+    // desligado (fita inteira em todo step). `minResultTokens: 0` no prune entre
+    // steps poda TODO resultado antigo (no fechamento o default 200 mantém os
+    // pequenos; aqui o objetivo é conter o crescimento a cada step).
+    const keepBetweenSteps = deps.knobs.pruneBetweenStepsKeep ?? 0;
     const turn = await chamarTurnoComResiliencia(
       () =>
         runModelCall(
@@ -6088,9 +6093,15 @@ async function executarTurnoDoAgente(
             timeoutMs,
             // Enxugamento entre steps: poda a fita de tool-results a cada step do
             // loop (corta o multiplicador do `agent_turn`). `undefined`/0 = desligado.
-            ...(deps.knobs.pruneBetweenStepsKeep !== undefined &&
-            deps.knobs.pruneBetweenStepsKeep > 0
-              ? { pruneBetweenSteps: { keepLastToolMessages: deps.knobs.pruneBetweenStepsKeep } }
+            // Usa a MESMA régua do fechamento (`pruneToolResults`), que troca o
+            // resultado por stub e preserva o pareamento — o `pruneMessages` do SDK
+            // removia os results de verdade e deixaria o modelo sem o resultado
+            // corrente.
+            ...(keepBetweenSteps > 0
+              ? {
+                  pruneBetweenSteps: (msgs: ModelMessage[]): ModelMessage[] =>
+                    pruneToolResults(msgs, { windowTurns: keepBetweenSteps, minResultTokens: 0 }),
+                }
               : {}),
             ...(agentConfig !== null
               ? {
