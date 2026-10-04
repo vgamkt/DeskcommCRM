@@ -555,6 +555,24 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     ],
   );
 
+  // Diagnóstico de RACIOCÍNIO: o output alto pode ser reasoning (cobrado e
+  // reenviado). Mede quantos steps e quantos chars de reasoning o modelo gastou.
+  // Sem conteúdo: só tamanhos.
+  const stepsCount = result.steps?.length ?? 0;
+  const reasoningChars = (result.steps ?? []).reduce(
+    (n, s) => n + (s.reasoningText?.length ?? 0),
+    0,
+  );
+  if (purpose === 'agent_turn') {
+    deps.log?.info('agent_turn: raciocínio e passos', {
+      organization_id: input.tenantId,
+      model,
+      steps: stepsCount,
+      reasoning_chars: reasoningChars,
+      output_tokens: usage.outputTokens,
+    });
+  }
+
   // Só métricas — nunca conteúdo de mensagem (PII) nem chave.
   deps.log?.info('llm: chamada concluída', {
     organization_id: input.tenantId,
