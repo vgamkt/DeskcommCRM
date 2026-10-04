@@ -4588,6 +4588,24 @@ async function executarTurnoDoAgente(
           const dormir =
             deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
           let ultimo: ChannelSendResult | undefined;
+          // ─── IDEMPOTÊNCIA DA APRESENTAÇÃO (anti-loop de envio) ────────────────
+          // O bloco determinístico (texto + fotos) NÃO pode reenviar no re-run do
+          // turno. Medido ao vivo (2026-10-04): o modelo estourou o timeout, a
+          // resiliência re-rodou o turno e a apresentação saiu DE NOVO — 13 bolhas
+          // vazias. A causa: os seqs do bloco vinham do contador GLOBAL (`seq`), que
+          // reinicia em 0 no re-run, então o ledger (job_id, seq) criava intenções
+          // NOVAS em vez de reconhecer as já aceitas.
+          //
+          // Aqui o bloco usa um contador PRÓPRIO com base RESERVADA e estável: a
+          // MESMA mensagem, na MESMA posição, gera o MESMO `seq` nas duas execuções —
+          // e o adapter (que já deduplica por (job_id, seq) no ledger) devolve
+          // `already_sent` no re-run, SEM reenviar. A base é alta para não colidir
+          // com os seqs do texto do modelo (que usa o contador global a partir de 1).
+          const BASE_SEQ_APRESENTACAO = 1_000_000;
+          let seqApresentacao = BASE_SEQ_APRESENTACAO;
+          // O seq do bloco da apresentação — estável por POSIÇÃO, nunca pelo
+          // contador global. Só ele vai ao adapter nas mensagens deste bloco.
+          const proximoSeqApresentacao = (): number => (seqApresentacao += 1);
 
           const enviarTexto = async (txt: string): Promise<void> => {
             if (txt.trim() === '') return;
@@ -4597,14 +4615,13 @@ async function executarTurnoDoAgente(
               sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
               jitter: () => 1200 + Math.floor(Math.random() * 800),
               send: (bubble): Promise<ChannelSendResult> => {
-                seq += 1;
                 return liveChannel().send({
                   tenantId,
                   leadId,
                   jobId: liveJob().id,
                   jobClaim: claimOfJob(liveJob()),
                   agentOperation,
-                  seq,
+                  seq: proximoSeqApresentacao(),
                   conversationId: input.conversationId,
                   body: bubble,
                 });
@@ -4619,7 +4636,9 @@ async function executarTurnoDoAgente(
               jobId: liveJob().id,
               jobClaim: claimOfJob(liveJob()),
               agentOperation,
-              seq: (seq += 1),
+              // seq estável por posição: a MESMA foto na MESMA posição reusa o
+              // mesmo seq no re-run → o ledger reconhece `already_sent`.
+              seq: proximoSeqApresentacao(),
               conversationId: input.conversationId,
               body: legenda,
               media: { type: 'image', url },
