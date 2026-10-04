@@ -1093,12 +1093,6 @@ export interface InboundTurnKnobs {
    */
   prune?: PruneToolResultsKnobs;
   /**
-   * Enxugamento ENTRE STEPS do loop de tools (PRUNE_BETWEEN_STEPS_KEEP). `undefined`
-   * ou `0` = desligado. `>=1` = mantém as últimas N tool-messages íntegras em cada
-   * step e resume as anteriores — corta o multiplicador do `agent_turn`.
-   */
-  pruneBetweenStepsKeep?: number;
-  /**
    * Skills situacionais (F3-09): diretório onde os near-misses de matching viram
    * candidatos ao golden set (GOLDEN_CANDIDATES_DIR). Ausente = misses NÃO gravados (o
    * matching + injeção de corpo seguem valendo) — main.ts sempre o preenche pelo env;
@@ -6086,12 +6080,6 @@ async function executarTurnoDoAgente(
             tools,
             maxSteps,
             timeoutMs,
-            // Enxugamento entre steps: poda a fita de tool-results a cada step do
-            // loop (corta o multiplicador do `agent_turn`). `undefined`/0 = desligado.
-            ...(deps.knobs.pruneBetweenStepsKeep !== undefined &&
-            deps.knobs.pruneBetweenStepsKeep > 0
-              ? { pruneBetweenSteps: { keepLastToolMessages: deps.knobs.pruneBetweenStepsKeep } }
-              : {}),
             ...(agentConfig !== null
               ? {
                   model: agentConfig.model,
