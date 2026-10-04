@@ -153,6 +153,11 @@ const envSchema = z.object({
   // Pruning de tool results antigos.
   PRUNE_TOOL_RESULTS_WINDOW_TURNS: z.coerce.number().int().positive().default(4),
   PRUNE_TOOL_RESULTS_MIN_RESULT_TOKENS: z.coerce.number().int().positive().default(200),
+  // ENXUGAMENTO ENTRE STEPS do loop de tools: quantas tool-messages recentes
+  // ficam íntegras a cada step; as anteriores viram stub. `0` = desligado
+  // (fita inteira em todo step, comportamento antigo). Corta o multiplicador do
+  // `agent_turn` sem mudar o conteúdo da abertura/system.
+  PRUNE_BETWEEN_STEPS_KEEP: z.coerce.number().int().min(0).default(1),
   // Skills situacionais — near-misses viram candidatos ao golden set (curadoria
   // humana; escrita por fs em runtime, gitignored).
   GOLDEN_CANDIDATES_DIR: z.string().min(1).default('lib/agent-engine/golden-candidates'),

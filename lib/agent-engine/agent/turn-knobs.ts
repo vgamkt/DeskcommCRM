@@ -31,6 +31,7 @@ export function turnKnobsFromEnv(env: Env): InboundTurnKnobs {
       windowTurns: env.PRUNE_TOOL_RESULTS_WINDOW_TURNS,
       minResultTokens: env.PRUNE_TOOL_RESULTS_MIN_RESULT_TOKENS,
     },
+    pruneBetweenStepsKeep: env.PRUNE_BETWEEN_STEPS_KEEP,
     goldenCandidatesDir: env.GOLDEN_CANDIDATES_DIR,
     stageClassifier: {
       ...(env.STAGE_CLASSIFIER_MODEL !== undefined ? { model: env.STAGE_CLASSIFIER_MODEL } : {}),
