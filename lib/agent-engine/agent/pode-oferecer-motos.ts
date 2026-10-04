@@ -123,6 +123,20 @@ function decisao(pode: boolean, motivo: string, criterio: CriterioDaOferta = nul
   return { pode, motivo, criterio };
 }
 
+/**
+ * PEDIDO EXPLÍCITO de "mais opções" — sinal FORTE do cliente.
+ *
+ * A Jev é a autoridade da oferta, mas ela NÃO pode NEGAR um pedido legítimo e
+ * explícito do cliente. Medido ao vivo (2026-10-04): em "quero ver mais opções"
+ * a Jev devolveu `oferecer:false` e o turno ficou mudo — contrariando a regra
+ * (o cliente PEDIU). Aqui a régua determinística vence a Jev: quando a mensagem
+ * reconhece o pedido, a oferta é forçada. `null` = sem pedido explícito (a Jev
+ * decide normalmente). Puro.
+ */
+export function pedidoExplicitoDeMaisOpcoes(mensagem: string): DecisaoDeOferta | null {
+  return querMaisOpcoes(mensagem) ? decisao(true, 'cliente_pediu_mais_opcoes') : null;
+}
+
 export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
   const msg = s.mensagem;
 

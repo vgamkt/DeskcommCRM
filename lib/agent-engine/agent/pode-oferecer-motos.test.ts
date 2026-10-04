@@ -4,6 +4,7 @@ import type { EstadoObjecao } from './objecao-de-valor';
 import {
   clienteRejeitouMoto,
   criterioDaObjecao,
+  pedidoExplicitoDeMaisOpcoes,
   podeOferecerMotos,
   preferenciaDoCriterio,
   type SinaisDeOferta,
@@ -48,6 +49,22 @@ describe('clienteRejeitouMoto', () => {
   it('não confunde com objeção de preço ou assunto alheio', () => {
     expect(clienteRejeitouMoto('achei cara')).toBe(false);
     expect(clienteRejeitouMoto('de sao paulo')).toBe(false);
+  });
+});
+
+describe('pedidoExplicitoDeMaisOpcoes', () => {
+  it('força a oferta quando o cliente pede mais opções (vence a Jev)', () => {
+    for (const m of ['quero ver mais opções', 'tem mais opções?', 'mostra as outras', 'ver mais']) {
+      expect(pedidoExplicitoDeMaisOpcoes(m), m).toMatchObject({
+        pode: true,
+        motivo: 'cliente_pediu_mais_opcoes',
+      });
+    }
+  });
+
+  it('não força quando não há pedido explícito', () => {
+    expect(pedidoExplicitoDeMaisOpcoes('achei caro')).toBeNull();
+    expect(pedidoExplicitoDeMaisOpcoes('bom dia')).toBeNull();
   });
 });
 

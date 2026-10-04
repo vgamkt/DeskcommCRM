@@ -211,6 +211,7 @@ import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
 import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
+  pedidoExplicitoDeMaisOpcoes,
   podeOferecerMotos,
   preferenciaDoCriterio,
   type DecisaoDeOferta,
@@ -2994,7 +2995,8 @@ async function executarTurnoDoAgente(
       );
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
   // ORDEM: (1) objeção → a NEGOCIAÇÃO manda (só `mostrar_opcoes` oferece);
-  // (2) senão, o veredito de oferta da Jev; (3) fallback regex.
+  // (2) pedido EXPLÍCITO de "mais opções" — vence a Jev (o cliente PEDIU);
+  // (3) o veredito de oferta da Jev; (4) fallback regex.
   const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
     if (ehObjecaoTurno && acaoNegociacao !== null) {
       return {
@@ -3003,6 +3005,11 @@ async function executarTurnoDoAgente(
         criterio: null,
       };
     }
+    // A Jev nega pedidos legítimos (ex.: "quero ver mais opções" → oferecer:false,
+    // medido ao vivo 2026-10-04). Um pedido EXPLÍCITO do cliente é sinal forte e
+    // determinístico: não pode ser vetado por um veredito de modelo.
+    const pedidoExplicito = pedidoExplicitoDeMaisOpcoes(mensagem);
+    if (pedidoExplicito !== null) return pedidoExplicito;
     if (vereditoOfertaJev !== null) {
       return {
         pode: vereditoOfertaJev.oferecer,
