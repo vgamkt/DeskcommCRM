@@ -114,6 +114,43 @@ export function cabecalhosDeAtribuicaoOpenRouter(): Record<string, string> | und
  * (createFakeRegistry, sem fetch real); este caminho só é exercitado pelo smoke
  * (rede real → endpoint canônico do provider allowlistado).
  */
+/**
+ * MODOS DE RACIOCÍNIO do DeepSeek-V4: o modo "thinking" vem LIGADO por padrão,
+ * com esforço `high` — mesmo uma pergunta de uma linha emite centenas de
+ * reasoning tokens primeiro (doc oficial DeepSeek). Medido ao vivo (2026-10-04):
+ * `catalog_criteria` gastou **18.237 output tokens** e 54s; `agent_turn` estourou
+ * 136s. O modelo NÃO é de raciocínio por natureza — o thinking é um INTERRUPTOR
+ * ligado por omissão. Para atendimento, desligá-lo corta output e latência sem
+ * perder qualidade de resposta (não é tarefa de raciocínio).
+ *
+ * Injetamos `thinking: {type:"disabled"}` no corpo SÓ para modelos DeepSeek-V4
+ * (os outros modelos servidos pelo mesmo endpoint — mimo, glm, etc. — não aceitam
+ * esse campo). O env `LLM_THINKING` permite reativar (`enabled`) sem deploy.
+ */
+function pensarDesligadoParaDeepseek(): boolean {
+  const v = (process.env.LLM_THINKING ?? 'disabled').trim().toLowerCase();
+  return v !== 'enabled' && v !== 'on' && v !== '1';
+}
+
+export function comThinkingDesligado(base: typeof fetch): typeof fetch {
+  if (!pensarDesligadoParaDeepseek()) return base;
+  return (input, init) => {
+    if (init?.body !== undefined && typeof init.body === 'string') {
+      try {
+        const corpo = JSON.parse(init.body) as { model?: unknown; thinking?: unknown };
+        const modelo = typeof corpo.model === 'string' ? corpo.model : '';
+        if (/deepseek/i.test(modelo) && corpo.thinking === undefined) {
+          corpo.thinking = { type: 'disabled' };
+          return base(input, { ...init, body: JSON.stringify(corpo) });
+        }
+      } catch {
+        // corpo não-JSON: passa intacto (nunca quebra o envio por causa do knob)
+      }
+    }
+    return base(input, init);
+  };
+}
+
 export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): ProviderRegistry {
   const extra = opts?.allowedHosts ?? [];
   const contain = (endpoint: string): typeof fetch => {
@@ -171,7 +208,7 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
         apiKey,
         baseURL: OPENCODE_ZEN_V1,
         headers: opencodeHeaders(),
-        fetch: contain(OPENCODE_ZEN_V1),
+        fetch: comThinkingDesligado(contain(OPENCODE_ZEN_V1)),
       });
       return provider.chat(modelId);
     },
@@ -182,7 +219,7 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
         apiKey,
         baseURL: OPENCODE_GO_V1,
         headers: opencodeHeaders(),
-        fetch: contain(OPENCODE_GO_V1),
+        fetch: comThinkingDesligado(contain(OPENCODE_GO_V1)),
       });
       return provider.chat(modelId);
     },
