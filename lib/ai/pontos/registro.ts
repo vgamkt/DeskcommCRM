@@ -573,6 +573,78 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "O informante manda o mesmo resumo velho, ou nenhum, e o gerente perde o acompanhamento do atendimento.",
     registraEm: "llm_calls",
   },
+
+  // ───────────── Decisões estruturadas da Jev (pontos internos) ─────────────
+  // Passam pelo `decidir` da Jev (binding `<ponto>__jev`), não pelo seam de
+  // chat — o "modelo próprio" aqui é o fallback determinístico (regex/estado),
+  // não um modelo de conversa. O que a tela precisa oferecer é a escolha do
+  // provedor/modelo da JEV por ponto; é o que estes registros destravam.
+  {
+    id: "offer_motos",
+    rotulo: "Decidir quando mostrar motos",
+    oQueFaz: "Decide se o agente deve mostrar/enviar motos neste turno e com qual critério.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/oferta-jev.ts",
+    sintomaDeFalha:
+      "O agente deixa de mostrar motos quando o cliente pede, ou mostra na hora errada e polui a conversa.",
+    registraEm: "nenhum",
+  },
+  {
+    id: "negociacao",
+    rotulo: "Negociar a objeção",
+    oQueFaz: "Decide a ação da negociação: persuadir de novo, mostrar opções ou encaminhar ao responsável.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/negociacao-jev.ts",
+    sintomaDeFalha:
+      "O agente não insiste na objeção como deveria, ou encaminha cedo demais e a venda esfria.",
+    registraEm: "nenhum",
+  },
+  {
+    id: "objecao",
+    rotulo: "Reconhecer a objeção",
+    oQueFaz: "Decide se a mensagem é uma objeção e qual o tipo (preço, rodagem, ano ou outro).",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/objecao-jev.ts",
+    sintomaDeFalha:
+      "O agente não reconhece a reclamação do cliente e oferece motos em vez de tratar o que ele apontou.",
+    registraEm: "nenhum",
+  },
+  {
+    id: "moto_escolhida",
+    rotulo: "Reconhecer a moto escolhida",
+    oQueFaz: "Identifica qual moto o cliente escolheu ou apontou na conversa.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/agent-engine/agent/catalogo-da-conversa.ts",
+    sintomaDeFalha:
+      "O agente perde a moto que o cliente escolheu e volta a perguntar o que ele já disse.",
+    registraEm: "nenhum",
+  },
+  {
+    id: "skill_select",
+    rotulo: "Escolher as instruções do turno",
+    oQueFaz: "Escolhe quais instruções de atendimento (skills) entram na resposta deste turno.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "lib/agent-engine/agent/skill-select-jev.ts",
+    sintomaDeFalha:
+      "O agente responde com as instruções erradas para o momento da conversa.",
+    registraEm: "nenhum",
+  },
+  {
+    id: "knowledge_route",
+    rotulo: "Escolher o material de conhecimento",
+    oQueFaz: "Escolhe quais materiais do negócio (base de conhecimento) a IA deve consultar.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "lib/agent-engine/agent/knowledge-route-jev.ts",
+    sintomaDeFalha:
+      "O agente consulta o material errado — ou nenhum — ao responder o cliente.",
+    registraEm: "nenhum",
+  },
 ] as const;
 
 /** Índice por id, para quem resolve um binding. */

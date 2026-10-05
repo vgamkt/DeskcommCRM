@@ -114,6 +114,32 @@ const FORA_DO_SEAM: Record<string, { arquivo: string; marcador: string }> = {
     arquivo: "lib/ai/runtime/agent.ts",
     marcador: "buildModel",
   },
+  // Decisão estruturada da Jev: não passa pelo seam (`runModelCall`), então não
+  // tem `purpose:` — cada bridge é provado pelo marcador da chamada da Jev.
+  offer_motos: {
+    arquivo: "lib/agent-engine/agent/oferta-jev.ts",
+    marcador: "alvosDeJevDaOrg(db, tenantId, 'offer_motos')",
+  },
+  negociacao: {
+    arquivo: "lib/agent-engine/agent/negociacao-jev.ts",
+    marcador: "alvosDeJevDaOrg(db, tenantId, 'negociacao')",
+  },
+  objecao: {
+    arquivo: "lib/agent-engine/agent/objecao-jev.ts",
+    marcador: "alvosDeJevDaOrg(db, tenantId, 'objecao')",
+  },
+  skill_select: {
+    arquivo: "lib/agent-engine/agent/skill-select-jev.ts",
+    marcador: "alvosDeJevDaOrg(db, tenantId, 'skill_select')",
+  },
+  knowledge_route: {
+    arquivo: "lib/agent-engine/agent/knowledge-route-jev.ts",
+    marcador: "alvosDeJevDaOrg(db, tenantId, 'knowledge_route')",
+  },
+  moto_escolhida: {
+    arquivo: "lib/agent-engine/agent/catalogo-da-conversa.ts",
+    marcador: "alvosDeJevDaOrg(deps.db, deps.tenantId, 'moto_escolhida')",
+  },
 };
 
 describe("registro de pontos de IA × código", () => {
