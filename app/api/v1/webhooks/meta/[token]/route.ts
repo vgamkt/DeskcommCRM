@@ -22,7 +22,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { fail } from "@/lib/api/wrappers";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
-import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
+import { ingestMetaInbound, ingestMetaOutboundEcho } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -130,6 +130,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
           phone_number_id: e.phoneNumberId,
         });
       }
+      continue;
+    }
+
+    if (e.kind === "message_echo") {
+      // A pessoa respondeu pelo app (coexistência): registra e aplica a regra de
+      // assumir/pausar/religar, como no canal por QR.
+      const r = await ingestMetaOutboundEcho(admin, e, {
+        organizationId: session.organizationId,
+        canal: "meta",
+      });
+      desfechos.push(r.status);
       continue;
     }
 

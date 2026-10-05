@@ -22,7 +22,7 @@ import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities
 import { verifyGraphPartnerSignature } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
-import { ingestMetaInbound } from "./meta/ingest";
+import { ingestMetaInbound, ingestMetaOutboundEcho } from "./meta/ingest";
 import { parseMetaWebhook } from "./meta/webhook";
 import {
   atualizarEspelhoDoTemplate,
@@ -255,6 +255,17 @@ async function datafyInbound(
         // A sessão já veio do token do webhook: não há coluna de número oficial
         // para reencontrá-la, e essa é justamente a diferença do Datafy.
         channelSessionId: input.session.id,
+      });
+      desfechos.push(r.status);
+      continue;
+    }
+    if (e.kind === "message_echo") {
+      // ECHO DE SAÍDA (coexistência): o operador respondeu pelo app do celular.
+      // Grava como envio manual + aplica a regra de assumir/pausar/religar.
+      const r = await ingestMetaOutboundEcho(admin, e, {
+        organizationId: input.session.organization_id,
+        channelSessionId: input.session.id,
+        canal: "datafy",
       });
       desfechos.push(r.status);
       continue;

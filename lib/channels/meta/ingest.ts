@@ -26,10 +26,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 import { encontrarContatoPorTelefone } from "../contato-por-telefone";
-import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
+import { canonicalPhoneBR } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
 import { logger } from "@/lib/logger";
-import type { InboundMessageEvent } from "./webhook";
+import {
+  MOTIVO_COMANDO_OFF,
+  pausarIaDuravelmente,
+  pausarIaPorAtendimentoManual,
+} from "@/lib/escalacao/atendimento-manual";
+import { configDeComandosDoAgente, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
+import { reativarAutomaticoNaConversa } from "@/lib/escalacao/retomada";
+import type { InboundMessageEvent, MessageEchoEvent } from "./webhook";
 
 type Admin = SupabaseClient;
 
@@ -334,4 +341,141 @@ async function pedirPersistenciaDaMidia(
       detail: error.message,
     });
   }
+}
+
+/** Prévia curta do echo de saída (mesma convenção do inbound). */
+function previewOfEcho(e: MessageEchoEvent): string {
+  if (e.type === "text") return (e.text ?? "").slice(0, 120);
+  if (e.type === "audio") return e.media?.voice ? "🎤 Mensagem de voz" : "🎵 Áudio";
+  if (e.type === "image") return "📷 Imagem";
+  if (e.type === "video") return "🎬 Vídeo";
+  if (e.type === "document") return "📎 Documento";
+  return `[${e.type}]`;
+}
+
+/**
+ * INGESTÃO DO ECHO DE SAÍDA — a mensagem que o OPERADOR mandou pelo app do
+ * WhatsApp Business (coexistência). A Meta espelha no campo `smb_message_echoes`.
+ *
+ * Sem isto o CRM não sabe que uma PESSOA assumiu pelo celular: não registra a
+ * resposta no histórico e a IA continua respondendo por cima. Aqui a mensagem é
+ * gravada como `outbound`/`external_device` e aplicamos a MESMA regra do canal por
+ * QR: mensagem normal → pausa durável; `#off` → pausa; `#on` → religa.
+ */
+export async function ingestMetaOutboundEcho(
+  admin: Admin,
+  e: MessageEchoEvent,
+  dono: ChannelTenantScope & { channelSessionId?: string; canal?: string },
+): Promise<IngestOutcome> {
+  let sessao: { id: string; organization_id: string } | null;
+  if (dono.channelSessionId) {
+    // Caminho de quem JÁ resolveu a sessão pelo token do webhook (canal Datafy).
+    sessao = { id: dono.channelSessionId, organization_id: dono.organizationId };
+  } else {
+    try {
+      sessao = await sessionByPhoneNumberId(admin, dono.organizationId, e.phoneNumberId);
+    } catch (err) {
+      return { status: "failed", reason: err instanceof Error ? err.message : "sessao_do_numero" };
+    }
+  }
+  if (!sessao) return { status: "no_session" };
+
+  const orgId = sessao.organization_id;
+
+  // O CONTATO é o DESTINATÁRIO (`to`) — quem recebeu a resposta humana.
+  const existente = await findContactByVariants(admin, orgId, e.to);
+  const phone = existente?.phone_number
+    ? canonicalPhoneBR(existente.phone_number)
+    : canonicalPhoneBR(`+${e.to.replace(/\D/g, "")}`);
+
+  const { data: contactId, error: erroContato } = await admin.rpc("fn_upsert_wa_contact" as never, {
+    p_org: orgId,
+    p_kind: "phone",
+    p_phone: phone,
+    p_lid: null,
+    p_chat_id: e.to,
+    p_notify: null,
+  } as never);
+  if (erroContato || !contactId) {
+    return { status: "failed", reason: `contato: ${erroContato?.message ?? "sem id"}` };
+  }
+
+  const { data: conversationId, error: erroConversa } = await admin.rpc(
+    "fn_upsert_wa_conversation" as never,
+    { p_org: orgId, p_contact: contactId as string, p_session: sessao.id } as never,
+  );
+  if (erroConversa || !conversationId) {
+    return { status: "failed", reason: `conversa: ${erroConversa?.message ?? "sem id"}` };
+  }
+
+  const { data: inserida, error: erroInsert } = await admin
+    .from("messages")
+    .insert({
+      organization_id: orgId,
+      conversation_id: conversationId as string,
+      channel_session_id: sessao.id,
+      contact_id: contactId as string,
+      direction: "outbound",
+      status: "sent",
+      sent_via: "external_device",
+      type: e.type,
+      body: e.text,
+      external_id: e.externalId,
+      media_mime: e.media?.mime ?? null,
+      media_url: e.media?.id ?? null,
+      sent_at: e.sentAt.toISOString(),
+      metadata: {
+        fromMe: true,
+        meta_echo: true,
+        ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
+      },
+    })
+    .select("id")
+    .maybeSingle();
+  if (erroInsert) {
+    if (erroInsert.code === "23505") return { status: "duplicate" };
+    return { status: "failed", reason: `mensagem: ${erroInsert.message}` };
+  }
+
+  await admin.rpc("fn_mark_conversation_message" as never, {
+    p_conv: conversationId as string,
+    p_direction: "outbound",
+    p_preview: previewOfEcho(e),
+    p_at: e.sentAt.toISOString(),
+  } as never);
+
+  // ── CONTROLE DO AUTOMÁTICO (idêntico ao canal por QR) ─────────────────────
+  // `#on`/`#off` só valem se o agente aceita comandos; sem isso, qualquer
+  // mensagem (inclusive "#on") é tratada como "pessoa assumiu" → pausa.
+  const { aceita, sequencias } = await configDeComandosDoAgente(admin, orgId);
+  const comando = lerComandoDeControle(e.text ?? "", sequencias);
+  const comandoVale = comando !== null && aceita;
+  const canal = dono.canal ?? "oficial";
+  if (comandoVale && comando === "off") {
+    await pausarIaDuravelmente(admin, {
+      organizationId: orgId,
+      conversationId: conversationId as string,
+      canal,
+      motivo: MOTIVO_COMANDO_OFF,
+    });
+  } else if (comandoVale && comando === "on") {
+    // `#on` é INTERRUPTOR: reativa só as travas de elegibilidade.
+    await reativarAutomaticoNaConversa(
+      { supabase: admin, organizationId: orgId },
+      { conversationId: conversationId as string },
+    );
+  } else {
+    // Mensagem normal do celular: a pessoa assumiu → pausa DURÁVEL.
+    await pausarIaPorAtendimentoManual(admin, {
+      organizationId: orgId,
+      conversationId: conversationId as string,
+      canal,
+    });
+  }
+
+  return {
+    status: "ingested",
+    messageId: (inserida as { id: string } | null)?.id ?? "",
+    conversationId: conversationId as string,
+  };
 }

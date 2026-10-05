@@ -142,7 +142,37 @@ export interface MessageStatusEvent {
   errorTitle: string | null;
 }
 
-export type MetaWebhookEvent = TemplateStatusEvent | MessageStatusEvent | InboundMessageEvent;
+/**
+ * Mensagem que o OPERADOR mandou pelo app do WhatsApp Business (coexistência).
+ *
+ * A Meta espelha o que sai do app no campo `smb_message_echoes`
+ * (`value.message_echoes[]`). Sem tratá-lo, o CRM não registra a resposta humana
+ * e não percebe que alguém assumiu pelo celular — a IA responde por cima e não
+ * pausa. `from` é o NOSSO número; `to` é o contato que recebeu.
+ */
+export interface MessageEchoEvent {
+  kind: "message_echo";
+  wabaId: string;
+  phoneNumberId: string;
+  externalId: string;
+  from: string;
+  to: string;
+  sentAt: Date;
+  type: string;
+  text: string | null;
+  media: {
+    id: string;
+    url: string | null;
+    mime: string | null;
+    voice: boolean;
+  } | null;
+}
+
+export type MetaWebhookEvent =
+  | TemplateStatusEvent
+  | MessageStatusEvent
+  | InboundMessageEvent
+  | MessageEchoEvent;
 
 /**
  * O formato do fio mora em `./envelope.ts`, onde é um schema Zod — e o tipo
@@ -232,6 +262,40 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
                 : sharedContact?.name ?? null,
             ...(sharedContact ? { sharedContact } : {}),
             contextId: str(contexto?.id),
+            media:
+              corpoMidia && str(corpoMidia.id)
+                ? {
+                    id: str(corpoMidia.id)!,
+                    url: str(corpoMidia.url),
+                    mime: str(corpoMidia.mime_type),
+                    voice: corpoMidia.voice === true,
+                  }
+                : null,
+          });
+        }
+        continue;
+      }
+
+      if (change.field === "smb_message_echoes" && Array.isArray(v.message_echoes)) {
+        const meta = (v.metadata ?? {}) as Record<string, unknown>;
+        for (const raw of v.message_echoes as Record<string, unknown>[]) {
+          const id = str(raw.id);
+          const from = str(raw.from);
+          const to = str(raw.to);
+          if (!id || !from || !to) continue; // payload capenga não vira linha meia-boca
+          const tipo = str(raw.type) ?? "unknown";
+          const corpoMidia =
+            tipo !== "contacts" ? (raw[tipo] as Record<string, unknown> | undefined) : undefined;
+          out.push({
+            kind: "message_echo",
+            wabaId,
+            phoneNumberId: str(meta.phone_number_id) ?? "",
+            externalId: id,
+            from,
+            to,
+            sentAt: new Date(Number(str(raw.timestamp) ?? "0") * 1000),
+            type: tipo,
+            text: tipo === "text" ? str((raw.text as Record<string, unknown>)?.body) : null,
             media:
               corpoMidia && str(corpoMidia.id)
                 ? {
