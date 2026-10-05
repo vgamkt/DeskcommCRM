@@ -1103,7 +1103,7 @@ export function AgentForm(props: Props) {
             />
             <div className="space-y-1">
               <Label htmlFor="handoff_notification_number">
-                {t("Número que recebe o aviso quando ele não conseguir responder (só números, com DDD/país)")}
+                {t("WhatsApp que avisa quando o robô não conseguir responder")}
               </Label>
               <Input
                 id="handoff_notification_number"
@@ -1116,7 +1116,7 @@ export function AgentForm(props: Props) {
               />
               <p className="text-xs text-muted-foreground">
                 {t(
-                  "Quando o agente falhar (modelo sem resposta), avisamos este número para alguém assumir. Deixe vazio para não avisar.",
+                  "Se o atendimento automático falhar (o modelo, a decisão da IA, o áudio ou a imagem), avisamos este número para um responsável assumir a conversa com o cliente. Só números, com DDD e país. Deixe vazio para não avisar.",
                 )}
               </p>
             </div>
