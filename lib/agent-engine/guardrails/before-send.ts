@@ -70,6 +70,7 @@ import { escalateLgpdVeto, isLegalBasisValid } from './lgpd/legal-basis';
 import type { LgpdInput } from './lgpd/legal-basis';
 import { detectHumanPromise } from './human-promise';
 import { detectarVazamentoInterno, renderVetoDeVazamento } from './vazamento-interno';
+import { detectarNotaInterna, renderVetoDeNotaInterna } from './nota-interna';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
 import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
@@ -432,16 +433,30 @@ export const internalVocabularyGate: Gate = {
   evaluate: (ctx) => {
     if (ctx.internalVocabularyEnforced !== true) return { pass: true };
     const achado = detectarVazamentoInterno(ctx.body);
-    if (!achado.achou) return { pass: true };
-    return {
-      pass: false,
-      code: 'internal_vocabulary_leak',
-      reason: renderVetoDeVazamento(achado.termos),
-      // detail é LOGADO e persistido: contagem + CATEGORIAS (rótulos nossos, fechados),
-      // nunca os termos — termo casado é trecho da candidata, e um snake_case pode ter
-      // vindo de um dado do lead. A medição que a doutrina pede cabe nestes dois campos.
-      detail: { leaked_count: achado.termos.length, leaked_kinds: achado.categorias.join(',') },
-    };
+    if (achado.achou) {
+      return {
+        pass: false,
+        code: 'internal_vocabulary_leak',
+        reason: renderVetoDeVazamento(achado.termos),
+        // detail é LOGADO e persistido: contagem + CATEGORIAS (rótulos nossos, fechados),
+        // nunca os termos — termo casado é trecho da candidata, e um snake_case pode ter
+        // vindo de um dado do lead. A medição que a doutrina pede cabe nestes dois campos.
+        detail: { leaked_count: achado.termos.length, leaked_kinds: achado.categorias.join(',') },
+      };
+    }
+    // NOTA INTERNA: o modelo escreveu uma observação sobre SI ou sobre o cliente em
+    // terceira pessoa ("já respondi ao…", "aguardo a resposta dele") em vez de falar
+    // com o cliente. Mesma armação do vazamento técnico — o corpo é do modelo.
+    const nota = detectarNotaInterna(ctx.body);
+    if (nota.achou) {
+      return {
+        pass: false,
+        code: 'internal_vocabulary_leak',
+        reason: renderVetoDeNotaInterna(),
+        detail: { leaked_count: 1, leaked_kinds: `nota_interna:${nota.categorias.join(',')}` },
+      };
+    }
+    return { pass: true };
   },
 };
 

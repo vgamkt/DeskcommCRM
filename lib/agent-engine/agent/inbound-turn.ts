@@ -6150,8 +6150,8 @@ async function executarTurnoDoAgente(
      */
     const enviarTextoDoMotor = async (texto: string): Promise<boolean> => {
       if (preview || texto.trim() === '' || seq >= maxSendsPerTurn) return false;
-      try {
-        await runBeforeSend({
+      const tentar = async (corpo: string): Promise<boolean> => {
+        const r = await runBeforeSend({
           pool,
           log: runLog,
           agentOperation,
@@ -6159,11 +6159,16 @@ async function executarTurnoDoAgente(
           leadId,
           jobId: liveJob().id,
           channelSessionId: input.channelSessionId,
-          body: texto,
+          body: corpo,
           optedOutThisTurn,
           crmDailyLimit: null,
           // Texto de fechamento do motor: determinístico, não é blast.
           enforceSpinning: false,
+          // O texto de contingência PODE ser o texto livre do modelo (rede "nunca
+          // terminar sem resposta"): arma a rede de vocabulário interno E de nota
+          // interna, como no `send_message`. Sem isto, um status do modelo vazava
+          // para o cliente (medido 2026-10-05).
+          enforceInternalVocabulary: true,
           now: clock(),
           ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
           ...(lgpd !== undefined ? { lgpd } : {}),
@@ -6185,7 +6190,21 @@ async function executarTurnoDoAgente(
             });
           },
         });
-        return true;
+        return r.status === 'sent';
+      };
+      try {
+        if (await tentar(texto)) return true;
+        // A régua VETOU o texto (ex.: nota interna do modelo). NUNCA mandar o texto
+        // barrado: cai na contingência neutra, para o cliente não ficar mudo.
+        const NEUTRO =
+          'Tive uma instabilidade por aqui agora. Já pedi para um responsável te atender — só um instante, por favor.';
+        if (texto.trim() !== NEUTRO && seq < maxSendsPerTurn) {
+          if (await tentar(NEUTRO)) {
+            runLog.warn('contingência do motor: texto vetado pela régua — mandei o neutro', {});
+            return true;
+          }
+        }
+        return false;
       } catch (err) {
         runLog.warn('envio de contingência falhou — o turno segue', {
           error: err instanceof Error ? err.message.slice(0, 120) : String(err),
@@ -6859,45 +6878,47 @@ async function executarTurnoDoAgente(
       );
     }
 
-    // ── NUNCA TERMINAR SEM RESPOSTA ─────────────────────────────────────────
-    // O turno rodou e é inbound, mas NADA saiu: o modelo escreveu a resposta como
-    // TEXTO sem chamar `send_message`, ou a régua barrou a oferta e ele não voltou.
-    // Manda o texto que o MODELO produziu; sem texto, um fallback determinístico da
-    // negociação. O cliente não pode ficar mudo. Best-effort: falhar aqui não
-    // derruba o turno que já rodou.
+    // ── NUNCA TERMINAR SEM RESPOSTA (ESTRUTURAL) ────────────────────────────
+    // O turno rodou e é inbound, mas o modelo NÃO enviou pelo canal (não chamou
+    // `send_message`). O motor NÃO encaminha o TEXTO LIVRE do modelo ao cliente:
+    // ele pode ser uma anotação interna ("Já respondi ao…, aguardo a resposta
+    // dele") — medido em produção 2026-10-05, quando o texto vazou para o cliente.
+    // Aqui é ESTRUTURAL, não detecção de frase: texto livre do modelo nunca vira
+    // fala do cliente. O motor RECONHECE a anomalia, REMONTA uma resposta segura
+    // (contingência da negociação ou neutra) e AVISA o responsável.
     if (
       !preview &&
       liveJob().kind === 'inbound_turn' &&
       outcomes.length === 0 &&
       seq < maxSendsPerTurn
     ) {
-      const textoDoModelo = (turn.result.text ?? '').trim();
+      const teveTextoLivre = (turn.result.text ?? '').trim() !== '';
+      const negociacao = (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '').trim();
       const texto =
-        textoDoModelo !== '' ? textoDoModelo : (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '');
+        negociacao !== ''
+          ? negociacao
+          : 'Tive uma instabilidade por aqui agora. Já pedi para um responsável te atender — só um instante, por favor.';
       const saiu = await enviarTextoDoMotor(texto);
       if (saiu) {
-        runLog.info('turno sem mensagem do modelo — resposta de contingência enviada', {
-          origem: textoDoModelo !== '' ? 'texto_do_modelo' : 'fallback_objecao',
+        runLog.info('turno sem envio do modelo — contingência segura enviada ao cliente', {
           chars: texto.length,
+          tinha_texto_livre: teveTextoLivre,
         });
       }
-      // O modelo NÃO produziu texto (a contingência veio do motor): o turno ficou
-      // sem resposta do provedor — avisa o responsável. Cobre deepseek/chat E os
-      // pontos Jev que falharam (o cliente não pode ficar mudo e o humano precisa saber).
-      if (textoDoModelo === '') {
-        await enviarHandoffPorLentidao(pool, {
-          tenantId,
-          channelSessionId: input.channelSessionId,
-          notificationNumber: null,
-          agentId: agentConfig?.agentId ?? null,
-          conversationId: input.conversationId,
-          contactId: leadId || null,
-          tentativas: 0,
-          motivo: 'sem_resposta',
-          causa: null,
-          log: runLog,
-        }).catch(() => {});
-      }
+      // AVISA o responsável: o turno não produziu envio pelo canal (anomalia).
+      await enviarHandoffPorLentidao(pool, {
+        tenantId,
+        channelSessionId: input.channelSessionId,
+        notificationNumber: null,
+        agentId: agentConfig?.agentId ?? null,
+        conversationId: input.conversationId,
+        contactId: leadId || null,
+        tentativas: 0,
+        motivo: 'sem_resposta',
+        causa:
+          'o modelo não enviou resposta ao cliente neste turno (não chamou a ferramenta de envio)',
+        log: runLog,
+      }).catch(() => {});
     }
 
     runLog.info('turno do agente concluído', {

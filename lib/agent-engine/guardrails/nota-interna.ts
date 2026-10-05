@@ -1,0 +1,100 @@
+/**
+ * Detector de NOTA INTERNA — quando o MODELO escreve, para o cliente, uma
+ * observação SOBRE SI MESMO (ou sobre o cliente em terceira pessoa) em vez de uma
+ * fala de atendimento.
+ *
+ * ─── Por que existe (incidente medido, 2026-10-05) ──────────────────────────
+ * O conversador não chamou `send_message`; a rede "nunca terminar sem resposta"
+ * enviou o TEXTO LIVRE do modelo ao cliente, e o texto era um status interno:
+ *   «Já respondi ao Vander perguntando sobre a CNH e confirmando a CB 300 F
+ *    Twister vermelha. Aguardo a resposta dele.»
+ * Isso não é fala de vendedor — é o que o atendente anota para si. O cliente
+ * recebeu um bilhete interno. É inadmissível.
+ *
+ * ─── Regra conservadora (mesma disciplina de `vazamento-interno.ts`) ────────
+ * Aqui o alvo é SEMÂNTICO (diferente do vazamento técnico), então o risco de
+ * falso-positivo é maior. Cada padrão exige uma MARCA inequívoca de terceira
+ * pessoa / auto-relato: o cliente NUNCA é "ele/dele" na fala do bot, e o bot não
+ * narra para o cliente o que "já respondeu ao <alguém>". Frases legítimas como
+ * "Aguardo sua resposta", "Já respondi sua pergunta" ou "Enviei as fotos para
+ * você" NÃO casam (há teste de controle congelado).
+ */
+export interface NotaInterna {
+  achou: boolean;
+  /** Categorias acionadas (rótulo nosso, fechado) — vai ao trace, nunca o trecho. */
+  categorias: string[];
+}
+
+function normalizar(body: string): string {
+  return body
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '');
+}
+
+interface RegraNota {
+  readonly categoria: string;
+  readonly re: RegExp;
+}
+
+/**
+ * Cada regra é ancorada numa forma que só aparece em nota de atendente:
+ *  - auto-relato no PASSADO sobre um TERCEIRO ("respondi ao <cliente|vendedor>");
+ *  - espera em TERCEIRA pessoa ("aguardo a resposta dele/dela");
+ *  - narrativa sobre o cliente ("o cliente ainda não informou");
+ *  - resumo/status de turno;
+ *  - envio relatado a um TERCEIRO.
+ */
+const REGRAS: ReadonlyArray<RegraNota> = [
+  {
+    categoria: 'auto_relato_terceiro',
+    re: /\b(ja|acabei de|acabo de)\s+(respondi|enviei|mandei|confirmei|perguntei|avisei|informei|passei)\b[^.!?\n]{0,50}\b(cliente|lead|vendedor|vendedora|responsavel|atendente)\b/g,
+  },
+  {
+    categoria: 'espera_terceiro',
+    re: /\baguardo\s+a\s+resposta\s+(dele|dela|do cliente|da cliente|do lead)\b/g,
+  },
+  {
+    categoria: 'narrativa_cliente',
+    re: /\bo\s+(cliente|lead)\s+(ainda\s+)?nao\s+(informou|respondeu|escolheu|confirmou|decidiu|retornou)\b/g,
+  },
+  {
+    categoria: 'resumo_turno',
+    re: /\b(resumo|status)\s+(do|da)\s+(turno|atendimento|conversa|interacao)\b/g,
+  },
+  {
+    categoria: 'declaracao',
+    re: /\bnada a declarar\b/g,
+  },
+  {
+    categoria: 'envio_a_terceiro',
+    re: /\b(enviei|mandei|passei)\s+(as\s+)?(opcoes|fotos|catalogo|tabela)\s+(para|pro|ao|a)\s+(o\s+)?(cliente|lead)\b/g,
+  },
+];
+
+/** True se a candidata é uma NOTA INTERNA do modelo (não uma fala ao cliente). */
+export function detectarNotaInterna(body: string): NotaInterna {
+  if (body.trim() === '') return { achou: false, categorias: [] };
+  const texto = normalizar(body);
+  const categorias = new Set<string>();
+  for (const regra of REGRAS) {
+    if (regra.re.test(texto)) categorias.add(regra.categoria);
+    regra.re.lastIndex = 0;
+  }
+  return { achou: categorias.size > 0, categorias: [...categorias].sort() };
+}
+
+/**
+ * O veto escrito para o MODELO (caminho do `send_message`). Diz o que houve e a
+ * saída — um veto que só nega faz o modelo repetir.
+ */
+export function renderVetoDeNotaInterna(): string {
+  return (
+    'Sua mensagem é uma ANOTAÇÃO SOBRE VOCÊ MESMO ou sobre o cliente em terceira ' +
+    'pessoa ("já respondi ao…", "aguardo a resposta dele", "o cliente ainda não…"), ' +
+    'não uma fala para o cliente. Quem lê é o CLIENTE: escreva DIRETAMENTE para ele, ' +
+    'como um vendedor falaria — sem narrar o que você fez nem falar dele na terceira ' +
+    'pessoa. Ex.: em vez de "Já respondi ao cliente e aguardo", pergunte a ELE o que ' +
+    'falta ("Você tem CNH?").'
+  );
+}
