@@ -631,6 +631,19 @@ export const PERGUNTA_DE_NECESSIDADE =
   'Assim eu já separo as que combinam com você.';
 
 /**
+ * Contingência quando o motor precisa passar o atendimento para uma pessoa e o
+ * cliente NÃO pode ficar mudo (modelo esgotou, não enviou pelo canal, etc.).
+ *
+ * Fala HUMANA e carinhosa. NUNCA menciona "instabilidade", IA, sistema ou erro:
+ * revelar a automação/instabilidade fere a regra de condução e quebra a confiança.
+ * Diz que vai passar para uma pessoa da equipe E que o atendimento continua por
+ * aqui (o cliente não fica com a impressão de abandono).
+ */
+export const TEXTO_ATENDIMENTO_HUMANO =
+  'Vou pedir para uma pessoa da nossa equipe continuar esse atendimento com você, tá? ' +
+  'Já já eu volto por aqui para seguir te ajudando. Obrigado pela paciência! 😊';
+
+/**
  * Teto de mensagens FÍSICAS enviadas ao lead por turno quando `knobs.maxSendsPerTurn`
  * está ausente (testes) — produção sempre recebe o knob do env (MAX_SENDS_PER_TURN).
  *
@@ -6197,7 +6210,7 @@ async function executarTurnoDoAgente(
         // A régua VETOU o texto (ex.: nota interna do modelo). NUNCA mandar o texto
         // barrado: cai na contingência neutra, para o cliente não ficar mudo.
         const NEUTRO =
-          'Tive uma instabilidade por aqui agora. Já pedi para um responsável te atender — só um instante, por favor.';
+          TEXTO_ATENDIMENTO_HUMANO;
         if (texto.trim() !== NEUTRO && seq < maxSendsPerTurn) {
           if (await tentar(NEUTRO)) {
             runLog.warn('contingência do motor: texto vetado pela régua — mandei o neutro', {});
@@ -6277,7 +6290,7 @@ async function executarTurnoDoAgente(
       // Ainda assim o CLIENTE não pode ficar mudo — manda a mensagem de contingência.
       runLog.warn('turno encerrado por esgotamento do modelo (handoff acionado)');
       const saiu = await enviarTextoDoMotor(
-        'Tive uma instabilidade por aqui agora. Já pedi para um responsável te atender — só um instante, por favor.',
+        TEXTO_ATENDIMENTO_HUMANO,
       );
       if (saiu) runLog.info('modelo esgotou — mensagem de contingência enviada ao cliente');
       return;
@@ -6897,7 +6910,7 @@ async function executarTurnoDoAgente(
       const texto =
         negociacao !== ''
           ? negociacao
-          : 'Tive uma instabilidade por aqui agora. Já pedi para um responsável te atender — só um instante, por favor.';
+          : TEXTO_ATENDIMENTO_HUMANO;
       const saiu = await enviarTextoDoMotor(texto);
       if (saiu) {
         runLog.info('turno sem envio do modelo — contingência segura enviada ao cliente', {
