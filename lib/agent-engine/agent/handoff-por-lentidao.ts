@@ -26,6 +26,33 @@ interface AlertaDeFalha {
 }
 
 /**
+ * Traduz o erro técnico do turno numa causa legível para o aviso de falha. Nunca
+ * lança. Sem causa, assume o caso mais comum (o provedor de IA não respondeu).
+ */
+export function explicarCausa(causa: string | null | undefined): string {
+  const bruto = (causa ?? '').trim();
+  if (!bruto) return 'o provedor de IA não respondeu a tempo';
+
+  const c = bruto.toLowerCase();
+  if (/llm_calls_contact_id_fkey|foreign key.*contact/.test(c)) {
+    return 'o contato foi removido durante o atendimento (o registro do histórico foi recusado)';
+  }
+  if (/timeout|abort|timed out|etimedout/.test(c)) {
+    return 'tempo esgotado ao falar com o provedor de IA';
+  }
+  if (/401|403|unauthor|invalid.*(token|key)|chave/.test(c)) {
+    return 'credencial/chave do provedor de IA inválida';
+  }
+  if (/429|rate limit|limite de uso/.test(c)) {
+    return 'limite de uso do provedor de IA atingido';
+  }
+  if (/50[0-9]|overloaded|fetch failed|econnreset|econnrefused|network/.test(c)) {
+    return 'instabilidade de rede/provedor de IA';
+  }
+  return `falha no turno: ${bruto.slice(0, 160)}`;
+}
+
+/**
  * Regra de aviso de falha do AGENTE, na config central do informante
  * (`conversation_summary_settings.failure_alerts`): `{ channel_session_id,
  * destination }`. `null` = não avisa. Nunca lança.
@@ -74,6 +101,8 @@ export async function enviarHandoffPorLentidao(
      * o encaminhamento por negociação (cliente negou as opções) reusa o canal.
      */
     motivo?: 'lentidao' | 'negociacao' | 'sem_resposta';
+    /** Erro que causou a falha (ex.: mensagem da exceção do turno). Vai no aviso. */
+    causa?: string | null;
     log: Logger;
   },
 ): Promise<void> {
@@ -149,8 +178,10 @@ export async function enviarHandoffPorLentidao(
       contactId = data as string;
     }
 
-    // 3) Nome do cliente (contexto para o humano).
+    // 3) Nome + telefone do cliente (contexto para o humano) — o NÚMERO que não
+    // foi respondido precisa aparecer no aviso.
     let nome = '';
+    let telefone = '';
     if (args.contactId !== null) {
       const { data: c } = await admin
         .from('contacts')
@@ -158,21 +189,29 @@ export async function enviarHandoffPorLentidao(
         .eq('organization_id', args.tenantId)
         .eq('id', args.contactId)
         .maybeSingle();
-      nome = (c?.name as string | null) ?? (c?.phone_number as string | null) ?? '';
+      nome = ((c?.name as string | null) ?? '').trim();
+      telefone = ((c?.phone_number as string | null) ?? '').trim();
     }
+    const quem =
+      nome && telefone
+        ? `${nome} (${telefone})`
+        : nome || telefone || 'cliente sem identificação';
+    const causa = explicarCausa(args.causa);
 
     const texto =
       args.motivo === 'negociacao'
         ? `⚠️ Atendimento aguardando um humano\n` +
           `O cliente não aceitou as opções apresentadas na negociação. ` +
-          `${nome ? `Cliente: ${nome}. ` : ''}Assuma a conversa para responder o cliente.`
+          `Cliente: ${quem}. Assuma a conversa para responder o cliente.`
         : args.motivo === 'sem_resposta'
           ? `⚠️ Atendimento sem resposta automática\n` +
-            `O turno terminou sem resposta automática (o provedor de decisão/modelo falhou). ` +
-            `${nome ? `Cliente: ${nome}. ` : ''}Assuma a conversa para responder o cliente.`
+            `Número não respondido: ${quem}.\n` +
+            `Motivo: ${causa}.\n` +
+            `Assuma a conversa para responder o cliente.`
           : `⚠️ Atendimento sem resposta automática\n` +
-            `O modelo não respondeu após ${args.tentativas} tentativa(s) (tempo esgotado). ` +
-            `${nome ? `Cliente: ${nome}. ` : ''}Assuma a conversa para responder o cliente.`;
+            `Número não respondido: ${quem}.\n` +
+            `Motivo: ${causa} (após ${args.tentativas} tentativa(s)).\n` +
+            `Assuma a conversa para responder o cliente.`;
 
     // 4) Envia pelo caminho canônico (mesmo do resumo), FORA da fronteira do
     // atendimento do lead: o aviso é para o número de resumos do responsável,

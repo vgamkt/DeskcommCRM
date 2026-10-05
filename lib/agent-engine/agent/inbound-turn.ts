@@ -6230,7 +6230,7 @@ async function executarTurnoDoAgente(
         timeoutMs,
         maxTentativas,
         log: runLog,
-        aoEsgotar: async ({ tentativas }) => {
+        aoEsgotar: async ({ tentativas, ultimoErro }) => {
           await enviarHandoffPorLentidao(pool, {
             tenantId,
             // O aviso sai pela regra CENTRAL do informante (`failure_alerts`), por
@@ -6241,6 +6241,13 @@ async function executarTurnoDoAgente(
             conversationId: input.conversationId,
             contactId: leadId || null,
             tentativas,
+            // A CAUSA concreta do esgotamento — vai no aviso ao responsável.
+            causa:
+              ultimoErro === null || ultimoErro === undefined
+                ? null
+                : ultimoErro instanceof Error
+                  ? ultimoErro.message
+                  : String(ultimoErro),
             log: runLog,
           }).catch(() => {});
         },
@@ -6887,6 +6894,7 @@ async function executarTurnoDoAgente(
           contactId: leadId || null,
           tentativas: 0,
           motivo: 'sem_resposta',
+          causa: null,
           log: runLog,
         }).catch(() => {});
       }
