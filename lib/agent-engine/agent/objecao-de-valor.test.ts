@@ -34,6 +34,18 @@ describe('ehObjecaoValor', () => {
       'vi mais barato',
       'vou pensar',
       'esta fora do meu orcamento',
+      // Cobertura ampliada (2026-10-05): formas SEM a palavra "caro/preço" que
+      // escapavam — o handoff por SENTIMENTO então silenciava o bot (o fix de
+      // supressão só vale para o que esta função reconhece). Medido ao vivo: o
+      // cliente escreveu "não dá mesmo, tá acima do que posso pagar" e o bot
+      // ficou mudo nos turnos seguintes.
+      'não dá mesmo, tá acima do que posso pagar',
+      'tá acima do que eu posso pagar',
+      'acima do meu orçamento',
+      'nao tenho condicoes',
+      'nao posso pagar isso',
+      'nao cabe no meu orcamento',
+      'muito pra mim',
     ]) {
       expect(ehObjecaoValor(frase), frase).toBe(true);
     }

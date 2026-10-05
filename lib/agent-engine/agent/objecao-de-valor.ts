@@ -190,9 +190,23 @@ export function ehObjecaoValor(mensagem: string): boolean {
   // Valor (preço) OU QUALIDADE ("muito rodada", "antiga/velha"): as duas são
   // objeções sobre a moto mostrada — 1ª vez persuade, 2ª libera oferecer outra
   // que ataque o motivo (rodada→menos km; antiga→mais nova).
+  // Cobertura ampliada (2026-10-05): "não dá mesmo, tá acima do que posso pagar"
+  // NÃO casava — nenhuma palavra da lista antiga. Essa objeção escapava e o
+  // handoff por SENTIMENTO a silenciava (o fix de supressão só vale para o que
+  // `ehObjecaoValor` reconhece). As formas abaixo são de OBJEÇÃO DE PREÇO sobre a
+  // moto mostrada, sem citar a palavra "caro/preço".
+  // ⚠️ Cuidado: NÃO incluir "não quero ver outras opções" (negação de OFERTA, não
+  // de valor) — `ehPedidoDiferente` acima já a descarta.
   return /\b(car[oa]|preco|desconto|barat\w*|parcela\w*|valor|nao tenho|fora do|orcamento|pensar|salgad\w*|rodad\w*|antig\w*|velh\w*)\b/.test(
     n,
-  );
+  ) ||
+    /\bacima do (que )?(eu )?posso pagar\b/.test(n) ||
+    /\bacima do (meu )?orcamento\b/.test(n) ||
+    /\bnao (da|dá) (mesmo|pra mim|para mim)\b/.test(n) ||
+    /\bnao (tenho|posso) (condic\w*|pagar|arcar)\b/.test(n) ||
+    /\bnao (cabe|encaixa) no (meu )?(orcamento|bolso)\b/.test(n) ||
+    /\bmuito (pra|para) mim\b/.test(n) ||
+    /\bfora do (meu )?orcamento\b/.test(n);
 }
 
 /**

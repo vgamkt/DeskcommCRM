@@ -3000,9 +3000,12 @@ async function executarTurnoDoAgente(
         runLog,
       );
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
-  // ORDEM: (1) objeção → a NEGOCIAÇÃO manda (só `mostrar_opcoes` oferece);
-  // (2) pedido EXPLÍCITO de "mais opções" — vence a Jev (o cliente PEDIU);
-  // (3) o veredito de oferta da Jev; (4) fallback regex.
+  // ORDEM (doutrina "a Jev decide sempre"): (1) objeção → a NEGOCIAÇÃO (Jev)
+  // manda (só `mostrar_opcoes` oferece); (2) o veredito de oferta da Jev;
+  // (3) FALLBACK: só quando a Jev NÃO respondeu (`vereditoOfertaJev === null`) —
+  // aí a régua determinística decide, incluindo o pedido explícito de "mais
+  // opções". A Jev NUNCA é corrigida por regex: se ela nega um pedido legítimo, o
+  // conserto é o PROMPT dela (`perguntaDeOfertaJev`), não um bypass aqui.
   const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
     if (ehObjecaoTurno && acaoNegociacao !== null) {
       return {
@@ -3011,11 +3014,6 @@ async function executarTurnoDoAgente(
         criterio: null,
       };
     }
-    // A Jev nega pedidos legítimos (ex.: "quero ver mais opções" → oferecer:false,
-    // medido ao vivo 2026-10-04). Um pedido EXPLÍCITO do cliente é sinal forte e
-    // determinístico: não pode ser vetado por um veredito de modelo.
-    const pedidoExplicito = pedidoExplicitoDeMaisOpcoes(mensagem);
-    if (pedidoExplicito !== null) return pedidoExplicito;
     if (vereditoOfertaJev !== null) {
       return {
         pode: vereditoOfertaJev.oferecer,
@@ -3023,6 +3021,10 @@ async function executarTurnoDoAgente(
         criterio: vereditoOfertaJev.criterio === 'nenhum' ? null : vereditoOfertaJev.criterio,
       };
     }
+    // Fallback determinístico (Jev indisponível neste ponto): pedido explícito de
+    // "mais opções" tem prioridade no fallback.
+    const pedidoExplicito = pedidoExplicitoDeMaisOpcoes(mensagem);
+    if (pedidoExplicito !== null) return pedidoExplicito;
     return podeOferecerMotos({
       mensagem,
       temEscolhaTravada: catalogoDaConversa.escolhida !== null,

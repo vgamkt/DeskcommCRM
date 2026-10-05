@@ -57,7 +57,10 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         `pedido sem correspondência no estoque=${ctx.pedidoSemCorrespondencia}, ` +
         `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}. ` +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +
-        'ou se uma objeção ainda está sendo contornada.',
+        'ou se uma objeção ainda está sendo contornada. ' +
+        'REGRA INEGOCIÁVEL: se "cliente pediu mais opções" for verdadeiro, a resposta é SEMPRE ' +
+        '"sim, mostrar motos agora" (com o criterio que ataca o motivo). NUNCA negue um pedido ' +
+        'explícito do cliente.',
       criteria: {
         [OFERECER_SIM]: 'sim, mostrar motos agora',
         [OFERECER_NAO]: 'não mostrar motos neste turno',
