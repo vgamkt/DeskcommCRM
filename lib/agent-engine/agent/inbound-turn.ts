@@ -151,6 +151,7 @@ import { selecionarSkillsComJev } from './skill-select-jev';
 import { rotearConhecimentoComJev } from './knowledge-route-jev';
 import { decidirOfertaComJev } from './oferta-jev';
 import { decidirNegociacaoComJev, faseDaAcao } from './negociacao-jev';
+import { decidirObjecaoComJev } from './objecao-jev';
 import { chamarTurnoComResiliencia } from './turno-com-resiliencia';
 import { enviarHandoffPorLentidao } from './handoff-por-lentidao';
 import {
@@ -2893,13 +2894,38 @@ async function executarTurnoDoAgente(
   // TIPO de objeção e, na TERCEIRA vez do mesmo tipo, libera oferecer outra opção
   // (avisando o responsável). Se o tipo muda, a contagem reinicia. A fase do turno
   // e o novo estado saem daqui; servem para injetar o bloco e persistir.
+  // A OBJEÇÃO: A JEV É A AUTORIDADE (existência + tipo). Só quando ela está
+  // desligada/indisponível (veredito nulo) a régua determinística decide — doutrina
+  // "a Jev decide sempre". O conserto de um veredito ruim é o PROMPT dela
+  // (`perguntaDeObjecaoJev`), nunca um bypass de regex aqui.
+  const vereditoObjecaoJev =
+    preview || mensagemDoJob.trim() === ''
+      ? null
+      : await decidirObjecaoComJev(
+          pool,
+          tenantId,
+          {
+            mensagem: mensagemDoJob,
+            motivoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
+            temMotoEmFoco:
+              catalogoDaConversa.motos.length > 0 ||
+              catalogoDaConversa.escolhida !== null ||
+              catalogoDaConversa.referencia !== null,
+          },
+          runLog,
+        );
   const ehObjecaoTurno =
-    mensagemDoJob.trim() !== '' && ehObjecaoValor(mensagemDoJob);
+    vereditoObjecaoJev !== null
+      ? vereditoObjecaoJev.ehObjecao
+      : mensagemDoJob.trim() !== '' && ehObjecaoValor(mensagemDoJob);
   // Pedido DIRETO de desconto/condição melhor: persuade na 1ª vez; se insistir,
   // encaminha ao consultor (não oferece outras motos).
   const descontoTurno =
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
-  const motivoObjecaoTurno = ehObjecaoTurno ? motivoDaObjecao(mensagemDoJob) : null;
+  // Tipo da objeção: da Jev; o regex só entra na ausência de veredito/motivo.
+  const motivoObjecaoTurno = ehObjecaoTurno
+    ? (vereditoObjecaoJev?.motivo ?? motivoDaObjecao(mensagemDoJob))
+    : null;
   // ── ESTADO ESTRUTURADO DA NEGOCIAÇÃO (banco) ─────────────────────────────
   // Fonte do CONTROLE DE NÚMEROS: sobrevive à conversa/dias. A Jev informa a
   // ação; o motor registra e analisa a próxima.
@@ -4037,7 +4063,7 @@ async function executarTurnoDoAgente(
           maisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
           pediuDiferente: ehPedidoDiferente(mensagemDoJob ?? ''),
           pediuOutraMoto,
-          ehObjecao: ehObjecaoValor(mensagemDoJob ?? ''),
+          ehObjecao: ehObjecaoTurno,
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
           temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
           estadoObjecaoAnterior: catalogoDaConversa.objecao,
@@ -4130,7 +4156,12 @@ async function executarTurnoDoAgente(
             // C-098: "barata"/"mais barata" só é OBJEÇÃO quando há moto atual
             // (o cliente reclama do preço DELA). Sem moto atual, é um PEDIDO
             // ("quero uma moto barata") e deve classificar normalmente.
-            const ehObjecaoMsg = ehObjecaoValor(msgCliente) && motoAtual !== null;
+            // A existência/tipo da objeção vem da JEV (`ehObjecaoTurno`); só quando
+            // a mensagem avaliada NÃO é a do turno (o `body` do tool, sem inbound)
+            // cai no regex — a Jev não foi consultada sobre ela.
+            const ehObjecaoMsg =
+              (msgCliente === mensagemDoJob ? ehObjecaoTurno : ehObjecaoValor(msgCliente)) &&
+              motoAtual !== null;
             // C-097: o extrator roda SEMPRE que o cliente pede/quer uma moto
             // (`querMoto`), não só quando o modelo já consultou o catálogo. Antes,
             // um pedido no 1º turno (modelo não consultou) ficava sem classificação

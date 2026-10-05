@@ -153,32 +153,20 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ### Jev decide SEMPRE — regex e plano B são fallback (NÃO NEGOCIÁVEL)
 
-A Jev é o **modelo de decisão estruturada** do sistema: ela decide o que oferecer, qual a
-fase da negociação, o estágio, a intenção, a rota de conhecimento e a escolha de motos. A
-arquitetura de decisão tem uma **hierarquia obrigatória** — e ela é a mesma em todo ponto:
+A Jev é o **modelo de decisão estruturada** do sistema. A hierarquia é a mesma em todo
+ponto de decisão e **não se reordena**:
 
-1. **A Jev decide.** É a autora da decisão daquele ponto. É o caminho PRINCIPAL.
+1. **A Jev decide.** É a autora da decisão daquele ponto — o caminho PRINCIPAL.
 2. **Regex/determinístico é FALLBACK**, acionado **apenas** quando a Jev está
-   desligada/indisponível para o ponto (`alvosDeJevDaOrg` vazio, bindings sem modelo de Jev,
-   erro esgotado). Ele **substitui** a Jev nesse caso — nunca a antecede nem a corrige.
-3. **Se a Jev decide algo que parece errado, conserta-se o PROMPT/contexto da Jev** (o
-   `perguntaDe*`, o `state` que ela recebe). **É PROIBIDO** contornar a Jev com um bypass de
-   regex que "vence" o veredito dela — isso recria o defeito de várias réguas que não se
-   falam, que é exatamente o que a Jev veio eliminar.
+   desligada/indisponível para o ponto (`alvosDeJevDaOrg` vazio, erro esgotado). Ele
+   **substitui** a Jev nesse caso — nunca a antecede nem a corrige.
+3. **Se a Jev decide algo que parece errado, conserta-se o PROMPT/contexto dela** (o
+   `perguntaDe*`, o `state` que ela recebe). **É PROIBIDO** contornar a Jev com um bypass
+   de regex que "vence" o veredito.
 
-**Invariantes verificáveis:**
-- Nenhum `if (regex(...)) return decisão` pode vir ANTES do veredito da Jev no mesmo ponto.
-- O fallback regex só entra na ausência de veredito (`veredito === null` / `alvos.length === 0`).
-- Um ponto novo de decisão nasce com binding `*__jev` + `perguntaDe*` — não com regex.
-
-**Auditoria (2026-10-05):** pontos de decisão do turno — `decidirOfertaComJev`,
-`decidirNegociacaoComJev`, `motoEscolhidaPeloClienteComJev`, `classifyStage`,
-`classifyJailbreak`, `rotearConhecimentoComJev`, `flow_intent`, `skill_select`,
-`catalog_criteria` — **a Jev decide**; regex (`podeOferecerMotos`, `faseDoTurno`,
-`ehObjecaoValor`, `querMaisOpcoes`) é fallback. **Duas violações a corrigir:**
-`pedidoExplicitoDeMaisOpcoes` (linha ~3017 de `inbound-turn.ts`) vence a Jev na oferta; e
-`ehObjecaoValor`/`motivoDaObjecao` (linha ~2897) decide a existência e o tipo da objeção
-ANTES da Jev. Ambas devem migrar para "Jev decide, regex é fallback".
+**A regra completa, os invariantes verificáveis e a lista de violações pendentes vivem em
+[`docs/doctrine/jev-decide-sempre.md`](docs/doctrine/jev-decide-sempre.md) — leia antes de
+tocar em qualquer ponto de decisão do turno.**
 
 ---
 

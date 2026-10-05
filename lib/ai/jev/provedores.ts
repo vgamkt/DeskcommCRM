@@ -34,6 +34,7 @@ export const PONTOS_COM_JEV: ReadonlySet<string> = new Set([
   'flow_summary',
   'offer_motos',
   'negociacao',
+  'objecao',
 ]);
 
 /** `catalog_criteria` → `catalog_criteria__jev`. */

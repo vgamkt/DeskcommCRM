@@ -114,6 +114,9 @@ verify, build-and-size, invariants, e2e, imagens-ok
 
 ## Padrões de código (observados no repo, não inventados)
 
+- **Decisão do agente — a Jev decide SEMPRE; regex/plano B é só fallback.** Nunca um `if (regex(...))`
+  antes do veredito da Jev; conserto é no prompt/contexto dela. Regra completa:
+  [`docs/doctrine/jev-decide-sempre.md`](docs/doctrine/jev-decide-sempre.md).
 - **Route handler:** valida input com Zod → guard (`requireRole` / `requirePlatformAdmin` /
   secret) → query com `organization_id` explícito → `audit()` se mutação → `ok()` / `fail()`.
 - Erro: `fail(code, message, status)` com código de `lib/api/errors.ts`. Nunca `throw` cru na borda.
