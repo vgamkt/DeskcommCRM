@@ -24993,3 +24993,26 @@ alter table public.ai_purpose_bindings
 -- Regras [{agent_id, channel_session_id, destination, enabled}] no informante.
 alter table public.conversation_summary_settings
   add column if not exists failure_alerts jsonb not null default '[]'::jsonb;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0267 · Resumo: destino NÚMERO e GRUPO independentes (apêndice idempotente)
+-- ════════════════════════════════════════════════════════════════════════════
+-- Coexistem com `destination` (número): `destination_group` (JID @g.us) e o
+-- canal que envia ao grupo (`channel_session_id_group`).
+alter table public.conversation_summary_settings
+  add column if not exists destination_group text;
+alter table public.conversation_summary_settings
+  add column if not exists channel_session_id_group uuid;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'conversation_summary_settings_channel_session_id_group_fkey'
+  ) then
+    alter table public.conversation_summary_settings
+      add constraint conversation_summary_settings_channel_session_id_group_fkey
+      foreign key (channel_session_id_group)
+      references public.channel_sessions(id) on delete set null;
+  end if;
+end $$;

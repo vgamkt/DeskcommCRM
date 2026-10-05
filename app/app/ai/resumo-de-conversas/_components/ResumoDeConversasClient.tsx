@@ -40,6 +40,8 @@ interface Settings {
   channel_session_id: string | null;
   destination: string | null;
   destination_is_group: boolean;
+  destination_group: string | null;
+  channel_session_id_group: string | null;
   interval_minutes: number;
   batch_size: number;
   instructions: string | null;
@@ -115,7 +117,8 @@ export function ResumoDeConversasClient() {
   const [enabled, setEnabled] = useState(false);
   const [sessionId, setSessionId] = useState<string>(NENHUMA);
   const [destino, setDestino] = useState("");
-  const [destinoGrupo, setDestinoGrupo] = useState(false);
+  const [destinoGrupo, setDestinoGrupo] = useState("");
+  const [sessionGrupoId, setSessionGrupoId] = useState<string>(NENHUMA);
   const [intervalo, setIntervalo] = useState(15);
   const [lote, setLote] = useState(20);
   const [instrucoes, setInstrucoes] = useState("");
@@ -139,8 +142,11 @@ export function ResumoDeConversasClient() {
         const s = cfg.data.settings;
         setEnabled(s.enabled);
         setSessionId(s.channel_session_id ?? NENHUMA);
-        setDestino(s.destination ?? "");
-        setDestinoGrupo(s.destination_is_group);
+        // Legado: `destination_is_group` = true guardava o grupo em `destination`.
+        const legadoGrupo = s.destination_is_group === true;
+        setDestino(legadoGrupo ? "" : (s.destination ?? ""));
+        setDestinoGrupo(s.destination_group ?? (legadoGrupo ? (s.destination ?? "") : ""));
+        setSessionGrupoId(s.channel_session_id_group ?? NENHUMA);
         setIntervalo(s.interval_minutes);
         setLote(s.batch_size);
         setPromptPadrao(cfg.data.prompt_padrao);
@@ -177,8 +183,9 @@ export function ResumoDeConversasClient() {
     () => modelos.filter((m) => m.provider === provider),
     [modelos, provider],
   );
-  const sessaoEscolhida = sessoes.find((s) => s.id === sessionId) ?? null;
-  const sessaoEnviaGrupo = sessaoEscolhida?.pode_enviar_grupo === true;
+  const sessaoGrupoEscolhida =
+    sessoes.find((s) => s.id === (sessionGrupoId === NENHUMA ? sessionId : sessionGrupoId)) ?? null;
+  const sessaoEnviaGrupo = sessaoGrupoEscolhida?.pode_enviar_grupo === true;
 
   const atualizarRegra = (i: number, patch: Partial<RegraAlerta>) =>
     setRegras((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -196,7 +203,9 @@ export function ResumoDeConversasClient() {
         enabled,
         channel_session_id: sessionId === NENHUMA ? null : sessionId,
         destination: destino.trim() || null,
-        destination_is_group: destinoGrupo,
+        destination_is_group: false,
+        destination_group: destinoGrupo.trim() || null,
+        channel_session_id_group: sessionGrupoId === NENHUMA ? null : sessionGrupoId,
         interval_minutes: Math.max(1, Math.min(1440, Math.trunc(intervalo) || 15)),
         batch_size: Math.max(1, Math.min(200, Math.trunc(lote) || 20)),
         instructions: instrucoes.trim() || null,
@@ -260,62 +269,90 @@ export function ResumoDeConversasClient() {
             <Switch id="rs-on" checked={enabled} onCheckedChange={setEnabled} disabled={!podeEditar} />
           </div>
 
-          <div className="space-y-2">
-            <Label>Número que envia</Label>
-            <Select value={sessionId} onValueChange={setSessionId} disabled={!podeEditar}>
-              <SelectTrigger>
-                <SelectValue placeholder="Escolha o número conectado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NENHUMA}>Nenhum (usar o primeiro número ativo)</SelectItem>
-                {sessoes.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {(s.display_name ?? s.provider) + (s.phone_number ? ` — ${s.phone_number}` : "")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-3 rounded-md border p-3">
+            <p className="text-sm font-medium">Resumo por número (opcional)</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Número que envia</Label>
+                <Select value={sessionId} onValueChange={setSessionId} disabled={!podeEditar}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha o número conectado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NENHUMA}>Nenhum (usar o primeiro número ativo)</SelectItem>
+                    {sessoes.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {(s.display_name ?? s.provider) +
+                          (s.phone_number ? ` — ${s.phone_number}` : "")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rs-destino">Telefone que recebe</Label>
+                <Input
+                  id="rs-destino"
+                  value={destino}
+                  onChange={(e) => setDestino(e.target.value)}
+                  placeholder="Ex: 5531999998888"
+                  inputMode="tel"
+                  disabled={!podeEditar}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Só dígitos, com DDI e DDD (ex.: 55 + DDD + número). No canal oficial, o destino
+                  precisa ter falado com esse número nas últimas 24 horas.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Tipo de destino</Label>
-              <Select
-                value={destinoGrupo ? "grupo" : "numero"}
-                onValueChange={(v) => setDestinoGrupo(v === "grupo")}
-                disabled={!podeEditar}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="numero">Número de WhatsApp</SelectItem>
-                  <SelectItem value="grupo">Grupo de WhatsApp (só por QR)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="rs-destino">{destinoGrupo ? "ID do grupo" : "Telefone que recebe"}</Label>
-              <Input
-                id="rs-destino"
-                value={destino}
-                onChange={(e) => setDestino(e.target.value)}
-                placeholder={destinoGrupo ? "Ex: 1203630xxxxxxx@g.us" : "Ex: 5531999998888"}
-                inputMode={destinoGrupo ? "text" : "tel"}
-                disabled={!podeEditar}
-              />
-              <p className="text-xs text-muted-foreground">
-                {destinoGrupo
-                  ? "Informe o ID do grupo (@g.us). Só o número por QR envia a grupo — confirme que ele participa do grupo."
-                  : "Só dígitos, com DDI e DDD (ex.: 55 + DDD + número)."}
-              </p>
-              {destinoGrupo && !sessaoEnviaGrupo && (
-                <p className="text-xs text-amber-600 dark:text-amber-500">
-                  O número escolhido não é do tipo por QR — envio a grupo não vai funcionar.
+          <div className="space-y-3 rounded-md border p-3">
+            <p className="text-sm font-medium">Resumo por grupo (opcional)</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Número que envia (grupo)</Label>
+                <Select value={sessionGrupoId} onValueChange={setSessionGrupoId} disabled={!podeEditar}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha o número por QR" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NENHUMA}>Usar o mesmo número do resumo por número</SelectItem>
+                    {sessoes.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {(s.display_name ?? s.provider) +
+                          (s.phone_number ? ` — ${s.phone_number}` : "")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rs-destino-grupo">ID do grupo</Label>
+                <Input
+                  id="rs-destino-grupo"
+                  value={destinoGrupo}
+                  onChange={(e) => setDestinoGrupo(e.target.value)}
+                  placeholder="Ex: 1203630xxxxxxx@g.us"
+                  disabled={!podeEditar}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Informe o ID do grupo (@g.us). Só o número por QR envia a grupo — confirme que ele
+                  participa do grupo.
                 </p>
-              )}
+                {destinoGrupo.trim() !== "" && !sessaoEnviaGrupo && (
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    O número escolhido não é do tipo por QR — envio a grupo não vai funcionar.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Preencha um, outro ou os <strong>dois</strong>: se ambos estiverem preenchidos, o resumo
+            vai para o número <strong>e</strong> para o grupo.
+          </p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

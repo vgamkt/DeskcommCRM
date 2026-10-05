@@ -19,6 +19,8 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { capabilitiesOf } from "@/lib/channels/capabilities";
+import type { ChannelProvider } from "@/lib/channels";
 import { PONTO_RESUMO_DE_CONVERSAS } from "@/lib/conversas/ponto";
 import { PROMPT_PADRAO_DO_RESUMO } from "@/lib/conversas/resumo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -29,7 +31,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const SETTINGS_COLUMNS =
-  "enabled, channel_session_id, destination, destination_is_group, interval_minutes, batch_size, instructions, failure_alerts, updated_at";
+  "enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, interval_minutes, batch_size, instructions, failure_alerts, updated_at";
 
 /** Regra de aviso de falha POR AGENTE: número que ENVIA + número que RECEBE. */
 const regraAlertaSchema = z.object({
@@ -44,6 +46,9 @@ const putSchema = z.object({
   channel_session_id: z.string().uuid().nullable(),
   destination: z.string().trim().max(40).nullable(),
   destination_is_group: z.boolean().default(false),
+  // Destino de GRUPO independente do número: pode coexistir com `destination`.
+  destination_group: z.string().trim().max(120).nullable().optional(),
+  channel_session_id_group: z.string().uuid().nullable().optional(),
   interval_minutes: z.number().int().min(1).max(1440),
   batch_size: z.number().int().min(1).max(200),
   instructions: z.string().max(4000).nullable().optional(),
@@ -55,6 +60,8 @@ const PADRAO = {
   channel_session_id: null as string | null,
   destination: null as string | null,
   destination_is_group: false,
+  destination_group: null as string | null,
+  channel_session_id_group: null as string | null,
   interval_minutes: 15,
   batch_size: 20,
   instructions: null as string | null,
@@ -102,7 +109,12 @@ export async function GET(): Promise<Response> {
       settings: settings ?? PADRAO,
       /** Texto padrão do prompt — a tela usa para preencher a caixa quando vazia. */
       prompt_padrao: PROMPT_PADRAO_DO_RESUMO,
-      sessoes: sessoes ?? [],
+      sessoes: (sessoes ?? []).map((s) => ({
+        ...s,
+        // O envio a GRUPO só existe em canal por QR (`groups: "full"`). A tela
+        // usa para avisar quando o número escolhido não envia a grupo.
+        pode_enviar_grupo: capabilitiesOf((s as { provider: string }).provider as ChannelProvider).groups === "full",
+      })),
       agentes: agentes ?? [],
       binding: binding ?? null,
       pode_editar: ROLE_RANK[authz.org.role] >= ROLE_RANK.admin,
@@ -138,6 +150,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
       channel_session_id: input.channel_session_id,
       destination: input.destination,
       destination_is_group: input.destination_is_group,
+      destination_group: input.destination_group ?? null,
+      channel_session_id_group: input.channel_session_id_group ?? null,
       // Zera o cache do contato do destino: ele é resolvido no próximo envio.
       // Sem isto, trocar o destino deixava o contato VELHO gravado — e a guarda
       // anti-laço passava a pular a conversa do cliente errado.

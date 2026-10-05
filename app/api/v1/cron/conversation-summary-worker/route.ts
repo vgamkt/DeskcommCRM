@@ -73,6 +73,8 @@ interface Settings {
   channel_session_id: string | null;
   destination: string | null;
   destination_is_group: boolean;
+  destination_group: string | null;
+  channel_session_id_group: string | null;
   destination_contact_id: string | null;
   interval_minutes: number;
   batch_size: number;
@@ -144,7 +146,7 @@ async function processarEstado(
 
   const { data: settingsRow } = await admin
     .from("conversation_summary_settings")
-    .select("enabled, channel_session_id, destination, destination_is_group, destination_contact_id, interval_minutes, batch_size, instructions")
+    .select("enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, destination_contact_id, interval_minutes, batch_size, instructions")
     .eq("organization_id", org)
     .maybeSingle();
   const settings = settingsRow as Settings | null;
@@ -282,26 +284,60 @@ async function enviarResumo(
   texto: string,
   stateId: string,
 ): Promise<boolean> {
-  const destino = (settings.destination ?? "").trim();
-  if (!destino) {
+  // Destino NÚMERO: `destination` quando não é o grupo legado. Destino GRUPO:
+  // `destination_group` (novo) OU `destination` quando `destination_is_group`
+  // (legado). Os dois podem coexistir — manda para ambos.
+  const numero = settings.destination_is_group ? "" : (settings.destination ?? "").trim();
+  const grupo =
+    (settings.destination_group ?? "").trim() ||
+    (settings.destination_is_group ? (settings.destination ?? "").trim() : "");
+
+  if (!numero && !grupo) {
     logger.warn("[conversation-summary.cron] sem destino configurado", { organization_id: org });
     return false;
   }
 
-  const sessionId = settings.channel_session_id ?? (await sessaoProntaParaEnvio(admin, org));
-  if (!sessionId) {
-    logger.warn("[conversation-summary.cron] sem sessão de canal", { organization_id: org });
-    return false;
+  let enviou = false;
+
+  if (numero) {
+    const sessionId = settings.channel_session_id ?? (await sessaoProntaParaEnvio(admin, org));
+    if (!sessionId) {
+      logger.warn("[conversation-summary.cron] sem sessão de canal (número)", {
+        organization_id: org,
+      });
+    } else {
+      enviou = (await enviarParaNumero(admin, org, settings, numero, sessionId, texto, stateId)) || enviou;
+    }
   }
 
-  // Grupo: NOTIFICAÇÃO pura — sai pelo ADAPTADOR direto, sem criar contato nem
-  // conversa placeholder (o schema exige `contact_id` e os gatilhos de conversa
-  // disparariam roteamento/atendimento para um alvo que não é cliente). Só vale
-  // em canal com `groups: full` (o por QR); o oficial/parceiro recusa grupo.
-  if (settings.destination_is_group) {
-    return enviarParaGrupo(admin, org, sessionId, destino, texto);
+  if (grupo) {
+    // O grupo pode ter um canal próprio (o por QR); senão, o mesmo do número.
+    const sessionGrupo =
+      settings.channel_session_id_group ??
+      settings.channel_session_id ??
+      (await sessaoProntaParaEnvio(admin, org));
+    if (!sessionGrupo) {
+      logger.warn("[conversation-summary.cron] sem sessão de canal (grupo)", {
+        organization_id: org,
+      });
+    } else {
+      enviou = (await enviarParaGrupo(admin, org, sessionGrupo, grupo, texto)) || enviou;
+    }
   }
 
+  return enviou;
+}
+
+/** Envia o resumo para um NÚMERO: resolve/cria o contato de destino e a conversa. */
+async function enviarParaNumero(
+  admin: Admin,
+  org: string,
+  settings: Settings,
+  destino: string,
+  sessionId: string,
+  texto: string,
+  stateId: string,
+): Promise<boolean> {
   const digits = destino.replace(/\D/g, "");
   if (!digits) return false;
 
@@ -357,6 +393,7 @@ async function enviarResumo(
   );
   return true;
 }
+
 
 /**
  * Envia a notificação para um GRUPO pelo adaptador direto.
