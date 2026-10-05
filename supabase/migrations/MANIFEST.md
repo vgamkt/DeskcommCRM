@@ -357,3 +357,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261005190000` | `0266_failure_alerts` | `conversation_summary_settings.failure_alerts` (jsonb): regras de aviso de falha POR AGENTE — `[{agent_id, channel_session_id, destination, enabled}]`. Tira o `handoff_notification_number` do card do agente e centraliza o aviso no informante, com número que envia e número que recebe. Baseline idempotente. |
 
 | `20261005210000` | `0267_resumo_destino_grupo` | `conversation_summary_settings.destination_group` (JID `@g.us`) + `channel_session_id_group` (canal que envia ao grupo, FK `channel_sessions` ON DELETE SET NULL). Permite mandar o resumo para NÚMERO, GRUPO ou os DOIS, cada um com seu canal. Coexiste com `destination`/`destination_is_group` (legado). Baseline idempotente. |
+
+| `20261006010000` | `0268_resumo_numeros_origem` | `conversation_summary_settings.source_numbers` (jsonb array de telefones de CLIENTE). O resumo só rastreia/resume conversas cujo contato está na lista (vazio = nenhum). `fn_conversation_summary_touch` recriado para ignorar contatos fora da lista. Baseline idempotente. |

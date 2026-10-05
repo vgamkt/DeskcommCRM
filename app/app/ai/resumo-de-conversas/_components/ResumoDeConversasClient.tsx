@@ -42,6 +42,7 @@ interface Settings {
   destination_is_group: boolean;
   destination_group: string | null;
   channel_session_id_group: string | null;
+  source_numbers?: string[];
   interval_minutes: number;
   batch_size: number;
   instructions: string | null;
@@ -119,6 +120,7 @@ export function ResumoDeConversasClient() {
   const [destino, setDestino] = useState("");
   const [destinoGrupo, setDestinoGrupo] = useState("");
   const [sessionGrupoId, setSessionGrupoId] = useState<string>(NENHUMA);
+  const [numerosOrigem, setNumerosOrigem] = useState("");
   const [intervalo, setIntervalo] = useState(15);
   const [lote, setLote] = useState(20);
   const [instrucoes, setInstrucoes] = useState("");
@@ -147,6 +149,7 @@ export function ResumoDeConversasClient() {
         setDestino(legadoGrupo ? "" : (s.destination ?? ""));
         setDestinoGrupo(s.destination_group ?? (legadoGrupo ? (s.destination ?? "") : ""));
         setSessionGrupoId(s.channel_session_id_group ?? NENHUMA);
+        setNumerosOrigem((s.source_numbers ?? []).join("\n"));
         setIntervalo(s.interval_minutes);
         setLote(s.batch_size);
         setPromptPadrao(cfg.data.prompt_padrao);
@@ -206,6 +209,10 @@ export function ResumoDeConversasClient() {
         destination_is_group: false,
         destination_group: destinoGrupo.trim() || null,
         channel_session_id_group: sessionGrupoId === NENHUMA ? null : sessionGrupoId,
+        source_numbers: numerosOrigem
+          .split(/[\n,;]+/)
+          .map((t) => t.trim())
+          .filter((t) => t !== ""),
         interval_minutes: Math.max(1, Math.min(1440, Math.trunc(intervalo) || 15)),
         batch_size: Math.max(1, Math.min(200, Math.trunc(lote) || 20)),
         instructions: instrucoes.trim() || null,
@@ -353,6 +360,23 @@ export function ResumoDeConversasClient() {
             Preencha um, outro ou os <strong>dois</strong>: se ambos estiverem preenchidos, o resumo
             vai para o número <strong>e</strong> para o grupo.
           </p>
+
+          <div className="space-y-2">
+            <Label htmlFor="rs-numeros">Números que serão resumidos</Label>
+            <Textarea
+              id="rs-numeros"
+              value={numerosOrigem}
+              onChange={(e) => setNumerosOrigem(e.target.value)}
+              placeholder={"Ex.:\n5511999998888\n5512988887777"}
+              rows={4}
+              disabled={!podeEditar}
+            />
+            <p className="text-xs text-muted-foreground">
+              O resumo cobre <strong>somente</strong> as conversas destes números de cliente (um por
+              linha, ou separados por vírgula). Pode ser mais de um. <strong>Vazio = não resume
+              ninguém.</strong>
+            </p>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

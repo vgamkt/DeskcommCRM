@@ -76,6 +76,8 @@ interface Settings {
   destination_group: string | null;
   channel_session_id_group: string | null;
   destination_contact_id: string | null;
+  /** Telefones de cliente que entram no resumo. Vazio = nenhum. */
+  source_numbers: unknown;
   interval_minutes: number;
   batch_size: number;
   instructions: string | null;
@@ -146,13 +148,39 @@ async function processarEstado(
 
   const { data: settingsRow } = await admin
     .from("conversation_summary_settings")
-    .select("enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, destination_contact_id, interval_minutes, batch_size, instructions")
+    .select("enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, destination_contact_id, source_numbers, interval_minutes, batch_size, instructions")
     .eq("organization_id", org)
     .maybeSingle();
   const settings = settingsRow as Settings | null;
   if (!settings?.enabled) {
     await soltar(admin, estado.id);
     return "ignorada";
+  }
+
+  // SÓ NÚMEROS ESPECIFICADOS: o resumo cobre apenas as conversas cujo contato
+  // está em `source_numbers`. Lista vazia = não resume ninguém. (O gatilho já
+  // filtra na criação; aqui é defesa para estados criados antes da config.)
+  const fontes = Array.isArray(settings.source_numbers)
+    ? (settings.source_numbers as unknown[])
+        .map((v) => String(v).replace(/\D/g, ""))
+        .filter((v) => v !== "")
+    : [];
+  if (fontes.length === 0) {
+    await soltar(admin, estado.id);
+    return "ignorada";
+  }
+  if (estado.contact_id) {
+    const { data: ct } = await admin
+      .from("contacts")
+      .select("phone_number")
+      .eq("organization_id", org)
+      .eq("id", estado.contact_id)
+      .maybeSingle();
+    const tel = String((ct as { phone_number?: string } | null)?.phone_number ?? "").replace(/\D/g, "");
+    if (!fontes.includes(tel)) {
+      await soltar(admin, estado.id);
+      return "ignorada";
+    }
   }
 
   // Guarda anti-laço (defesa em profundidade): a conversa com o próprio destino
