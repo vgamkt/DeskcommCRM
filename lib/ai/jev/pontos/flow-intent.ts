@@ -33,7 +33,12 @@ export function perguntaDeFluxoDeJev(fluxos: readonly FluxoParaJev[]): Perguntas
         'A mensagem do cliente deve INICIAR algum fluxo de atendimento? ' +
         'Catálogo/informação (ver/saber preço, fotos, detalhes), saudação ou dúvida → "none". ' +
         'Escolha da moto (gostou/quer essa) → Qualificação. Financiamento/parcelar → Financiamento. ' +
-        'Dar a moto na troca → Troca. Vender/consignar → Venda ou Consignação.',
+        'Dar a moto na troca → Troca. Vender/consignar → Venda ou Consignação. ' +
+        'ATENÇÃO: uma OBJEÇÃO ou comentário sobre PREÇO ("achei caro", "tá caro", "acima do que ' +
+        'posso pagar", "não tenho condições") NÃO é pedido de financiamento — responda "none". ' +
+        'Só escolha Financiamento quando o cliente PERGUNTAR ou PEDIR financiamento/parcelas/entrada. ' +
+        'Se a mensagem apenas reclama, comenta, agradece ou responde algo sem PEDIR um desses ' +
+        'processos, responda "none".',
       criteria,
     },
   };

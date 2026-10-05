@@ -204,6 +204,7 @@ import {
   faseDoTurno,
   motivoObjecaoFinal,
   renderBlocoObjecao,
+  textoDeContingenciaDaNegociacao,
   valorCitado,
   type EstadoObjecao,
   type FaseObjecao,
@@ -6311,11 +6312,17 @@ async function executarTurnoDoAgente(
     // mensagens deste turno, o motor a envia em mensagem própria — pela MESMA
     // cadeia de guardrails (nada sai por baixo dela). Best-effort: falhar aqui
     // não derruba o turno que já respondeu ao cliente.
+    //
+    // MAS: durante uma OBJEÇÃO/negociação em curso (`motivoNegociacao !== null`)
+    // a objeção tem PRIORIDADE — forçar a pergunta do fluxo no meio dela fazia o
+    // bot repetir "Para o financiamento, pode me passar seu CPF?" a cada turno
+    // (medido ao vivo 2026-10-05) enquanto o cliente só reclamava de preço.
     if (
       !preview &&
       liveJob().kind === 'inbound_turn' &&
       atendimento !== null &&
       valoresDoFluxo !== null &&
+      motivoNegociacao === null &&
       seq < maxSendsPerTurn
     ) {
       const estadoDoFluxo = atendimento;
@@ -6767,6 +6774,69 @@ async function executarTurnoDoAgente(
       throw new JobSettledError(
         'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
       );
+    }
+
+    // ── NUNCA TERMINAR SEM RESPOSTA ─────────────────────────────────────────
+    // O turno rodou e é inbound, mas NADA saiu: o modelo escreveu a resposta como
+    // TEXTO sem chamar `send_message`, ou a régua barrou a oferta e ele não voltou.
+    // Manda o texto que o MODELO produziu; sem texto, um fallback determinístico da
+    // negociação. O cliente não pode ficar mudo. Best-effort: falhar aqui não
+    // derruba o turno que já rodou.
+    if (
+      !preview &&
+      liveJob().kind === 'inbound_turn' &&
+      outcomes.length === 0 &&
+      seq < maxSendsPerTurn
+    ) {
+      const textoDoModelo = (turn.result.text ?? '').trim();
+      const texto =
+        textoDoModelo !== '' ? textoDoModelo : (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '');
+      if (texto !== '') {
+        try {
+          await runBeforeSend({
+            pool,
+            log: runLog,
+            agentOperation,
+            tenantId,
+            leadId,
+            jobId: liveJob().id,
+            channelSessionId: input.channelSessionId,
+            body: texto,
+            optedOutThisTurn,
+            crmDailyLimit: null,
+            // Resposta de fechamento do turno (texto do próprio modelo): não é blast.
+            enforceSpinning: false,
+            now: clock(),
+            ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+            ...(lgpd !== undefined ? { lgpd } : {}),
+            ...(deps.knobs.disclosureMode !== undefined
+              ? { disclosureMode: deps.knobs.disclosureMode }
+              : {}),
+            send: (finalBody: string) => {
+              seq += 1;
+              corposEnviados.push(finalBody);
+              return liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq,
+                conversationId: input.conversationId,
+                body: finalBody,
+              });
+            },
+          });
+          runLog.info('turno sem mensagem do modelo — resposta de contingência enviada', {
+            origem: textoDoModelo !== '' ? 'texto_do_modelo' : 'fallback_objecao',
+            chars: texto.length,
+          });
+        } catch (err) {
+          runLog.warn('resposta de contingência falhou — o turno segue', {
+            error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+          });
+        }
+      }
     }
 
     runLog.info('turno do agente concluído', {

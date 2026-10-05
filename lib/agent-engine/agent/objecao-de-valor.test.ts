@@ -11,6 +11,7 @@ import {
   motivoDaObjecao,
   motivoObjecaoFinal,
   renderBlocoObjecao,
+  textoDeContingenciaDaNegociacao,
   valorCitado,
   type EstadoObjecao,
 } from './objecao-de-valor';
@@ -275,5 +276,27 @@ describe('renderBlocoObjecao', () => {
     expect(b).toContain('NEGOU');
     expect(b).toContain('CONTINUA');
     expect(b).toContain('NÃO chame `crm_request_human_handoff`');
+  });
+});
+
+describe('textoDeContingenciaDaNegociacao', () => {
+  it('devolve um texto para CADA ação da negociação (cliente nunca fica mudo)', () => {
+    for (const acao of [
+      'persuadir_1',
+      'persuadir_2',
+      'persuadir_3_e_perguntar',
+      'mostrar_opcoes',
+      'encaminhar_e_encerrar',
+      'handoff',
+    ]) {
+      const t = textoDeContingenciaDaNegociacao(acao);
+      expect(t, acao).toBeTruthy();
+      expect(t!.length, acao).toBeGreaterThan(10);
+    }
+  });
+
+  it('sem ação de negociação → null', () => {
+    expect(textoDeContingenciaDaNegociacao(null)).toBeNull();
+    expect(textoDeContingenciaDaNegociacao('outra_coisa')).toBeNull();
   });
 });

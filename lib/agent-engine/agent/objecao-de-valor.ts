@@ -277,6 +277,30 @@ export function ehPedidoDesconto(mensagem: string): boolean {
 }
 
 /**
+ * Texto de CONTINGÊNCIA quando o turno de negociação termina SEM nenhuma mensagem
+ * enviada (o modelo escreveu a resposta como texto puro e não chamou
+ * `send_message`, ou a régua barrou a oferta e ele não voltou). Garante que o
+ * cliente NUNCA fique mudo. Puro.
+ */
+export function textoDeContingenciaDaNegociacao(acao: string | null): string | null {
+  switch (acao) {
+    case 'persuadir_1':
+    case 'persuadir_2':
+      return 'Entendi. Me conta o que pesou mais pra você: o valor, a condição de pagamento ou a moto em si? Assim eu te ajudo do jeito certo.';
+    case 'persuadir_3_e_perguntar':
+      return 'Vou pedir ao responsável pra ver o que dá pra fazer nessa moto. Me diz: você quer só ela, ou posso te mostrar outras parecidas?';
+    case 'mostrar_opcoes':
+      return 'Perfeito! Vou te mostrar as opções agora.';
+    case 'encaminhar_e_encerrar':
+      return 'Vou pedir ao responsável pra ver o que dá pra fazer nessa moto pra você e já te retorno por aqui.';
+    case 'handoff':
+      return 'Vou encaminhar seu caso para o responsável e ele te retorna por aqui.';
+    default:
+      return null;
+  }
+}
+
+/**
  * Bloco de contexto injetado no sufixo do turno (por-lead) — diz à IA o que fazer
  * na fase atual. Determinístico; nunca no prompt fixo da persona.
  */
