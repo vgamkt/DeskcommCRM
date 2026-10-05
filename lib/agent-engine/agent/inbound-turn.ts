@@ -621,6 +621,16 @@ export const PERGUNTA_DE_ORCAMENTO =
   'Se preferir, me diga uma faixa (ex.: "até 15 mil").';
 
 /**
+ * Pergunta quando o PEDIDO é vago (a Jev do `offer_motos` diz `perguntar`): o
+ * cliente quer uma moto mas não deu uso/tipo nem orçamento. Entender antes de
+ * despejar o catálogo.
+ */
+export const PERGUNTA_DE_NECESSIDADE =
+  'Claro, te ajudo! Me conta só duas coisas para eu acertar de primeira: ' +
+  'como você vai usar a moto (cidade, trilha, trabalho…) e quanto você pensa investir? ' +
+  'Assim eu já separo as que combinam com você.';
+
+/**
  * Teto de mensagens FÍSICAS enviadas ao lead por turno quando `knobs.maxSendsPerTurn`
  * está ausente (testes) — produção sempre recebe o knob do env (MAX_SENDS_PER_TURN).
  *
@@ -3096,6 +3106,14 @@ async function executarTurnoDoAgente(
     currentInboundText.trim() !== '' &&
     motoAtualDaConversa === null &&
     pedePrecoSemValor(currentInboundText);
+  // A Jev do `offer_motos` pode dizer que o pedido é VAGO (`perguntar`): antes de
+  // despejar o catálogo, PERGUNTAR o que falta (uso/tipo/orçamento). Mesma
+  // mecânica do C-107 — a pergunta sai no lugar do texto do modelo.
+  const perguntaDeFaltaTurno =
+    precoSemValorTurno || vereditoOfertaJev?.perguntar === true;
+  const textoPerguntaFaltaTurno = precoSemValorTurno
+    ? PERGUNTA_DE_ORCAMENTO
+    : PERGUNTA_DE_NECESSIDADE;
   // C-107: o cliente citou um ANO explicitamente (ex.: "quero uma moto de 2024")?
   // Nesse caso o bloqueio do ano é suspenso SÓ neste turno — o ano vira obrigatório.
   const clienteCitouAno =
@@ -3924,8 +3942,8 @@ async function executarTurnoDoAgente(
         // min(1) no argumento, mas um `\n`/espaço passa e vira vazio depois do
         // trim/gates. Recusar aqui devolve ao modelo para reescrever — nunca
         // manda bolha em branco.
-        // C-107: preço sem valor → o corpo é a PERGUNTA determinística; não barra.
-        if (!precoSemValorTurno && body.trim() === '' && (media_urls ?? []).length === 0 && media_url === undefined) {
+        // C-107: preço sem valor (ou pedido vago) → o corpo é a PERGUNTA determinística; não barra.
+        if (!perguntaDeFaltaTurno && body.trim() === '' && (media_urls ?? []).length === 0 && media_url === undefined) {
           return {
             ok: false,
             error: {
@@ -3963,8 +3981,8 @@ async function executarTurnoDoAgente(
         }
         // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
         // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
-        // C-107: preço sem valor → nenhuma foto sai neste turno (só a pergunta).
-        const fotosDeclaradas = precoSemValorTurno
+        // C-107: preço sem valor / pedido vago → nenhuma foto sai neste turno (só a pergunta).
+        const fotosDeclaradas = perguntaDeFaltaTurno
           ? []
           : [
               ...new Set(
@@ -4103,7 +4121,7 @@ async function executarTurnoDoAgente(
           motosConsultadasPeloModelo = [...catalogoDoTurno];
           // C-107: preço sem valor → NÃO apresentar catálogo. A ação é PERGUNTAR o
           // orçamento (skill). Sem este gate, o motor apresentava por cima do modelo.
-          if (precoSemValorTurno) return [];
+          if (perguntaDeFaltaTurno) return [];
           // Campos da legenda configurados pelo dono (C-067): colunas marcadas
           // com "Mostrar", por nome, com o papel para o rótulo. Vazio = deixa o
           // motor usar o comportamento antigo (ano/cor/km/preço).
@@ -4796,9 +4814,9 @@ async function executarTurnoDoAgente(
             leadId,
             jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
-            // C-107: preço sem valor → o corpo enviado é a PERGUNTA de orçamento
+            // C-107: preço sem valor / pedido vago → o corpo enviado é a PERGUNTA
             // (o texto do modelo, que insistia em "separei opções", é ignorado).
-            body: precoSemValorTurno ? PERGUNTA_DE_ORCAMENTO : body,
+            body: perguntaDeFaltaTurno ? textoPerguntaFaltaTurno : body,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar

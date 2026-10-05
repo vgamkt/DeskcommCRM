@@ -16,6 +16,8 @@ import type { PerguntasDeJev, RespostasDeJev } from '../tipos';
 
 export const OFERECER_SIM = 'oferecer';
 export const OFERECER_NAO = 'nao_oferecer';
+/** Pedido VAGO: não oferecer motos ainda — o sistema pergunta o que falta. */
+export const OFERECER_PERGUNTAR = 'perguntar';
 
 /** Critério da oferta (vira preferência de ranqueamento no motor). */
 export type CriterioDeOfertaJev = 'preco' | 'km' | 'ano' | 'nenhum';
@@ -39,6 +41,8 @@ export interface ContextoDeOferta {
 
 export interface VereditoDeOferta {
   oferecer: boolean;
+  /** O pedido está VAGO: antes de mostrar, PERGUNTAR o que falta (orçamento/tipo/uso). */
+  perguntar: boolean;
   criterio: CriterioDeOfertaJev;
   /** Frase curta do porquê — para LOG, nunca para o cliente. */
   motivo: string;
@@ -63,10 +67,18 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         'resposta é SEMPRE "sim, mostrar motos agora". ' +
         'REGRA INEGOCIÁVEL: se "cliente pediu mais opções" for verdadeiro, a resposta é SEMPRE ' +
         '"sim, mostrar motos agora" (com o criterio que ataca o motivo). NUNCA negue um pedido ' +
-        'explícito do cliente.',
+        'explícito do cliente. ' +
+        'ENTENDER ANTES DE RESPONDER: se o pedido for GENÉRICO/VAGO — o cliente diz que quer uma ' +
+        'moto mas NÃO dá nada para filtrar (nem orçamento, nem tipo de uso/categoria, nem ' +
+        'cilindrada, nem modelo/marca) — escolha "perguntar": é melhor PERGUNTAR o que ele precisa ' +
+        '(uso? quanto pensa investir?) do que despejar o catálogo e adivinhar. Ex.: "quero uma ' +
+        'moto", "me ajuda a escolher", "quero comprar uma moto". NÃO pergunte se ele já deu um ' +
+        'critério (modelo, cc, faixa de preço, tipo, cor) ou se pediu para ver opções.',
       criteria: {
         [OFERECER_SIM]: 'sim, mostrar motos agora',
         [OFERECER_NAO]: 'não mostrar motos neste turno',
+        [OFERECER_PERGUNTAR]:
+          'não mostrar ainda: o pedido é vago — o sistema deve PERGUNTAR o que o cliente precisa',
       },
     },
     criterio: {
@@ -87,11 +99,18 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
 /** Converte as respostas da Jev no veredito de oferta. */
 export function vereditoDeOfertaDaJev(respostas: RespostasDeJev): VereditoDeOferta {
   const a = respostas.oferta;
-  const oferecer = a?.type === 'choice' && a.choice === OFERECER_SIM;
+  const escolha = a?.type === 'choice' ? a.choice : null;
+  const perguntar = escolha === OFERECER_PERGUNTAR;
+  const oferecer = escolha === OFERECER_SIM;
   const c = respostas.criterio;
   const criterio: CriterioDeOfertaJev =
     oferecer && c?.type === 'choice' && (c.choice === 'preco' || c.choice === 'km' || c.choice === 'ano')
       ? c.choice
       : 'nenhum';
-  return { oferecer, criterio, motivo: oferecer ? `jev_liberou_${criterio}` : 'jev_negou' };
+  return {
+    oferecer,
+    perguntar,
+    criterio,
+    motivo: perguntar ? 'jev_perguntar' : oferecer ? `jev_liberou_${criterio}` : 'jev_negou',
+  };
 }

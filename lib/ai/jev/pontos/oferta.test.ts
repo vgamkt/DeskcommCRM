@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   OFERECER_NAO,
+  OFERECER_PERGUNTAR,
   OFERECER_SIM,
   perguntaDeOfertaJev,
   vereditoDeOfertaDaJev,
@@ -28,7 +29,12 @@ describe('offer_motos Jev', () => {
       oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} },
       criterio: { type: 'choice', choice: 'preco', confidence: 1, probabilities: {} },
     };
-    expect(vereditoDeOfertaDaJev(r)).toEqual({ oferecer: true, criterio: 'preco', motivo: 'jev_liberou_preco' });
+    expect(vereditoDeOfertaDaJev(r)).toEqual({
+      oferecer: true,
+      perguntar: false,
+      criterio: 'preco',
+      motivo: 'jev_liberou_preco',
+    });
   });
 
   it('não oferecer → criterio nenhum', () => {
@@ -36,7 +42,28 @@ describe('offer_motos Jev', () => {
       oferta: { type: 'choice', choice: OFERECER_NAO, confidence: 1, probabilities: {} },
       criterio: { type: 'choice', choice: 'preco', confidence: 1, probabilities: {} },
     };
-    expect(vereditoDeOfertaDaJev(r)).toEqual({ oferecer: false, criterio: 'nenhum', motivo: 'jev_negou' });
+    expect(vereditoDeOfertaDaJev(r)).toEqual({
+      oferecer: false,
+      perguntar: false,
+      criterio: 'nenhum',
+      motivo: 'jev_negou',
+    });
+  });
+
+  it('pedido VAGO → perguntar (não oferece, não nega)', () => {
+    const r: RespostasDeJev = {
+      oferta: { type: 'choice', choice: OFERECER_PERGUNTAR, confidence: 1, probabilities: {} },
+    };
+    expect(vereditoDeOfertaDaJev(r)).toEqual({
+      oferecer: false,
+      perguntar: true,
+      criterio: 'nenhum',
+      motivo: 'jev_perguntar',
+    });
+    // A pergunta da Jev oferece a opção "perguntar".
+    expect(perguntaDeOfertaJev(ctx).oferta).toMatchObject({
+      criteria: expect.objectContaining({ [OFERECER_PERGUNTAR]: expect.any(String) }),
+    });
   });
 
   it('oferecer sem critério escolhido → nenhum', () => {
