@@ -73,6 +73,22 @@ export async function DELETE(
     );
   }
 
+  // Os BINDINGS de ponto (`ai_purpose_bindings`) TAMBÉM têm FK para a credencial.
+  // Apagá-los junto é o certo: um binding para uma chave que não existe mais é
+  // config morta, e sem isto o delete falha com FK (23503) para quem trocou a
+  // chave de um ponto (ex.: os 17 bindings `__jev` apontam para a chave da Jev —
+  // excluir o card era impossível).
+  const { error: bindErr } = await admin
+    .from("ai_purpose_bindings")
+    .delete()
+    .eq("credential_id", id)
+    .eq("organization_id", activeOrg.orgId);
+  if (bindErr) {
+    return fail("internal_error", "Erro ao remover os pontos que usavam a credential.", 500, {
+      requestId,
+    });
+  }
+
   const { error: delErr } = await admin
     .from("ai_provider_credentials")
     .delete()

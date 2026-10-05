@@ -205,7 +205,9 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
               {t("Remover credencial")} &ldquo;{credential.label}&rdquo;?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t("Agents que usam esta credencial vão falhar ao executar. Esta ação não pode ser desfeita.")}
+              {t(
+                "Os pontos que usam esta chave voltam à configuração padrão (e agentes publicados com ela bloqueiam a remoção). Esta ação não pode ser desfeita.",
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
