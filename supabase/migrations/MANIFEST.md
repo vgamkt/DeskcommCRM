@@ -351,3 +351,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261003030000` | `0263_imutabilidade_colunas_resiliencia` | Recria `fn_ai_agent_version_content_immutable` (0051) incluindo as colunas novas de conteúdo: `turn_model_timeout_ms`, `turn_model_max_tentativas` (0261) e `handoff_notification_number` (0262). A lista era explícita e ficou para trás; sem isto, um UPDATE numa versão publicada podia mudar o timeout/aviso. Baseline idempotente. |
 
 | `20261005150000` | `0264_desvincular_credential_de_versao` | `fn_ai_agent_version_content_immutable`: permite `credential_id` não-nulo -> null em versão não-draft (desvincular para poder excluir credencial defasada presa a versões `superseded`); TROCAR a chave segue imutável. Baseline idempotente. |
+
+| `20261005170000` | `0265_credential_fk_set_null` | Referências à credencial viram ações declarativas da FK: `ai_agent_versions.credential_id` -> ON DELETE SET NULL (versão histórica perde a referência); `ai_purpose_bindings.credential_id` -> ON DELETE CASCADE (binding da chave sai junto). A rota de DELETE deixa de limpar tabela a tabela. Baseline idempotente. |

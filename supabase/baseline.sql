@@ -24968,3 +24968,21 @@ drop trigger if exists trg_ai_agent_versions_content_immutable on public.ai_agen
 create trigger trg_ai_agent_versions_content_immutable
   before update on public.ai_agent_versions
   for each row execute function public.fn_ai_agent_version_content_immutable();
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0265 · Referências à credencial viram ações da FK (apêndice idempotente)
+-- ════════════════════════════════════════════════════════════════════════════
+-- `ai_agent_versions.credential_id` -> SET NULL (a versão histórica perde a
+-- referência); `ai_purpose_bindings.credential_id` -> CASCADE (o binding da
+-- chave sai junto). A rota de DELETE não limpa mais tabela a tabela.
+alter table public.ai_agent_versions
+  drop constraint if exists ai_agent_versions_credential_id_fkey;
+alter table public.ai_agent_versions
+  add constraint ai_agent_versions_credential_id_fkey
+  foreign key (credential_id) references public.ai_provider_credentials(id) on delete set null;
+
+alter table public.ai_purpose_bindings
+  drop constraint if exists ai_purpose_bindings_credential_id_fkey;
+alter table public.ai_purpose_bindings
+  add constraint ai_purpose_bindings_credential_id_fkey
+  foreign key (credential_id) references public.ai_provider_credentials(id) on delete cascade;

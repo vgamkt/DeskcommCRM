@@ -73,39 +73,10 @@ export async function DELETE(
     );
   }
 
-  // Versões em RASCUNHO também referenciam (FK RESTRICT), mas não executam.
-  // Soltamos a chave delas (`null` → herda o provedor do agente/organização)
-  // para permitir a exclusão. As PUBLICADAS já bloquearam acima — sem isto, uma
-  // chave defasada presa a rascunhos antigos não tinha como ser excluída.
-  if ((linked ?? []).length > 0) {
-    const { error: unlinkErr } = await admin
-      .from("ai_agent_versions")
-      .update({ credential_id: null })
-      .eq("credential_id", id)
-      .eq("organization_id", activeOrg.orgId);
-    if (unlinkErr) {
-      return fail("internal_error", "Erro ao desvincular versões da credential.", 500, {
-        requestId,
-      });
-    }
-  }
-
-  // Os BINDINGS de ponto (`ai_purpose_bindings`) TAMBÉM têm FK para a credencial.
-  // Apagá-los junto é o certo: um binding para uma chave que não existe mais é
-  // config morta, e sem isto o delete falha com FK (23503) para quem trocou a
-  // chave de um ponto (ex.: os 17 bindings `__jev` apontam para a chave da Jev —
-  // excluir o card era impossível).
-  const { error: bindErr } = await admin
-    .from("ai_purpose_bindings")
-    .delete()
-    .eq("credential_id", id)
-    .eq("organization_id", activeOrg.orgId);
-  if (bindErr) {
-    return fail("internal_error", "Erro ao remover os pontos que usavam a credential.", 500, {
-      requestId,
-    });
-  }
-
+  // As referências são resolvidas pela PRÓPRIA FK (0265): as versões de agente
+  // ficam com `credential_id = null` (SET NULL) e os bindings de ponto saem
+  // juntos (CASCADE). Nada de limpar tabela a tabela aqui — referência nova se
+  // declara na FK, não nesta rota.
   const { error: delErr } = await admin
     .from("ai_provider_credentials")
     .delete()
