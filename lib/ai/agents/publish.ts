@@ -59,9 +59,14 @@ export async function publishAgentVersion(
   // conversa" (o `?? model` do operator-turn).
   const operatorModel = (version as { operator_model?: string | null }).operator_model ?? null;
   if (operatorModel) {
+    // FILTRAR POR PROVIDER: o mesmo `model_id` existe em mais de um provider (ex.:
+    // `deepseek-v4-flash` em `opencode` E `opencode_go`). Sem o filtro, o
+    // `.maybeSingle()` recebia 2 linhas → `modelo = null` → `model_not_found`
+    // mesmo com o agente publicável (medido 2026-10-05, agente "Marcela").
     const { data: modelo } = await admin
       .from("ai_models")
       .select("provider")
+      .eq("provider", version.provider)
       .eq("model_id", operatorModel)
       .is("deprecated_at", null)
       .maybeSingle();
