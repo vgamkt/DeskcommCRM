@@ -18,7 +18,15 @@ import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 // Fase do TURNO. Duas tentativas de persuasão ('persuadir' → 'persuadir2') e, na
 // 3ª vez do MESMO tipo de objeção, 'oferecer' (libera alternativas com o aviso ao
 // responsável). 'handoff' quando o cliente insiste em desconto.
-export type FaseObjecao = 'persuadir' | 'persuadir2' | 'oferecer' | 'mostrar' | 'handoff';
+export type FaseObjecao =
+  | 'persuadir'
+  | 'persuadir2'
+  | 'oferecer'
+  | 'mostrar'
+  | 'handoff'
+  // O cliente NEGOU as opções (`encaminhar_e_encerrar`): avisa o responsável e
+  // SEGUE atendendo. NÃO é o `handoff` duro (que silencia) — ver `renderBlocoObjecao`.
+  | 'encaminhar';
 
 /** O TIPO da objeção — a contagem é POR TIPO (mudou o tipo, reinicia em 1). */
 export type MotivoObjecao = 'preco' | 'km' | 'ano' | 'outro';
@@ -40,12 +48,38 @@ export interface EstadoObjecao {
 export function motivoDaObjecao(mensagem: string): MotivoObjecao {
   const n = normalizarNomeDeMoto(mensagem);
   if (n === '') return 'outro';
-  if (/\b(car[oa]|preco|valor|desconto|barat\w*|salgad\w*|parcela\w*|custa|orcamento)\b/.test(n)) {
+  // Mesmas formas de OBJEÇÃO DE PREÇO do `ehObjecaoValor` — inclusive as que NÃO
+  // citam "caro/preço" ("acima do que posso pagar", "não tenho condições"). Sem
+  // isto, "tá acima do que posso pagar" virava `outro`, TROCAVA o tópico e
+  // reiniciava a contagem (medido ao vivo 2026-10-05).
+  if (
+    /\b(car[oa]|preco|valor|desconto|barat\w*|salgad\w*|parcela\w*|custa|orcamento)\b/.test(n) ||
+    /\bacima do (que )?(eu )?posso pagar\b/.test(n) ||
+    /\bacima do (meu )?orcamento\b/.test(n) ||
+    /\bnao (da|dá) (mesmo|pra mim|para mim)\b/.test(n) ||
+    /\bnao (tenho|posso) (condic\w*|pagar|arcar)\b/.test(n) ||
+    /\bnao (cabe|encaixa) no (meu )?(orcamento|bolso)\b/.test(n) ||
+    /\bmuito (pra|para) mim\b/.test(n) ||
+    /\bfora do (meu )?orcamento\b/.test(n)
+  ) {
     return 'preco';
   }
   if (/\b(rodad\w*|quilometragem|quilometros|km)\b/.test(n)) return 'km';
   if (/\b(antig\w*|velh\w*|ano)\b/.test(n)) return 'ano';
   return 'outro';
+}
+
+/**
+ * O TIPO final da objeção: a JEV decide; quando ela devolve o catch-all `outro`
+ * (não determinou um tipo específico) e o regex reconhece preço/km/ano, o regex
+ * refina. Doutrina "a Jev decide sempre": o regex só cobre o que a Jev deixou em
+ * aberto — não "vence" um tipo específico que ela deu.
+ */
+export function motivoObjecaoFinal(jev: MotivoObjecao | null, mensagem: string): MotivoObjecao {
+  if (jev !== null && jev !== 'outro') return jev;
+  const regex = motivoDaObjecao(mensagem);
+  if (regex !== 'outro') return regex;
+  return jev ?? 'outro';
 }
 
 /**
@@ -102,6 +136,23 @@ export function clienteConfirmouVer(mensagem: string): boolean {
     return false;
   }
   return /\b(sim|pode|quero|manda|mande|mostra|mostrar|claro|bora|vamos|aceito|ok|beleza|isso|com certeza|por favor|vai|quero ver|pode mostrar|pode mandar)\b/.test(
+    n,
+  );
+}
+
+/**
+ * O cliente NEGOU explicitamente ver as opções (resposta à pergunta da 3ª)?
+ * Distingue uma NEGAÇÃO de um assunto alheio ("bom dia", "e o financiamento?"):
+ * só a negação (ou uma nova objeção) é resposta à pergunta. Puro.
+ */
+export function clienteNegouVer(mensagem: string): boolean {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return false;
+  // "não quero ver / não quero outras / prefiro essa / é só essa / deixa / dispensa".
+  if (/\bna[oó]\b/.test(n) && /\b(quero|preciso|ver|mostrar|outras?|opcoes?|motos?)\b/.test(n)) {
+    return true;
+  }
+  return /\b(prefiro (essa|esta|ela)|fica(ria)? com (essa|esta|ela)|so (essa|esta)|so quero (essa|esta|ela)|somente (essa|esta)|apenas (essa|esta)|deixa|dispensa|nao precisa)\b/.test(
     n,
   );
 }
@@ -270,6 +321,15 @@ export function renderBlocoObjecao(fase: FaseObjecao): string {
     ].join('\n');
   }
   // 'oferecer' (3ª objeção): NÃO mostra ainda — informa o responsável e PERGUNTA.
+  if (fase === 'encaminhar') {
+    return [
+      '## Objeção — o cliente NEGOU as opções: encaminhar o caso SEM parar de atender',
+      'O cliente disse que não quer ver outras opções e quer tratar essa moto. O sistema já avisa o responsável e o atendimento CONTINUA com você.',
+      '- Informe, em UMA linha acolhedora, que vai pedir ao responsável para analisar essa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É um AVISO — não peça autorização.',
+      '- NÃO ofereça outras motos. NÃO prometa desconto. NÃO tente contornar a objeção de novo.',
+      '- NÃO chame `crm_request_human_handoff`: o sistema já encaminhou; chamar isso silencia o bot e o cliente fica sem resposta. Continue respondendo normalmente no próximo assunto.',
+    ].join('\n');
+  }
   return [
     '## Objeção — última tentativa: avisar o responsável e PERGUNTAR antes de mostrar',
     'Você já tentou convencer DUAS vezes e o cliente continua na objeção. Neste turno NÃO mostre motos:',

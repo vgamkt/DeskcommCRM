@@ -56,7 +56,8 @@ export function faseDaAcao(acao: AcaoNegociacao):
   | 'persuadir2'
   | 'oferecer'
   | 'mostrar'
-  | 'handoff' {
+  | 'handoff'
+  | 'encaminhar' {
   switch (acao) {
     case 'persuadir_1':
       return 'persuadir';
@@ -66,8 +67,10 @@ export function faseDaAcao(acao: AcaoNegociacao):
       return 'oferecer';
     case 'mostrar_opcoes':
       return 'mostrar';
-    case 'handoff':
+    // Negou as opções: avisa o responsável e SEGUE atendendo (não silencia).
     case 'encaminhar_e_encerrar':
+      return 'encaminhar';
+    case 'handoff':
       return 'handoff';
   }
 }

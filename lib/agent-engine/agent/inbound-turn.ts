@@ -197,11 +197,12 @@ import { alvosDeJevDaOrg, jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
   avancarObjecao,
   clienteConfirmouVer,
+  clienteNegouVer,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
   faseDoTurno,
-  motivoDaObjecao,
+  motivoObjecaoFinal,
   renderBlocoObjecao,
   valorCitado,
   type EstadoObjecao,
@@ -2922,33 +2923,47 @@ async function executarTurnoDoAgente(
   // encaminha ao consultor (não oferece outras motos).
   const descontoTurno =
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
-  // Tipo da objeção: da Jev; o regex só entra na ausência de veredito/motivo.
+  // Tipo da objeção: da Jev; quando ela devolve o catch-all `outro`, o regex
+  // refina (fallback) — e o regex decide sozinho se a Jev estiver desligada.
   const motivoObjecaoTurno = ehObjecaoTurno
-    ? (vereditoObjecaoJev?.motivo ?? motivoDaObjecao(mensagemDoJob))
+    ? motivoObjecaoFinal(vereditoObjecaoJev?.motivo ?? null, mensagemDoJob)
     : null;
   // ── ESTADO ESTRUTURADO DA NEGOCIAÇÃO (banco) ─────────────────────────────
   // Fonte do CONTROLE DE NÚMEROS: sobrevive à conversa/dias. A Jev informa a
   // ação; o motor registra e analisa a próxima.
   const negociacaoAnterior: NegotiationState | null =
     preview || !leadId ? null : await carregarNegociacao(pool, tenantId, leadId);
-  const topicNegociacao =
-    motivoObjecaoTurno !== null
-      ? topicDeObjecao(motivoObjecaoTurno)
-      : null;
+  // TEMA DA NEGOCIAÇÃO deste turno: a objeção de AGORA ou o motivo que ficou em
+  // ABERTO aguardando a resposta à pergunta da 3ª ("quer só ela ou posso mostrar
+  // outras?"). Sem isto, a RESPOSTA do cliente (aceite/negação) não entrava na
+  // negociação e caía no fluxo de oferta — em QUALQUER tipo de objeção. A Jev
+  // decide a ação; o regex é só fallback.
+  const negociacaoEmAberto =
+    negociacaoAnterior !== null && negociacaoAnterior.awaitingConfirmation;
+  // É resposta à pergunta da 3ª? Nova objeção, aceite explícito ou negação — não
+  // um assunto alheio ("bom dia", "e o financiamento?").
+  const respondeAConfirmacao =
+    negociacaoEmAberto &&
+    (motivoObjecaoTurno !== null ||
+      clienteConfirmouVer(mensagemDoJob) ||
+      clienteNegouVer(mensagemDoJob));
+  const motivoNegociacao =
+    motivoObjecaoTurno ?? (respondeAConfirmacao ? negociacaoAnterior!.motivo : null);
+  const topicNegociacao = motivoNegociacao !== null ? topicDeObjecao(motivoNegociacao) : null;
   const mesmoTopico = negociacaoAnterior !== null && negociacaoAnterior.topic === topicNegociacao;
   // Aguardando a resposta à pergunta da 3ª? (senão, é uma objeção nova/tentativa)
-  const aguardavaConfirmacao = mesmoTopico && negociacaoAnterior!.awaitingConfirmation;
-  // A Jev decide a AÇÃO quando há objeção. `attempts` = já feitas (do banco).
+  const aguardavaConfirmacao = mesmoTopico && negociacaoEmAberto;
+  // A Jev decide a AÇÃO quando há negociação em curso. `attempts` = já feitas.
   const decisaoNegociacao =
-    ehObjecaoTurno && motivoObjecaoTurno !== null && !preview
+    motivoNegociacao !== null && !preview
       ? await decidirNegociacaoComJev(
           pool,
           tenantId,
           {
-            motivo: motivoObjecaoTurno,
+            motivo: motivoNegociacao,
             attempts: mesmoTopico ? negociacaoAnterior!.attempts : 0,
             confirmou: aguardavaConfirmacao && clienteConfirmouVer(mensagemDoJob),
-            negou: aguardavaConfirmacao && !clienteConfirmouVer(mensagemDoJob),
+            negou: aguardavaConfirmacao && clienteNegouVer(mensagemDoJob),
             desconto: descontoTurno,
           },
           runLog,
@@ -2959,8 +2974,8 @@ async function executarTurnoDoAgente(
   const faseObjecaoTurno: FaseObjecao | null =
     acaoNegociacao !== null
       ? faseDaAcao(acaoNegociacao)
-      : motivoObjecaoTurno !== null
-        ? faseDoTurno(catalogoDaConversa.objecao, motivoObjecaoTurno, descontoTurno)
+      : motivoNegociacao !== null
+        ? faseDoTurno(catalogoDaConversa.objecao, motivoNegociacao, descontoTurno)
         : null;
   // Já perguntamos ("é só essa ou posso mostrar outras?") na 3ª objeção e o
   // cliente CONFIRMOU → só agora a oferta sai. Com a Jev, a ação `mostrar_opcoes`
@@ -2970,7 +2985,11 @@ async function executarTurnoDoAgente(
       ? acaoNegociacao === 'mostrar_opcoes'
       : (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && clienteConfirmouVer(mensagemDoJob);
   // Negou a oferta? (a Jev encaminha e encerra a objeção, mas segue atendendo.)
-  const negouOpcoes = acaoNegociacao === 'encaminhar_e_encerrar';
+  // Fallback determinístico (Jev indisponível): aguardávamos a confirmação e o
+  // cliente NÃO confirmou (negou) → encaminhar do mesmo jeito.
+  const negouOpcoes =
+    acaoNegociacao === 'encaminhar_e_encerrar' ||
+    (acaoNegociacao === null && aguardavaConfirmacao && !confirmouOpcoes);
   // Valor (R$) que o cliente citou NESTE turno — vira limite máximo da oferta
   // (evita mandar moto acima da proposta/orçamento, ex.: 41 mil para quem deu 27
   // mil). Independe de ser objeção: um pedido "até 20 mil" também limita.
@@ -2988,9 +3007,11 @@ async function executarTurnoDoAgente(
     (querMaisOpcoes(mensagemDoJob) || pedidoExplicito || ehPedidoDiferente(mensagemDoJob));
   const pedidosDeOpcoesTurno =
     (catalogoDaConversa.pedidosDeOpcoes ?? 0) + (pedidoDeOpcoesTurno ? 1 : 0);
-  // Bloco do turno: a fase da objeção OU o "mostrar" (cliente confirmou a oferta).
-  const blocoObjecaoTurno =
-    ehObjecaoTurno && faseObjecaoTurno !== null
+  // Bloco do turno: a fase da objeção (inclui a resposta à pergunta da 3ª, como
+  // a negação → 'encaminhar') OU o "mostrar" (confirmação pelo caminho fallback).
+  const blocoObjecaoTurno = negouOpcoes
+    ? renderBlocoObjecao('encaminhar')
+    : faseObjecaoTurno !== null && (ehObjecaoTurno || acaoNegociacao !== null)
       ? renderBlocoObjecao(faseObjecaoTurno)
       : confirmouOpcoes
         ? renderBlocoObjecao('mostrar')
@@ -3026,17 +3047,22 @@ async function executarTurnoDoAgente(
         runLog,
       );
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
-  // ORDEM (doutrina "a Jev decide sempre"): (1) objeção → a NEGOCIAÇÃO (Jev)
-  // manda (só `mostrar_opcoes` oferece); (2) o veredito de oferta da Jev;
-  // (3) FALLBACK: só quando a Jev NÃO respondeu (`vereditoOfertaJev === null`) —
-  // aí a régua determinística decide, incluindo o pedido explícito de "mais
-  // opções". A Jev NUNCA é corrigida por regex: se ela nega um pedido legítimo, o
-  // conserto é o PROMPT dela (`perguntaDeOfertaJev`), não um bypass aqui.
+  // ORDEM (doutrina "a Jev decide sempre"): (1) negociação em curso (objeção OU
+  // resposta à pergunta da 3ª) → a JEV manda (só `mostrar_opcoes` oferece); (2) o
+  // veredito de oferta da Jev; (3) FALLBACK: só quando a Jev NÃO respondeu
+  // (`vereditoOfertaJev === null`). A Jev NUNCA é corrigida por regex: se ela nega
+  // um pedido legítimo, o conserto é o PROMPT dela, não um bypass aqui.
   const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
-    if (ehObjecaoTurno && acaoNegociacao !== null) {
+    // Há NEGOCIAÇÃO em curso (objeção nova OU resposta à pergunta da 3ª). A
+    // negociação manda — com a Jev (ação dela) OU sem ela (fallback determinístico
+    // pelo estado): `encaminhar_e_encerrar`/persuadir NÃO oferecem; só `mostrar`
+    // (confirmação) oferece. Antes o texto "não quero ver outras opções" caía no
+    // veredito de OFERTA da Jev (que via `pediuMaisOpcoes=true` e liberava motos).
+    if (motivoNegociacao !== null) {
+      const pode = acaoNegociacao !== null ? acaoNegociacao === 'mostrar_opcoes' : confirmouOpcoes;
       return {
-        pode: acaoNegociacao === 'mostrar_opcoes',
-        motivo: `negociacao_${acaoNegociacao}`,
+        pode,
+        motivo: acaoNegociacao !== null ? `negociacao_${acaoNegociacao}` : 'objecao_fallback',
         criterio: null,
       };
     }
@@ -5377,7 +5403,11 @@ async function executarTurnoDoAgente(
 
   // Fase 2B: a tela pode DESLIGAR a tool de handoff do modelo (a detecção
   // determinística de pedido de humano continua ativa — guardrail nunca sai).
-  if (agentConfig !== null && !agentConfig.handoffToolEnabled) {
+  // A tool SAI TAMBÉM no turno de `encaminhar_e_encerrar` (cliente negou as
+  // opções): a mecânica já avisa o responsável e o bot SEGUE atendendo; se o
+  // modelo chamasse o handoff duro aqui, `force_human` silenciaria o bot e o
+  // próximo turno ficaria mudo (medido ao vivo 2026-10-05).
+  if (agentConfig !== null && (!agentConfig.handoffToolEnabled || negouOpcoes)) {
     delete rawTools.request_human_handoff;
   }
 
@@ -5932,10 +5962,10 @@ async function executarTurnoDoAgente(
     // DIRETRIZ DO TURNO (da ação da Jev) — a instrução acionável ao GLM. Existe
     // mesmo sem o brief completo: entra no sufixo independentemente.
     const diretrizDoTurno =
-      acaoNegociacao !== null && motivoObjecaoTurno !== null
+      acaoNegociacao !== null && motivoNegociacao !== null
         ? renderDiretrizDoTurno({
             acao: acaoNegociacao,
-            motivo: motivoObjecaoTurno,
+            motivo: motivoNegociacao,
             attempts: (mesmoTopico ? negociacaoAnterior?.attempts ?? 0 : 0) + 1,
             pedirValor: decisaoNegociacao?.pedirValor ?? false,
           })
@@ -5943,7 +5973,7 @@ async function executarTurnoDoAgente(
     if (diretrizDoTurno !== '') {
       runLog.info('diretriz do turno aplicada (negociação Jev)', {
         acao: acaoNegociacao,
-        motivo: motivoObjecaoTurno,
+        motivo: motivoNegociacao,
         chars: diretrizDoTurno.length,
       });
     }
@@ -6175,8 +6205,9 @@ async function executarTurnoDoAgente(
 
     // ── PERSISTÊNCIA ESTRUTURADA DA NEGOCIAÇÃO (uma vez por TURNO) ──────────
     // Fora do loop de tools (o `send_message` roda N vezes; registrar ali inflava
-    // `attempts`). Aqui é o ponto único pós-modelo. Só com objeção e sem preview.
-    if (!preview && leadId && motivoObjecaoTurno !== null && topicNegociacao !== null) {
+    // `attempts`). Aqui é o ponto único pós-modelo. Só com negociação em curso (objeção
+    // nova OU resposta à pergunta da 3ª) e sem preview.
+    if (!preview && leadId && motivoNegociacao !== null && topicNegociacao !== null) {
       if (aguardavaConfirmacao && negouOpcoes) {
         await marcarEncaminhado(pool, tenantId, leadId, topicNegociacao);
       } else if (aguardavaConfirmacao && confirmouOpcoes) {
@@ -6185,7 +6216,7 @@ async function executarTurnoDoAgente(
           contactId: leadId,
           conversationId: input.conversationId,
           topic: topicNegociacao,
-          motivo: motivoObjecaoTurno,
+          motivo: motivoNegociacao,
           valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
         });
       } else {
@@ -6194,7 +6225,7 @@ async function executarTurnoDoAgente(
           contactId: leadId,
           conversationId: input.conversationId,
           topic: topicNegociacao,
-          motivo: motivoObjecaoTurno,
+          motivo: motivoNegociacao,
           valorCents: valorPropostaTurno !== null ? valorPropostaTurno * 100 : null,
         });
         if (acaoNegociacao === 'persuadir_3_e_perguntar' || st?.attempts === 3) {

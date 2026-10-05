@@ -93,15 +93,17 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
     expect(t.diretriz).toContain('CONFIRMOU');
   });
 
-  it('nega → encaminhar_e_encerrar: fase handoff e NÃO oferece motos', () => {
+  it('nega → encaminhar_e_encerrar: fase encaminhar, NÃO oferece e NÃO chama o handoff duro', () => {
     const t = turno(
       { motivo: 'preco', attempts: 3, confirmou: false, negou: true, desconto: false },
       resp('encaminhar_e_encerrar'),
     );
     expect(t.acao).toBe('encaminhar_e_encerrar');
-    expect(t.fase).toBe('handoff');
+    expect(t.fase).toBe('encaminhar');
     expect(t.ofereceMotos).toBe(false);
-    expect(t.diretriz).toContain('crm_request_human_handoff');
+    // Encaminha ao responsável e SEGUE atendendo: NÃO chama o handoff duro
+    // (que silencia o bot e deixaria o próximo turno mudo).
+    expect(t.diretriz).toContain('NÃO chame `crm_request_human_handoff`');
   });
 
   it('desconto (regra proibida) → handoff, sem prometer', () => {

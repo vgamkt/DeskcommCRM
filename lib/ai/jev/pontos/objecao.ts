@@ -51,11 +51,14 @@ export function perguntaDeObjecaoJev(ctx: ContextoDeObjecao): PerguntasDeJev {
     motivo: {
       type: 'choice',
       instructions:
-        'Se for objeção, qual o TIPO dela? preco = valor/preço/parcela/desconto/condição/orçamento; ' +
-        'km = rodagem/quilometragem; ano = moto antiga/velha/modelo; outro = qualquer outra. ' +
+        'Se for objeção, qual o TIPO dela? preco = valor/preço/parcela/desconto/condição/orçamento, ' +
+        'INCLUINDO não conseguir pagar ("tá acima do que posso pagar", "não tenho condições", ' +
+        '"não cabe no meu orçamento", "muito pra mim", "não dá mesmo"); ' +
+        'km = rodagem/quilometragem; ano = moto antiga/velha/modelo; outro = objeção que não é nenhum desses. ' +
         'Se NÃO for objeção, escolha "outro" (será ignorado).',
       criteria: {
-        preco: 'valor, preço, parcela, desconto, condição de pagamento, orçamento',
+        preco:
+          'preço/valor/parcela/desconto/condição de pagamento, ou NÃO CONSEGUIR PAGAR (acima do que posso pagar, sem condições, não cabe no orçamento)',
         km: 'rodagem alta, quilometragem',
         ano: 'moto antiga/velha, ano do modelo',
         outro: 'não é objeção, ou é uma objeção que não é preço/km/ano',

@@ -211,9 +211,16 @@ describe('renderDiretrizDoTurno', () => {
     expect(renderDiretrizDoTurno({ acao: 'mostrar_opcoes', motivo: 'km', attempts: 3, pedirValor: false })).toContain('CONFIRMOU');
   });
 
-  it('encaminhar: handoff sem prometer', () => {
+  it('encaminhar_e_encerrar: avisa o responsável, SEGUE atendendo e NÃO chama o handoff duro', () => {
     const d = renderDiretrizDoTurno({ acao: 'encaminhar_e_encerrar', motivo: 'preco', attempts: 3, pedirValor: false });
-    expect(d).toContain('encaminhar ao responsável');
+    expect(d).toContain('SEGUE por aqui');
+    expect(d).toContain('NÃO chame `crm_request_human_handoff`');
+    expect(d).toContain('NÃO ofereça desconto');
+  });
+
+  it('handoff (insistiu em desconto): encaminha e chama o handoff', () => {
+    const d = renderDiretrizDoTurno({ acao: 'handoff', motivo: 'preco', attempts: 2, pedirValor: false });
+    expect(d).toContain('crm_request_human_handoff');
     expect(d).toContain('NÃO ofereça desconto');
   });
 });

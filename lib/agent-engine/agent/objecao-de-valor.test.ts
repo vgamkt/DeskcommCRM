@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   avancarObjecao,
   clienteConfirmouVer,
+  clienteNegouVer,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
   faseDoTurno,
   motivoDaObjecao,
+  motivoObjecaoFinal,
   renderBlocoObjecao,
   valorCitado,
   type EstadoObjecao,
@@ -124,6 +126,34 @@ describe('motivoDaObjecao', () => {
     expect(motivoDaObjecao('achei antiga')).toBe('ano');
     expect(motivoDaObjecao('vou pensar')).toBe('outro');
   });
+
+  it('objeção de preço SEM a palavra caro/preço continua sendo preco', () => {
+    for (const m of [
+      'não dá mesmo, tá acima do que posso pagar',
+      'não tenho condições',
+      'não cabe no meu orçamento',
+      'muito pra mim',
+    ]) {
+      expect(motivoDaObjecao(m), m).toBe('preco');
+    }
+  });
+});
+
+describe('motivoObjecaoFinal (Jev decide; regex refina o catch-all)', () => {
+  it('usa o tipo específico da Jev', () => {
+    expect(motivoObjecaoFinal('km', 'achei caro')).toBe('km');
+    expect(motivoObjecaoFinal('preco', 'tá acima do que posso pagar')).toBe('preco');
+  });
+  it('quando a Jev devolve "outro", o regex refina o tipo', () => {
+    expect(motivoObjecaoFinal('outro', 'tá acima do que posso pagar')).toBe('preco');
+    expect(motivoObjecaoFinal('outro', 'achei muito rodada')).toBe('km');
+    expect(motivoObjecaoFinal('outro', 'achei antiga')).toBe('ano');
+  });
+  it('sem Jev (null) ou sem tipo reconhecível → regex/outro', () => {
+    expect(motivoObjecaoFinal(null, 'achei caro')).toBe('preco');
+    expect(motivoObjecaoFinal(null, 'vou pensar')).toBe('outro');
+    expect(motivoObjecaoFinal('outro', 'vou pensar')).toBe('outro');
+  });
 });
 
 describe('clienteConfirmouVer', () => {
@@ -135,6 +165,27 @@ describe('clienteConfirmouVer', () => {
   it('negação não confirma', () => {
     for (const m of ['nao', 'é só essa', 'so essa mesmo', 'deixa', 'só tenho interesse nessa']) {
       expect(clienteConfirmouVer(m), m).toBe(false);
+    }
+  });
+});
+
+describe('clienteNegouVer', () => {
+  it('reconhece a negação explícita de ver opções', () => {
+    for (const m of [
+      'não quero ver outras opções, prefiro essa mesmo',
+      'nao quero outras motos',
+      'prefiro essa',
+      'é só essa mesma',
+      'deixa',
+      'dispensa',
+      'não precisa',
+    ]) {
+      expect(clienteNegouVer(m), m).toBe(true);
+    }
+  });
+  it('NÃO confunde assunto alheio nem confirmação com negação', () => {
+    for (const m of ['bom dia', 'e o financiamento, como funciona?', 'pode mostrar', 'sim, quero ver']) {
+      expect(clienteNegouVer(m), m).toBe(false);
     }
   });
 });
@@ -217,5 +268,12 @@ describe('renderBlocoObjecao', () => {
     expect(b).toContain('ENCAMINHAR');
     expect(b).toContain('crm_request_human_handoff');
     expect(b).toContain('NUNCA pergunte');
+  });
+
+  it('encaminhar (cliente negou): avisa o responsável, SEGUE atendendo e NÃO chama o handoff duro', () => {
+    const b = renderBlocoObjecao('encaminhar');
+    expect(b).toContain('NEGOU');
+    expect(b).toContain('CONTINUA');
+    expect(b).toContain('NÃO chame `crm_request_human_handoff`');
   });
 });

@@ -150,11 +150,19 @@ export function renderDiretrizDoTurno(args: {
       'O que NÃO fazer: não invente preço; mostre só o que o sistema enviar.',
     ].join('\n');
   }
-  // encaminhar_e_encerrar | handoff
+  if (acao === 'encaminhar_e_encerrar') {
+    return [
+      cab,
+      'O que fazer: informe, em tom acolhedor, que vai pedir ao responsável para analisar essa moto e que você SEGUE por aqui. O sistema já avisa o responsável.',
+      'O que NÃO fazer: NÃO chame `crm_request_human_handoff` (isso silencia o bot e deixa o cliente sem resposta); NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo.',
+      'Exemplo (adapte): "Sem problema, Vander. Vou pedir ao responsável para ver o que dá pra fazer nessa moto e já te retorno por aqui."',
+    ].join('\n');
+  }
+  // handoff (insistiu em desconto/regra proibida)
   return [
     cab,
     'O que fazer: informe, em tom acolhedor, que vai encaminhar ao responsável e peça para aguardar. Chame `crm_request_human_handoff` (repasse interno, SEM perguntar "posso encaminhar?").',
-    'O que NÃO fazer: NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo. Continue atendendo normalmente se ele falar de outro assunto.',
+    'O que NÃO fazer: NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo.',
     'Exemplo (adapte): "Sem problema, Vander. Vou encaminhar seu caso para o responsável e ele te retorna por aqui. Pode aguardar?"',
   ].join('\n');
 }

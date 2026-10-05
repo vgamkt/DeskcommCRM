@@ -58,6 +58,9 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}. ` +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +
         'ou se uma objeção ainda está sendo contornada. ' +
+        'REGRA INEGOCIÁVEL: se o cliente PERGUNTA se temos uma moto/modelo específico ' +
+        '("tem a CB 300?", "vocês têm X?", "quanto custa a X?") ou PEDE para ver o catálogo, a ' +
+        'resposta é SEMPRE "sim, mostrar motos agora". ' +
         'REGRA INEGOCIÁVEL: se "cliente pediu mais opções" for verdadeiro, a resposta é SEMPRE ' +
         '"sim, mostrar motos agora" (com o criterio que ataca o motivo). NUNCA negue um pedido ' +
         'explícito do cliente.',
