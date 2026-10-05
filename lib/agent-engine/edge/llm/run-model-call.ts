@@ -36,7 +36,7 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { costCents } from './pricing';
+import { costCents, custoComPrecos } from './pricing';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
 
@@ -492,7 +492,33 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
-  const cost = costCents(model, usage);
+  // Custo: tabela hardcoded (Claude/Jev) OU catálogo `ai_models` por (provider,
+  // model) — que tem preço de TODOS os modelos (deepseek, glm, …). Sem isto,
+  // `cost_cents` ficava `null` para quem não é Claude e o dashboard de uso não
+  // mostrava custo. Modelo fora de ambos → `null` (desconhecido, nunca 0).
+  let cost = costCents(model, usage);
+  if (cost === null) {
+    try {
+      const { rows: preco } = await db.query<{
+        inp: string | number | null;
+        outp: string | number | null;
+      }>(
+        `select input_price_per_million_cents inp, output_price_per_million_cents outp
+           from ai_models where provider = $1 and model_id = $2 limit 1`,
+        [config.provider, model],
+      );
+      const p = preco[0];
+      if (p && p.inp !== null && p.outp !== null) {
+        cost = custoComPrecos(
+          { input: Number(p.inp), output: Number(p.outp) },
+          usage,
+          config.provider,
+        );
+      }
+    } catch {
+      // catálogo indisponível → custo continua null (desconhecido)
+    }
+  }
 
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls
