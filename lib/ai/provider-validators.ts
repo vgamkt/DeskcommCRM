@@ -10,7 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import type { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 /**
  * Os provedores cuja CHAVE este arquivo sabe validar.
@@ -22,7 +22,7 @@ import { PROVEDORES } from "@/lib/ai/pontos/provedores";
  * uma tela que oferecia OpenRouter num ponto e não tinha onde cadastrar a
  * chave dela.
  */
-export type Provider = (typeof PROVEDORES)[number]["id"];
+export type Provider = (typeof PROVEDORES)[number]["id"] | "typesafe";
 
 export interface ValidationOk {
   ok: true;
@@ -259,6 +259,40 @@ export function validateOpenCodeGoKey(apiKey: string): Promise<ValidationResult>
   return validarChaveOpenCode("https://opencode.ai/zen/go/v1", "glm-5.3-flash", apiKey);
 }
 
+/**
+ * TypeSafe (Jev oficial). A prova é um POST mínimo no `systemone` com uma
+ * pergunta trivial: chave inválida → 401/403; válida → 200. O endpoint da Jev
+ * não exige header de sessão (diferente do chat da OpenCode).
+ */
+export function validateTypesafeKey(apiKey: string): Promise<ValidationResult> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 20_000);
+  return (async (): Promise<ValidationResult> => {
+    try {
+      const res = await fetch("https://api.typesafe.ai/v1/systemone", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "jev-latest",
+          state: "ping",
+          questions: { ok: { type: "noul", instructions: "ok?" } },
+        }),
+        signal: ctrl.signal,
+      });
+      if (res.status === 401 || res.status === 403) return { ok: false, error: "auth_failed_401" };
+      if (!res.ok) return { ok: false, error: `provider_status_${res.status}` };
+      return { ok: true, models: ["jev-latest"] };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+    } finally {
+      clearTimeout(t);
+    }
+  })();
+}
+
 export function validateProviderKey(
   provider: Provider,
   apiKey: string,
@@ -278,6 +312,8 @@ export function validateProviderKey(
       return validateOpenCodeKey(apiKey);
     case "opencode_go":
       return validateOpenCodeGoKey(apiKey);
+    case "typesafe":
+      return validateTypesafeKey(apiKey);
     default: {
       // Sem `never` aqui: `Provider` agora é derivado de PROVEDORES, e a lista
       // cresce sem que este arquivo saiba. Provedor novo cadastrado antes de

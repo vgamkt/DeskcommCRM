@@ -30,18 +30,39 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
   credentialsListQueryKey,
   type CredentialRow,
-  type Provider,
 } from "@/hooks/ai/useCredentials";
-import { IDS_DE_PROVEDOR, PROVEDORES } from "@/lib/ai/pontos/provedores";
+import {
+  IDS_DE_CREDENCIAL,
+  PROVEDORES,
+  QUANDO_USAR_PROVEDOR_JEV_CADASTRAL,
+  ROTULO_PROVEDOR_JEV_CADASTRAL,
+} from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
 const formSchema = z.object({
   // Derivado da lista única (`lib/ai/pontos/provedores.ts`), como a rota.
-  provider: z.enum(IDS_DE_PROVEDOR),
+  provider: z.enum(IDS_DE_CREDENCIAL),
   label: z.string().trim().min(1, "Obrigatório").max(80),
   api_key: z.string().trim().min(8, "API key muito curta").max(2048),
 });
+
+/**
+ * As opções exibidas: os provedores de chat + o TypeSafe (Jev oficial), que não
+ * é de chat e por isso não está em `PROVEDORES` — mas a chave dele precisa ter
+ * onde ser cadastrada.
+ */
+const PROVEDOR_TYPESAFE = {
+  id: "typesafe" as const,
+  rotulo: ROTULO_PROVEDOR_JEV_CADASTRAL,
+  quandoUsar: QUANDO_USAR_PROVEDOR_JEV_CADASTRAL,
+  ondePegarAChave: "https://typesafe.ai",
+  prefixoDaChave: "…",
+} as const;
+const OPCOES_DE_PROVEDOR = [...PROVEDORES, PROVEDOR_TYPESAFE];
+
+/** O provedor de credencial: chat + Jev (Typesafe). */
+type ProvedorCredencial = (typeof IDS_DE_CREDENCIAL)[number];
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -58,12 +79,12 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
-  const [provider, setProvider] = useState<Provider>("anthropic");
+  const [provider, setProvider] = useState<ProvedorCredencial>("anthropic");
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const provedor = PROVEDORES.find((p) => p.id === provider) ?? PROVEDORES[0];
+  const provedor = OPCOES_DE_PROVEDOR.find((p) => p.id === provider) ?? PROVEDOR_TYPESAFE;
 
   const reset = () => {
     setProvider("anthropic");
@@ -146,12 +167,12 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cred-provider">{t("Provedor")}</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorCredencial)}>
               <SelectTrigger id="cred-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROVEDORES.map((p) => (
+                {OPCOES_DE_PROVEDOR.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.rotulo}
                   </SelectItem>

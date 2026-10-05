@@ -134,6 +134,22 @@ export const IDS_DE_PROVEDOR = PROVEDORES.map((p) => p.id) as unknown as readonl
   ...(typeof PROVEDORES)[number]["id"][],
 ];
 
+/**
+ * Provedores que o operador pode CADASTRAR (ter chave): os de chat + os de
+ * decisão (Jev) que NÃO são de chat. Hoje o único extra é `typesafe` — a base
+ * oficial da Jev (TypeSafe); `opencode`/`openrouter` já estão em `PROVEDORES`.
+ *
+ * A lista de CHAT (`IDS_DE_PROVEDOR`) continua sendo a do invariante
+ * `provedores-x-registry` (todo provedor oferecido precisa de fábrica de chat) —
+ * por isso os provedores da Jev vivem aqui, e não lá.
+ */
+export const IDS_DE_CREDENCIAL = [...IDS_DE_PROVEDOR, "typesafe"] as const;
+
+/** O que a tela de credenciais mostra como opção (chat + Jev). */
+export const ROTULO_PROVEDOR_JEV_CADASTRAL = "TypeSafe (Jev — oficial)";
+export const QUANDO_USAR_PROVEDOR_JEV_CADASTRAL =
+  "O provedor oficial da Jev (TypeSafe): a chave que você pega em typesafe.ai. Escolha aqui para a IA decidir pelos modelos da Jev.";
+
 export const PROVEDOR_POR_ID: ReadonlyMap<string, ProvedorSuportado> = new Map(
   PROVEDORES.map((p) => [p.id, p]),
 );
