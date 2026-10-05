@@ -191,7 +191,12 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       // modelo/família, cilindrada, potência, categoria/tipo — e cor/marca/preço
       // só quando o cliente pediu. A FAMÍLIA do nome (ex.: "CB") conta, mas NÃO
       // é obrigatória nem excludente; NÃO exclua por marca. Na dúvida, sim.
-      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Julgue por TODOS os atributos relevantes com PESO IGUAL (nome/modelo/família, cilindrada, potência, categoria/tipo); cor, marca e preço só pesam se o cliente pediu. Família do nome igual (ex.: "CB") conta, mas NÃO é obrigatória nem excludente; NUNCA exclua por marca — qualquer marca pode servir. Na dúvida, responda SIM. "${m.nome}"`,
+      //
+      // EXCEÇÃO (2026-10-05, medido: "quero uma Honda" trazia Yamaha): quando o
+      // cliente PEDE UMA MARCA por si, a marca É o filtro — o motor casa a marca
+      // pelas hipóteses, então marcar moto de OUTRA marca como parecida anula o
+      // filtro e mistura concorrentes. Nesse caso, só a MESMA marca é parecida.
+      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Julgue por TODOS os atributos relevantes com PESO IGUAL (nome/modelo/família, cilindrada, potência, categoria/tipo); cor, marca e preço só pesam se o cliente pediu. Família do nome igual (ex.: "CB") conta, mas NÃO é obrigatória nem excludente. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca — qualquer marca pode servir; na dúvida, responda SIM. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só marque SIM para motos DESSA MESMA marca. "${m.nome}"`,
     };
   });
 
