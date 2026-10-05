@@ -1101,25 +1101,6 @@ export function AgentForm(props: Props) {
               onChange={(v) => patch({ handoff_keywords: v })}
               disabled={disabled}
             />
-            <div className="space-y-1">
-              <Label htmlFor="handoff_notification_number">
-                {t("WhatsApp que avisa quando o robô não conseguir responder")}
-              </Label>
-              <Input
-                id="handoff_notification_number"
-                type="tel"
-                inputMode="numeric"
-                placeholder={t("Ex.: 5511999999999")}
-                value={form.handoff_notification_number}
-                onChange={(e) => patch({ handoff_notification_number: e.target.value })}
-                disabled={disabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Se o atendimento automático falhar (o modelo, a decisão da IA, o áudio ou a imagem), avisamos este número para um responsável assumir a conversa com o cliente. Só números, com DDD e país. Deixe vazio para não avisar.",
-                )}
-              </p>
-            </div>
           </Card>
 
           {/* Casos humanos */}

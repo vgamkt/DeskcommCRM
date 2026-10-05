@@ -353,3 +353,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261005150000` | `0264_desvincular_credential_de_versao` | `fn_ai_agent_version_content_immutable`: permite `credential_id` não-nulo -> null em versão não-draft (desvincular para poder excluir credencial defasada presa a versões `superseded`); TROCAR a chave segue imutável. Baseline idempotente. |
 
 | `20261005170000` | `0265_credential_fk_set_null` | Referências à credencial viram ações declarativas da FK: `ai_agent_versions.credential_id` -> ON DELETE SET NULL (versão histórica perde a referência); `ai_purpose_bindings.credential_id` -> ON DELETE CASCADE (binding da chave sai junto). A rota de DELETE deixa de limpar tabela a tabela. Baseline idempotente. |
+
+| `20261005190000` | `0266_failure_alerts` | `conversation_summary_settings.failure_alerts` (jsonb): regras de aviso de falha POR AGENTE — `[{agent_id, channel_session_id, destination, enabled}]`. Tira o `handoff_notification_number` do card do agente e centraliza o aviso no informante, com número que envia e número que recebe. Baseline idempotente. |

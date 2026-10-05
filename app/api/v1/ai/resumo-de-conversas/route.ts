@@ -29,7 +29,15 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const SETTINGS_COLUMNS =
-  "enabled, channel_session_id, destination, destination_is_group, interval_minutes, batch_size, instructions, updated_at";
+  "enabled, channel_session_id, destination, destination_is_group, interval_minutes, batch_size, instructions, failure_alerts, updated_at";
+
+/** Regra de aviso de falha POR AGENTE: número que ENVIA + número que RECEBE. */
+const regraAlertaSchema = z.object({
+  agent_id: z.string().uuid(),
+  channel_session_id: z.string().uuid().nullable(),
+  destination: z.string().trim().max(40).nullable(),
+  enabled: z.boolean().default(true),
+});
 
 const putSchema = z.object({
   enabled: z.boolean(),
@@ -39,6 +47,7 @@ const putSchema = z.object({
   interval_minutes: z.number().int().min(1).max(1440),
   batch_size: z.number().int().min(1).max(200),
   instructions: z.string().max(4000).nullable().optional(),
+  failure_alerts: z.array(regraAlertaSchema).max(50).optional(),
 });
 
 const PADRAO = {
@@ -49,6 +58,7 @@ const PADRAO = {
   interval_minutes: 15,
   batch_size: 20,
   instructions: null as string | null,
+  failure_alerts: [] as Array<z.infer<typeof regraAlertaSchema>>,
   updated_at: null as string | null,
 };
 
@@ -79,12 +89,21 @@ export async function GET(): Promise<Response> {
     .eq("purpose", PONTO_RESUMO_DE_CONVERSAS)
     .maybeSingle();
 
+  // Agentes ativos da org — destino do seletor "quais agentes avisam aqui".
+  const { data: agentes } = await supabase
+    .from("ai_agents")
+    .select("id, name")
+    .eq("organization_id", orgId)
+    .is("archived_at", null)
+    .order("created_at", { ascending: true });
+
   return ok(
     {
       settings: settings ?? PADRAO,
       /** Texto padrão do prompt — a tela usa para preencher a caixa quando vazia. */
       prompt_padrao: PROMPT_PADRAO_DO_RESUMO,
       sessoes: sessoes ?? [],
+      agentes: agentes ?? [],
       binding: binding ?? null,
       pode_editar: ROLE_RANK[authz.org.role] >= ROLE_RANK.admin,
     },
@@ -126,6 +145,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       interval_minutes: input.interval_minutes,
       batch_size: input.batch_size,
       instructions: input.instructions ?? null,
+      failure_alerts: input.failure_alerts ?? [],
       updated_at: new Date().toISOString(),
     },
     { onConflict: "organization_id" },

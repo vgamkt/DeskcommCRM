@@ -24986,3 +24986,10 @@ alter table public.ai_purpose_bindings
 alter table public.ai_purpose_bindings
   add constraint ai_purpose_bindings_credential_id_fkey
   foreign key (credential_id) references public.ai_provider_credentials(id) on delete cascade;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0266 · Avisos de falha por agente (apêndice idempotente)
+-- ════════════════════════════════════════════════════════════════════════════
+-- Regras [{agent_id, channel_session_id, destination, enabled}] no informante.
+alter table public.conversation_summary_settings
+  add column if not exists failure_alerts jsonb not null default '[]'::jsonb;

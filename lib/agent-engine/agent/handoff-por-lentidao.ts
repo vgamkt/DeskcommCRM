@@ -20,6 +20,42 @@ import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
 
 import type { Logger } from '../obs/logger';
 
+interface AlertaDeFalha {
+  channelSessionId: string | null;
+  destination: string | null;
+}
+
+/**
+ * Regra de aviso de falha do AGENTE, na config central do informante
+ * (`conversation_summary_settings.failure_alerts`): `{ channel_session_id,
+ * destination }`. `null` = não avisa. Nunca lança.
+ */
+export async function resolverAlertaDeFalha(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  agentId: string,
+): Promise<AlertaDeFalha | null> {
+  try {
+    const { data } = await admin
+      .from('conversation_summary_settings')
+      .select('failure_alerts')
+      .eq('organization_id', orgId)
+      .maybeSingle();
+    const bruto = (data as { failure_alerts?: unknown } | null)?.failure_alerts;
+    if (!Array.isArray(bruto)) return null;
+    const regra = (bruto as Array<Record<string, unknown>>).find(
+      (r) => r.agent_id === agentId && r.enabled !== false,
+    );
+    if (regra === undefined) return null;
+    return {
+      channelSessionId: typeof regra.channel_session_id === 'string' ? regra.channel_session_id : null,
+      destination: typeof regra.destination === 'string' ? regra.destination : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function enviarHandoffPorLentidao(
   _pool: unknown,
   args: {
@@ -31,6 +67,8 @@ export async function enviarHandoffPorLentidao(
     conversationId: string;
     contactId: string | null;
     tentativas: number;
+    /** Agente que falhou — para resolver a regra de aviso central (`failure_alerts`). */
+    agentId?: string | null;
     /**
      * Contexto do aviso (mesma frase no WhatsApp). Default = lentidão do modelo;
      * o encaminhamento por negociação (cliente negou as opções) reusa o canal.
@@ -64,15 +102,24 @@ export async function enviarHandoffPorLentidao(
       return;
     }
 
-    // 1) Número de destino (só dígitos) + canal que envia.
-    const digits = (args.notificationNumber ?? "").replace(/\D/g, '');
+    // 1) Número RECEBE (só dígitos) + número ENVIA (canal). A config central do
+    // informante manda: se o chamador não passou um número explícito, resolve
+    // pela regra do AGENTE (`failure_alerts`) — número que envia + que recebe.
+    let digits = (args.notificationNumber ?? "").replace(/\D/g, '');
+    let sessionId = args.channelSessionId;
+    if (!digits && args.agentId) {
+      const alerta = await resolverAlertaDeFalha(admin, args.tenantId, args.agentId);
+      if (alerta !== null) {
+        digits = (alerta.destination ?? "").replace(/\D/g, '');
+        if (alerta.channelSessionId) sessionId = alerta.channelSessionId;
+      }
+    }
     if (!digits) {
       args.log.warn('handoff por lentidão: agente sem número de aviso configurado — não avisei', {
         conversation_id: args.conversationId,
       });
       return;
     }
-    const sessionId = args.channelSessionId;
     if (!sessionId) {
       args.log.warn('handoff por lentidão: sem sessão de canal para enviar', {
         tenant_id: args.tenantId,

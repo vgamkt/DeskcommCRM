@@ -28,6 +28,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 
+interface RegraAlerta {
+  agent_id: string;
+  channel_session_id: string | null;
+  destination: string | null;
+  enabled: boolean;
+}
+
 interface Settings {
   enabled: boolean;
   channel_session_id: string | null;
@@ -36,6 +43,12 @@ interface Settings {
   interval_minutes: number;
   batch_size: number;
   instructions: string | null;
+  failure_alerts?: RegraAlerta[];
+}
+
+interface Agente {
+  id: string;
+  name: string;
 }
 
 interface Sessao {
@@ -52,6 +65,7 @@ interface RespostaGet {
     settings: Settings;
     prompt_padrao: string;
     sessoes: Sessao[];
+    agentes: Agente[];
     pode_editar: boolean;
   };
 }
@@ -95,6 +109,8 @@ export function ResumoDeConversasClient() {
   const [salvando, setSalvando] = useState(false);
   const [podeEditar, setPodeEditar] = useState(false);
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
+  const [agentes, setAgentes] = useState<Agente[]>([]);
+  const [regras, setRegras] = useState<RegraAlerta[]>([]);
 
   const [enabled, setEnabled] = useState(false);
   const [sessionId, setSessionId] = useState<string>(NENHUMA);
@@ -132,6 +148,8 @@ export function ResumoDeConversasClient() {
         // o dono editar (é o "transfira o prompt do sistema para a caixa").
         setInstrucoes(s.instructions?.trim() ? s.instructions : cfg.data.prompt_padrao);
         setSessoes(cfg.data.sessoes);
+        setAgentes(cfg.data.agentes ?? []);
+        setRegras(Array.isArray(s.failure_alerts) ? s.failure_alerts : []);
         setPodeEditar(cfg.data.pode_editar);
 
         setProvedores(prov.data.provedores);
@@ -162,6 +180,15 @@ export function ResumoDeConversasClient() {
   const sessaoEscolhida = sessoes.find((s) => s.id === sessionId) ?? null;
   const sessaoEnviaGrupo = sessaoEscolhida?.pode_enviar_grupo === true;
 
+  const atualizarRegra = (i: number, patch: Partial<RegraAlerta>) =>
+    setRegras((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const removerRegra = (i: number) => setRegras((rs) => rs.filter((_, idx) => idx !== i));
+  const adicionarRegra = () =>
+    setRegras((rs) => [
+      ...rs,
+      { agent_id: agentes[0]?.id ?? "", channel_session_id: null, destination: null, enabled: true },
+    ]);
+
   const salvar = async () => {
     setSalvando(true);
     try {
@@ -173,6 +200,14 @@ export function ResumoDeConversasClient() {
         interval_minutes: Math.max(1, Math.min(1440, Math.trunc(intervalo) || 15)),
         batch_size: Math.max(1, Math.min(200, Math.trunc(lote) || 20)),
         instructions: instrucoes.trim() || null,
+        failure_alerts: regras
+          .filter((r) => r.agent_id)
+          .map((r) => ({
+            agent_id: r.agent_id,
+            channel_session_id: r.channel_session_id,
+            destination: (r.destination ?? "").trim() || null,
+            enabled: r.enabled,
+          })),
       });
       if (provider && modelId) {
         await apiClient.put("/api/v1/ai/providers", {
@@ -411,6 +446,112 @@ export function ResumoDeConversasClient() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Avisos quando o atendimento falhar</CardTitle>
+          <CardDescription>
+            Se um agente não conseguir responder — o modelo, a decisão da IA, o áudio ou a imagem —
+            avisamos um responsável para assumir a conversa. Cada agente pode avisar no seu próprio
+            número: escolha <strong>quem</strong> avisa, por qual <strong>número envia</strong> e
+            para qual <strong>número recebe</strong>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {regras.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Nenhum aviso configurado. Sem isso, quando um agente falhar, ninguém é avisado.
+            </p>
+          )}
+
+          {regras.map((r, i) => (
+            <div key={i} className="grid gap-3 rounded-md border p-3 sm:grid-cols-4">
+              <div className="space-y-1">
+                <Label className="text-xs">Agente</Label>
+                <Select
+                  value={r.agent_id || undefined}
+                  onValueChange={(v) => atualizarRegra(i, { agent_id: v })}
+                  disabled={!podeEditar}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha o agente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agentes.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Número que envia</Label>
+                <Select
+                  value={r.channel_session_id ?? NENHUMA}
+                  onValueChange={(v) =>
+                    atualizarRegra(i, { channel_session_id: v === NENHUMA ? null : v })
+                  }
+                  disabled={!podeEditar}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NENHUMA}>Nenhum (usa o número do agente)</SelectItem>
+                    {sessoes.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {(s.display_name ?? s.provider) +
+                          (s.phone_number ? ` — ${s.phone_number}` : "")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Número que recebe</Label>
+                <Input
+                  value={r.destination ?? ""}
+                  onChange={(e) => atualizarRegra(i, { destination: e.target.value })}
+                  placeholder="Ex: 5531999998888"
+                  inputMode="tel"
+                  disabled={!podeEditar}
+                />
+              </div>
+
+              <div className="flex items-end justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={r.enabled}
+                    onCheckedChange={(v) => atualizarRegra(i, { enabled: v })}
+                    disabled={!podeEditar}
+                  />
+                  <Label className="text-xs">Ligado</Label>
+                </div>
+                {podeEditar && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removerRegra(i)}>
+                    Remover
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {podeEditar && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={adicionarRegra}
+              disabled={agentes.length === 0}
+            >
+              Adicionar aviso
+            </Button>
+          )}
         </CardContent>
       </Card>
 
