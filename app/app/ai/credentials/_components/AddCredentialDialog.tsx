@@ -31,12 +31,7 @@ import {
   credentialsListQueryKey,
   type CredentialRow,
 } from "@/hooks/ai/useCredentials";
-import {
-  IDS_DE_CREDENCIAL,
-  PROVEDORES,
-  QUANDO_USAR_PROVEDOR_JEV_CADASTRAL,
-  ROTULO_PROVEDOR_JEV_CADASTRAL,
-} from "@/lib/ai/pontos/provedores";
+import { IDS_DE_CREDENCIAL, OPCOES_DE_CREDENCIAL } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -50,17 +45,9 @@ const formSchema = z.object({
 /**
  * As opções exibidas: os provedores de chat + o TypeSafe (Jev oficial), que não
  * é de chat e por isso não está em `PROVEDORES` — mas a chave dele precisa ter
- * onde ser cadastrada.
+ * onde ser cadastrada. A lista vive em `pontos/provedores.ts` (fonte única do
+ * diálogo, da lista e do card).
  */
-const PROVEDOR_TYPESAFE = {
-  id: "typesafe" as const,
-  rotulo: ROTULO_PROVEDOR_JEV_CADASTRAL,
-  quandoUsar: QUANDO_USAR_PROVEDOR_JEV_CADASTRAL,
-  ondePegarAChave: "https://typesafe.ai",
-  prefixoDaChave: "…",
-} as const;
-const OPCOES_DE_PROVEDOR = [...PROVEDORES, PROVEDOR_TYPESAFE];
-
 /** O provedor de credencial: chat + Jev (Typesafe). */
 type ProvedorCredencial = (typeof IDS_DE_CREDENCIAL)[number];
 
@@ -84,7 +71,7 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const provedor = OPCOES_DE_PROVEDOR.find((p) => p.id === provider) ?? PROVEDOR_TYPESAFE;
+  const provedor = OPCOES_DE_CREDENCIAL.find((p) => p.id === provider) ?? OPCOES_DE_CREDENCIAL[0]!;
 
   const reset = () => {
     setProvider("anthropic");
@@ -172,7 +159,7 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {OPCOES_DE_PROVEDOR.map((p) => (
+                {OPCOES_DE_CREDENCIAL.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.rotulo}
                   </SelectItem>

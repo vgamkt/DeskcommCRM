@@ -150,6 +150,38 @@ export const ROTULO_PROVEDOR_JEV_CADASTRAL = "TypeSafe (Jev — oficial)";
 export const QUANDO_USAR_PROVEDOR_JEV_CADASTRAL =
   "O provedor oficial da Jev (TypeSafe): a chave que você pega em typesafe.ai. Escolha aqui para a IA decidir pelos modelos da Jev.";
 
+/** A forma de cada opção no cadastro de credenciais. */
+export interface OpcaoDeCredencial {
+  id: string;
+  rotulo: string;
+  quandoUsar: string;
+  /** Onde o operador pega a chave (link). */
+  ondePegarAChave: string;
+  /** Prefixo/forma da chave, para o placeholder. */
+  prefixoDaChave: string;
+}
+
+/**
+ * As opções de CREDENCIAL — os provedores de chat + os de decisão (Jev) que não
+ * são de chat. É a fonte única do diálogo, da lista (agrupamento/rótulo) e do
+ * card. Antes, cada tela derivava de `PROVEDORES`, e a credencial `typesafe`
+ * salvava mas DESAPARECIA da lista (não havia chave de agrupamento para ela).
+ */
+export const OPCOES_DE_CREDENCIAL: readonly OpcaoDeCredencial[] = [
+  ...PROVEDORES,
+  {
+    id: "typesafe",
+    rotulo: ROTULO_PROVEDOR_JEV_CADASTRAL,
+    quandoUsar: QUANDO_USAR_PROVEDOR_JEV_CADASTRAL,
+    ondePegarAChave: "https://typesafe.ai",
+    prefixoDaChave: "…",
+  },
+];
+
+export const CREDENCIAL_POR_ID: ReadonlyMap<string, OpcaoDeCredencial> = new Map(
+  OPCOES_DE_CREDENCIAL.map((p) => [p.id, p]),
+);
+
 export const PROVEDOR_POR_ID: ReadonlyMap<string, ProvedorSuportado> = new Map(
   PROVEDORES.map((p) => [p.id, p]),
 );

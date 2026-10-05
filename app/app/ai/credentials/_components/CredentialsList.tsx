@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus } from "@/lib/ui/icons";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
-import { useCredentialsList, type CredentialRow, type Provider } from "@/hooks/ai/useCredentials";
+import { OPCOES_DE_CREDENCIAL } from "@/lib/ai/pontos/provedores";
+import { useCredentialsList, type CredentialRow } from "@/hooks/ai/useCredentials";
 import { useT } from "@/hooks/i18n/useT";
 import { CredentialCard } from "./CredentialCard";
 import { AddCredentialDialog } from "./AddCredentialDialog";
@@ -16,13 +16,13 @@ interface Props {
   usageMap: Record<string, number>;
 }
 
-// Rótulo e ordem saem da lista única — provedor novo aparece na tela sem que
-// alguém precise lembrar de acrescentá-lo em três lugares.
+// Rótulo e ordem saem da lista única (chat + Jev) — provedor novo aparece na
+// tela sem que alguém precise lembrar de acrescentá-lo em três lugares.
 const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
-  PROVEDORES.map((p) => [p.id, p.rotulo]),
+  OPCOES_DE_CREDENCIAL.map((p) => [p.id, p.rotulo]),
 );
 
-const PROVIDER_ORDER: Provider[] = PROVEDORES.map((p) => p.id);
+const PROVIDER_ORDER: string[] = OPCOES_DE_CREDENCIAL.map((p) => p.id);
 
 export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
   const t = useT();
@@ -34,8 +34,8 @@ export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
   // Construído a partir da lista única: escrito à mão, o dia em que um
   // provedor novo entra é o dia em que as credenciais dele somem da tela sem
   // ninguém ver (aconteceu com a OpenRouter).
-  const grouped: Partial<Record<Provider, CredentialRow[]>> = Object.fromEntries(
-    PROVEDORES.map((p) => [p.id, [] as CredentialRow[]]),
+  const grouped: Partial<Record<string, CredentialRow[]>> = Object.fromEntries(
+    OPCOES_DE_CREDENCIAL.map((p) => [p.id, [] as CredentialRow[]]),
   );
   for (const c of credentials) {
     grouped[c.provider]?.push(c);
