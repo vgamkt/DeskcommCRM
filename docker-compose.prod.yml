@@ -80,7 +80,13 @@ services:
     # O teto não impede o pico legítimo; impede que UM serviço leve a máquina
     # inteira. Estourá-lo mata só quem estourou, e o `restart: unless-stopped`
     # o traz de volta — falha isolada em vez de queda geral.
-    mem_limit: 512m
+    #
+    # PARAMETRIZADO (2026-10-05): 512m era apertado DEMAIS para o runtime do
+    # agente. Medido: baseline ~200 MiB + pico de ~160 MiB por turno de contexto
+    # grande (40k tokens) × QUEUE_MAX_CONCURRENCY (default 8) → o heap do Node
+    # (metade do limite) estourava e o contêiner reiniciava em loop. O default
+    # passou para 1536m; `WORKER_MEM_LIMIT` permite ajustar por instalação.
+    mem_limit: ${WORKER_MEM_LIMIT:-1536m}
     # Imagem publicada — e não mais `build:` sozinho. O motivo é o modo de falha
     # que isso escondia: serviço build-only é PULADO por `docker compose pull`
     # ("Skipped - No image to be pulled") e imune a `up -d` sem `--build`. Ele era
