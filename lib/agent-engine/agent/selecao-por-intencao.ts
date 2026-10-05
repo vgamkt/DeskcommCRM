@@ -265,11 +265,22 @@ function casaColunaExigida(
   faixas: FaixasDoPedido,
   toleranciaPct: number,
 ): boolean {
-  const faixa = faixas[coluna] as { min?: unknown; max?: unknown } | undefined;
+  const faixa = faixas[coluna];
+  // Faixa de TEXTO (ex.: marca-alvo `["Honda"]`, dita pela Jev em "quero uma
+  // Honda"): a célula tem que bater em UM dos valores. Vira filtro EXATO — sem
+  // isto, a coluna marca casava a UNIÃO das marcas das hipóteses (Honda+Yamaha)
+  // e não filtrava nada.
+  if (Array.isArray(faixa)) {
+    const alvos = faixa.filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+    if (alvos.length > 0) {
+      return alvos.some((v) => casaColuna(moto, coluna, v, toleranciaPct));
+    }
+  }
   if (
     faixa !== null &&
     typeof faixa === 'object' &&
-    (typeof faixa.min === 'number' || typeof faixa.max === 'number')
+    (typeof (faixa as { min?: unknown }).min === 'number' ||
+      typeof (faixa as { max?: unknown }).max === 'number')
   ) {
     return casaFaixaColuna(moto, coluna, faixa);
   }

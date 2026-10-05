@@ -745,6 +745,24 @@ describe('C-106: filtro ESTRITO por exigidos + faixa + ordem por preço', () => 
     expect(passou.map((m) => m.nome)).toEqual(['HONDA CBX 250', 'HONDA CB 300']);
   });
 
+  it('marca por si (faixa de TEXTO) filtra pela marca EXATA, não pela união das hipóteses', () => {
+    // "quero uma Honda": a Jev pode marcar concorrentes como parecidas; quem manda
+    // no filtro é a marca-alvo (faixa de texto), não as marcas das hipóteses.
+    const passou = filtrarPorExigencias(
+      LOJA,
+      ['marca'],
+      [
+        { nome: 'HONDA CB 300', marca: 'HONDA' },
+        { nome: 'YAMAHA YS Fazer 250', marca: 'YAMAHA' },
+      ],
+      { marca: ['HONDA'] },
+      30,
+    );
+    expect(passou.length).toBeGreaterThan(0);
+    expect(passou.every((m) => m.nome.startsWith('HONDA'))).toBe(true);
+    expect(passou.map((m) => m.nome)).not.toContain('YAMAHA YS Fazer 250');
+  });
+
   it('criteriosDinamicos DESLIGADO ignora a faixa e volta ao OR (permite acima do teto)', () => {
     const entrada = {
       termoBase: 'quero uma moto até 15 mil',

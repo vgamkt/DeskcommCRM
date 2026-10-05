@@ -119,6 +119,30 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     },
   };
 
+  // A MARCA POR SI precisa de um ALVO único (2026-10-05, medido: "quero uma
+  // Honda" marcava Yamaha como parecida e o filtro de marca — que casa o alvo
+  // pelas hipóteses — virava união e não filtrava nada). Aqui a Jev diz O VALOR
+  // da marca que o cliente pediu; o motor filtra por ele. Conserto na Jev, não
+  // regex.
+  const marcaCol = e.colunas.find((c) => ehColunaDeMarca(c));
+  if (marcaCol) {
+    const marcas: string[] = [];
+    for (const m of e.estoque) {
+      const v = (m.valores?.[marcaCol] ?? '').trim();
+      if (v !== '' && !marcas.includes(v)) marcas.push(v);
+    }
+    const criteriaMarca: Record<string, string> = {
+      nenhuma: 'o cliente NÃO pediu marca (ou a marca veio só DENTRO do nome do modelo)',
+    };
+    for (const m of marcas) criteriaMarca[m] = `a marca ${m}`;
+    perguntas.marca_alvo = {
+      type: 'choice',
+      instructions:
+        'O cliente pediu uma MARCA por si, como FILTRO? Ex.: "quero uma Honda"→Honda; "tem Yamaha?"→Yamaha. Se a marca apareceu apenas DENTRO do nome de um modelo (ex.: "Honda CB 250", "CB 250") ou o cliente não citou marca, responda "nenhuma".',
+      criteria: criteriaMarca,
+    };
+  }
+
   for (const col of e.colunas) {
     perguntas[`exigidos_${col}`] = {
       type: 'noul',
@@ -275,7 +299,7 @@ export function criteriosDaRespostaDeJev(
       ? principalResp.choice
       : null;
 
-  const faixas: Record<string, { min?: number; max?: number }> = {};
+  const faixas: Record<string, unknown> = {};
   const precoCol = e.colunas.find((c) => detectarPapelColuna(c) === 'preco');
   const precoResp = respostas.cx_preco;
   if (precoCol && precoResp?.type === 'choice') {
@@ -308,6 +332,20 @@ export function criteriosDaRespostaDeJev(
       MARGEM_NUMERICA_PCT,
     );
     if (f) faixas[potenciaCol] = f;
+  }
+
+  // Marca-alvo dita pela Jev: vira EXIGÊNCIA + faixa de texto. O motor filtra
+  // pela marca exata (não pela união das marcas das hipóteses).
+  const marcaCol = e.colunas.find((c) => ehColunaDeMarca(c));
+  const marcaResp = respostas.marca_alvo;
+  if (
+    marcaCol &&
+    marcaResp?.type === 'choice' &&
+    marcaResp.choice !== 'nenhuma' &&
+    marcaResp.choice.trim() !== ''
+  ) {
+    if (!exigidos.includes(marcaCol)) exigidos.push(marcaCol);
+    faixas[marcaCol] = [marcaResp.choice];
   }
 
   const hipoteses: HipoteseDeMoto[] = [];

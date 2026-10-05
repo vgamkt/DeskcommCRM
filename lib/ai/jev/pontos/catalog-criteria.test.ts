@@ -123,3 +123,31 @@ describe("potência (atributo-chave) e marca", () => {
     expect(instrucao).toMatch(/NUNCA exclua por marca/i);
   });
 });
+
+describe("marca por si (marca_alvo)", () => {
+  it("cria a pergunta marca_alvo com as marcas REAIS do estoque", () => {
+    const q = perguntaDeCriteriosDeJev(entrada);
+    expect(q.marca_alvo?.type).toBe("choice");
+    expect(q.marca_alvo?.criteria?.["Honda"]).toBeTruthy();
+    expect(q.marca_alvo?.criteria?.["Yamaha"]).toBeTruthy();
+    expect(q.marca_alvo?.criteria?.["nenhuma"]).toBeTruthy();
+  });
+
+  it("marca_alvo=Honda vira exigência + faixa de texto ['Honda']", () => {
+    const r: RespostasDeJev = {
+      marca_alvo: { type: "choice", choice: "Honda", confidence: 1, probabilities: {} },
+    };
+    const c = criteriosDaRespostaDeJev(r, entrada);
+    expect(c.exigidos).toContain("marca");
+    expect(c.faixas.marca).toEqual(["Honda"]);
+  });
+
+  it("marca_alvo=nenhuma não exige marca", () => {
+    const r: RespostasDeJev = {
+      marca_alvo: { type: "choice", choice: "nenhuma", confidence: 1, probabilities: {} },
+    };
+    const c = criteriosDaRespostaDeJev(r, entrada);
+    expect(c.exigidos).not.toContain("marca");
+    expect(c.faixas.marca).toBeUndefined();
+  });
+});
