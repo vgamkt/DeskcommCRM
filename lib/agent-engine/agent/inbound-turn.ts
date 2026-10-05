@@ -6124,6 +6124,58 @@ async function executarTurnoDoAgente(
     // limpo; a fila destrava no worker).
     const timeoutMs = agentConfig?.turnModelTimeoutMs ?? 45000;
     const maxTentativas = agentConfig?.turnModelMaxTentativas ?? 2;
+
+    /**
+     * Envia um texto DETERMINÍSTICO do motor pela cadeia canônica (`runBeforeSend`)
+     * — usado pelas contingências (turno sem resposta / modelo esgotado). Best-effort:
+     * nunca lança. No preview não envia. Devolve `true` se saiu.
+     */
+    const enviarTextoDoMotor = async (texto: string): Promise<boolean> => {
+      if (preview || texto.trim() === '' || seq >= maxSendsPerTurn) return false;
+      try {
+        await runBeforeSend({
+          pool,
+          log: runLog,
+          agentOperation,
+          tenantId,
+          leadId,
+          jobId: liveJob().id,
+          channelSessionId: input.channelSessionId,
+          body: texto,
+          optedOutThisTurn,
+          crmDailyLimit: null,
+          // Texto de fechamento do motor: determinístico, não é blast.
+          enforceSpinning: false,
+          now: clock(),
+          ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+          ...(lgpd !== undefined ? { lgpd } : {}),
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          send: (finalBody: string) => {
+            seq += 1;
+            corposEnviados.push(finalBody);
+            return liveChannel().send({
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              jobClaim: claimOfJob(liveJob()),
+              agentOperation,
+              seq,
+              conversationId: input.conversationId,
+              body: finalBody,
+            });
+          },
+        });
+        return true;
+      } catch (err) {
+        runLog.warn('envio de contingência falhou — o turno segue', {
+          error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+        });
+        return false;
+      }
+    };
+
     const turn = await chamarTurnoComResiliencia(
       () =>
         runModelCall(
@@ -6176,9 +6228,13 @@ async function executarTurnoDoAgente(
       },
     );
     if (turn === null) {
-      // O modelo esgotou: o humano foi avisado (acima) e o turno termina aqui,
-      // sem erro (o worker dá o job como concluído e a fila segue).
+      // O modelo esgotou: `aoEsgotar` já avisou o responsável (handoff por lentidão).
+      // Ainda assim o CLIENTE não pode ficar mudo — manda a mensagem de contingência.
       runLog.warn('turno encerrado por esgotamento do modelo (handoff acionado)');
+      const saiu = await enviarTextoDoMotor(
+        'Tive uma instabilidade por aqui agora. Já pedi para um responsável te atender — só um instante, por favor.',
+      );
+      if (saiu) runLog.info('modelo esgotou — mensagem de contingência enviada ao cliente');
       return;
     }
 
@@ -6791,51 +6847,27 @@ async function executarTurnoDoAgente(
       const textoDoModelo = (turn.result.text ?? '').trim();
       const texto =
         textoDoModelo !== '' ? textoDoModelo : (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '');
-      if (texto !== '') {
-        try {
-          await runBeforeSend({
-            pool,
-            log: runLog,
-            agentOperation,
-            tenantId,
-            leadId,
-            jobId: liveJob().id,
-            channelSessionId: input.channelSessionId,
-            body: texto,
-            optedOutThisTurn,
-            crmDailyLimit: null,
-            // Resposta de fechamento do turno (texto do próprio modelo): não é blast.
-            enforceSpinning: false,
-            now: clock(),
-            ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
-            ...(lgpd !== undefined ? { lgpd } : {}),
-            ...(deps.knobs.disclosureMode !== undefined
-              ? { disclosureMode: deps.knobs.disclosureMode }
-              : {}),
-            send: (finalBody: string) => {
-              seq += 1;
-              corposEnviados.push(finalBody);
-              return liveChannel().send({
-                tenantId,
-                leadId,
-                jobId: liveJob().id,
-                jobClaim: claimOfJob(liveJob()),
-                agentOperation,
-                seq,
-                conversationId: input.conversationId,
-                body: finalBody,
-              });
-            },
-          });
-          runLog.info('turno sem mensagem do modelo — resposta de contingência enviada', {
-            origem: textoDoModelo !== '' ? 'texto_do_modelo' : 'fallback_objecao',
-            chars: texto.length,
-          });
-        } catch (err) {
-          runLog.warn('resposta de contingência falhou — o turno segue', {
-            error: err instanceof Error ? err.message.slice(0, 120) : String(err),
-          });
-        }
+      const saiu = await enviarTextoDoMotor(texto);
+      if (saiu) {
+        runLog.info('turno sem mensagem do modelo — resposta de contingência enviada', {
+          origem: textoDoModelo !== '' ? 'texto_do_modelo' : 'fallback_objecao',
+          chars: texto.length,
+        });
+      }
+      // O modelo NÃO produziu texto (a contingência veio do motor): o turno ficou
+      // sem resposta do provedor — avisa o responsável. Cobre deepseek/chat E os
+      // pontos Jev que falharam (o cliente não pode ficar mudo e o humano precisa saber).
+      if (textoDoModelo === '') {
+        await enviarHandoffPorLentidao(pool, {
+          tenantId,
+          channelSessionId: input.channelSessionId,
+          notificationNumber: agentConfig?.handoffNotificationNumber ?? null,
+          conversationId: input.conversationId,
+          contactId: leadId || null,
+          tentativas: 0,
+          motivo: 'sem_resposta',
+          log: runLog,
+        }).catch(() => {});
       }
     }
 
