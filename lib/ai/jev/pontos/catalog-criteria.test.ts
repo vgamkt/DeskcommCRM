@@ -128,9 +128,10 @@ describe("marca por si (marca_alvo)", () => {
   it("cria a pergunta marca_alvo com as marcas REAIS do estoque", () => {
     const q = perguntaDeCriteriosDeJev(entrada);
     expect(q.marca_alvo?.type).toBe("choice");
-    expect(q.marca_alvo?.criteria?.["Honda"]).toBeTruthy();
-    expect(q.marca_alvo?.criteria?.["Yamaha"]).toBeTruthy();
-    expect(q.marca_alvo?.criteria?.["nenhuma"]).toBeTruthy();
+    const crit = q.marca_alvo?.criteria as Record<string, string> | undefined;
+    expect(crit?.["Honda"]).toBeTruthy();
+    expect(crit?.["Yamaha"]).toBeTruthy();
+    expect(crit?.["nenhuma"]).toBeTruthy();
   });
 
   it("marca_alvo=Honda vira exigência + faixa de texto ['Honda']", () => {

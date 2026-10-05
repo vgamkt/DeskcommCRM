@@ -73,7 +73,9 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         'cilindrada, nem modelo/marca) — escolha "perguntar": é melhor PERGUNTAR o que ele precisa ' +
         '(uso? quanto pensa investir?) do que despejar o catálogo e adivinhar. Ex.: "quero uma ' +
         'moto", "me ajuda a escolher", "quero comprar uma moto". NÃO pergunte se ele já deu um ' +
-        'critério (modelo, cc, faixa de preço, tipo, cor) ou se pediu para ver opções.',
+        'critério (modelo/família, marca, cilindrada/cc, faixa de preço, tipo de uso/' +
+        'categoria ou cor) ou se pediu para ver opções. Basta UM critério: se ele citou ' +
+        'uma marca ("quero uma Honda"), NÃO pergunte — ofereça.',
       criteria: {
         [OFERECER_SIM]: 'sim, mostrar motos agora',
         [OFERECER_NAO]: 'não mostrar motos neste turno',
