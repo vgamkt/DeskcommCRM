@@ -114,7 +114,7 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     principal: {
       type: 'choice',
       instructions:
-        'Qual destas colunas o cliente MAIS enfatizou? Priorize CATEGORIA, CILINDRADA e POTÊNCIA — a MARCA, sozinha, quase nunca é a ênfase do pedido.',
+        'O cliente ENFATIZOU explicitamente UMA coluna — separada do nome do modelo? Ex.: "quero mais barata"→preco; "tem que ser Honda" (marca por si)→marca; "quero cinza"→cor; "motos de 250"/"250cc"→cilindrada; "quero uma scooter"→categoria. Se ele citou apenas um MODELO pelo NOME (ex.: "CB 250", "Fazer 250"), responda "nenhum": o nome mistura marca+cilindrada e NENHUM atributo deve dominar. Na dúvida, "nenhum".',
       criteria: criteriaPrincipal,
     },
   };
@@ -126,9 +126,17 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       // modelo, não como filtro. Marcá-la como exigida faz o motor filtrar por
       // marca e perder o MODELO (o defeito "só Honda"). Só conta como exigida
       // quando o cliente pede a marca por si ("quero uma Honda").
+      //
+      // A CILINDRADA tem a MESMA armadilha: o "250" de "CB 250" é parte do NOME,
+      // não uma exigência de cc. Marcá-lo como exigido vira filtro de faixa (com
+      // margem ±30% → 113–325!) e derruba a semelhança por nome/família (medido
+      // 2026-10-05: "CB 250" deixou de fora os Honda CB 300, que são os mais
+      // parecidos). Só exigir cilindrada quando o cliente falar de cc por si.
       instructions: ehColunaDeMarca(col)
         ? 'O cliente exigiu a MARCA como FILTRO (ex.: "quero uma Honda")? Se a marca apareceu apenas DENTRO do nome de um modelo (ex.: "Honda CB 250"), responda NÃO — ali o que importa é o MODELO.'
-        : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
+        : detectarPapelColuna(col) === 'cilindrada'
+          ? 'O cliente pediu CILINDRADA por si (ex.: "quero uma 250", "250cc", "motos de 300", "entre 150 e 300")? Se o número apareceu apenas DENTRO do nome do MODELO (ex.: "CB 250", "Fazer 250"), responda NÃO — o número faz parte do nome, não é filtro.'
+          : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
     };
   }
 
@@ -153,7 +161,8 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
   if (e.colunas.some((c) => detectarPapelColuna(c) === 'cilindrada')) {
     perguntas.cx_cilindrada = {
       type: 'choice',
-      instructions: 'Qual faixa de CILINDRADA o cliente citou?',
+      instructions:
+        'O cliente falou de CILINDRADA por si ("quero 250cc", "motos de 250", "entre 150 e 300")? Se o número é só parte do NOME do modelo (ex.: "CB 250", "Fazer 250"), responda "não citou".',
       criteria: rotulos(FAIXAS_DE_CILINDRADA),
     };
     perguntas.modo_cilindrada = {
@@ -178,10 +187,11 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
   e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
     perguntas[`parecida_${i}`] = {
       type: 'noul',
-      // O julgamento é por ATRIBUTO TÉCNICO, não por marca: "parecida" = mesma
-      // CATEGORIA e faixa de CILINDRADA/POTÊNCIA. Marca igual, sozinha, NÃO
-      // basta — foi o que fazia "CB 250" trazer qualquer Honda.
-      instructions: `Esta moto do ESTOQUE atende ao que o cliente quer em CATEGORIA, CILINDRADA e POTÊNCIA (e preço, se ele citou)? A MARCA IGUAL, sozinha, NÃO basta. (na dúvida, sim): "${m.nome}"`,
+      // Julgamento por TODOS os atributos relevantes, com PESO IGUAL — nome/
+      // modelo/família, cilindrada, potência, categoria/tipo — e cor/marca/preço
+      // só quando o cliente pediu. A FAMÍLIA do nome (ex.: "CB") conta, mas NÃO
+      // é obrigatória nem excludente; NÃO exclua por marca. Na dúvida, sim.
+      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Julgue por TODOS os atributos relevantes com PESO IGUAL (nome/modelo/família, cilindrada, potência, categoria/tipo); cor, marca e preço só pesam se o cliente pediu. Família do nome igual (ex.: "CB") conta, mas NÃO é obrigatória nem excludente; NUNCA exclua por marca — qualquer marca pode servir. Na dúvida, responda SIM. "${m.nome}"`,
     };
   });
 
@@ -248,6 +258,9 @@ export function criteriosDaRespostaDeJev(
 
   const exigidos: string[] = [];
   for (const col of e.colunas) {
+    // `nome` NUNCA é exigência de filtro: o MODELO é casado pelo próprio sistema
+    // (hipóteses/pontuação). A Jev às vezes marca `nome` como exigido — ignoramos.
+    if (col === 'nome') continue;
     if (ehVerdadeiro(respostas[`exigidos_${col}`])) exigidos.push(col);
   }
 

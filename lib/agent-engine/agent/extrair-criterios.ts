@@ -178,9 +178,9 @@ export function buildCriteriosPrompt(
     '- "faixas": SOMENTE intervalos que o cliente DEU EXPLICITAMENTE (ex.: "até 15 mil" → {"preco":{"min":0,"max":15000}}). Se o cliente NÃO citou um número/intervalo para uma coluna, NÃO crie faixa para ela — deixe "faixas": {}.',
     'REGRAS DE PRECISÃO (obrigatórias):',
     '1) NUNCA invente faixa nem valor. Só use o que o cliente disse ou o que decorre do modelo que ELE citou.',
-    '2) Se o cliente citou UM NÚMERO (ex.: "uma 300", "uns 15 mil", "de 2024"), coloque esse valor na coluna certa E essa coluna entra em "exigidos". NÃO monte faixa — o sistema calcula a margem (números: ±30%; ano: exato).',
-    '3) "exigidos" = só o que o cliente FALOU — e NUNCA coloque "nome" em "exigidos": o MODELO exato é casado pelo próprio sistema. O que você DEDUZ (inclusive a MARCA pelo modelo) NÃO entra em "exigidos" — vai em "hipoteses" e serve para TRAZER/ORDENAR as parecidas de QUALQUER marca.',
-    '5) Exemplo-chave: "vc tem uma CB 250?" → o cliente citou o número 250, então "exigidos": ["cilindrada"] (com 250); a marca HONDA, deduzida de "CB", vai só em "hipoteses". Assim vêm as ~250 de QUALQUER marca (Honda primeiro).',
+    '2) Se o cliente citou um número EXPLÍCITO e SEPARADO (ex.: "uma 300", "uns 15 mil", "de 2024"), coloque esse valor na coluna certa E essa coluna entra em "exigidos". NÚMERO QUE FAZ PARTE DO NOME DO MODELO (ex.: "CB 250", "Fazer 250", "XRE 190") NÃO vira exigência — ele identifica o MODELO; registre-o em "hipoteses" (nome + o número deduzido) e NÃO crie faixa. NÃO monte faixa — o sistema calcula a margem (números: ±30%; ano: exato).',
+    '3) "exigidos" = só o que o cliente FALOU — e NUNCA coloque "nome" em "exigidos": o MODELO exato é casado pelo próprio sistema. O que você DEDUZ (inclusive a MARCA e a CILINDRADA pelo modelo) NÃO entra em "exigidos" — vai em "hipoteses" e serve para TRAZER/ORDENAR as parecidas de QUALQUER marca.',
+    '5) Exemplo-chave: "vc tem uma CB 250?" → "exigidos": [] (o "250" é parte do NOME, não uma exigência); em "hipoteses" ponha {"nome":"CB 250","marca":"HONDA","categoria":"Naked/Street","cilindrada":"250"}. Assim vêm as parecidas por NOME/família E cilindrada/próximas, de QUALQUER marca (Honda CBX 250, Honda CB 300, Yamaha 250, …) — nunca SÓ Honda nem SÓ 250.',
     ...(bloquearAno
       ? [
           '4) O cliente NÃO citou ano: NUNCA deduza nem preencha a coluna "ano" (nem em hipoteses/faixas/principal/exigidos).',

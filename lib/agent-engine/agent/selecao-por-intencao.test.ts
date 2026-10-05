@@ -688,7 +688,7 @@ describe('C-106: filtro ESTRITO por exigidos + faixa + ordem por preço', () => 
     moto('HONDA Biz 125', { categoria: 'Scooter', cilindrada: '125', marca: 'HONDA', preco: '14500' }),
   ];
 
-  it('exigidos marca+cilindrada só deixa a Honda ~250 (tolerância)', () => {
+  it('em PEDIDO, marca FILTRA (só Honda) e cilindrada PONTUA (não exclui o 125)', () => {
     const r = selecionarPorIntencao({
       termoBase: 'tem uma cb 250?',
       criterios: {},
@@ -704,9 +704,13 @@ describe('C-106: filtro ESTRITO por exigidos + faixa + ordem por preço', () => 
     });
     const nomes = r.motos.map((m) => m.nome);
     expect(nomes).toContain('HONDA CBX 250');
+    // marca é exigência EXPLÍCITA → filtra as outras marcas.
     expect(nomes).not.toContain('YAMAHA YS Fazer 250');
     expect(nomes).not.toContain('BMW G 310 R');
-    expect(nomes).not.toContain('HONDA Biz 125');
+    // cilindrada é atributo de PEDIDO → PONTUA (não é filtro): a Honda 125 entra,
+    // mas DEPOIS das ~250/300 (não empata por ordem do catálogo).
+    expect(nomes).toContain('HONDA Biz 125');
+    expect(nomes.indexOf('HONDA CBX 250')).toBeLessThan(nomes.indexOf('HONDA Biz 125'));
   });
 
   it('faixa de preço com limite vira obrigatória e ordena do mais próximo do teto', () => {

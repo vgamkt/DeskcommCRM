@@ -113,11 +113,13 @@ describe("potência (atributo-chave) e marca", () => {
     expect(String(q["exigidos_marca"]?.instructions)).toMatch(/DENTRO do nome/i);
   });
 
-  it("a hipótese 'parecida' pondera categoria/cilindrada/potência — marca sozinha não basta", () => {
+  it("a hipótese 'parecida' pesa TODOS os atributos igualmente e NÃO exclui por marca", () => {
     const q = perguntaDeCriteriosDeJev({
       colunas: ["categoria"],
       estoque: [{ nome: "Honda CB 300" }],
     });
-    expect(String(q["parecida_0"]?.instructions)).toMatch(/MARCA IGUAL, sozinha, NÃO basta/i);
+    const instrucao = String(q["parecida_0"]?.instructions);
+    expect(instrucao).toMatch(/PESO IGUAL/i);
+    expect(instrucao).toMatch(/NUNCA exclua por marca/i);
   });
 });

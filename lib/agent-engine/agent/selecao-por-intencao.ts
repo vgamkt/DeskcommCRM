@@ -340,6 +340,15 @@ export function pontuarPorCriterios(
       if (casaColuna(moto, coluna, alvo as string, toleranciaPct)) {
         marca(coluna);
         casouHip += 1;
+        // PROXIMIDADE numérica (peso IGUAL aos demais): quanto mais PERTO o valor
+        // do pedido, mais pontos. Sem isto, "250" empatava com "150" (ambos +/-30%)
+        // e o teto cortava por ORDEM do catálogo — o defeito "CB 250 trouxe 150s".
+        const alvoNum = numeroDaCelula(alvo as string);
+        const motoNum = numeroDaCelula(moto.valores?.[coluna] ?? '');
+        if (alvoNum !== null && motoNum !== null && alvoNum > 0) {
+          const dist = Math.min(1, Math.abs(alvoNum - motoNum) / alvoNum);
+          pontos += Math.max(0, Math.round(30 * (1 - dist)));
+        }
       }
     }
     // C-100: a HIPÓTESE como BLOCO — casar quase toda (ou toda) vale muito mais
@@ -476,9 +485,21 @@ export function selecionarPorIntencao(
           );
         })
         .map(([coluna]) => coluna);
+  // Atributos de PEDIDO — nome/modelo/versão, cilindrada e potência — NÃO viram
+  // FILTRO rígido: PONTUAM, com PESO IGUAL (regra do dono, 2026-10-05: nada
+  // domina; nenhuma marca é excluída; o que mais encaixa vem primeiro). Só o que
+  // o cliente pediu EXPLÍCITO e À PARTE (cor, marca, faixa de PREÇO) continua
+  // filtrando. Antes, "CB 250" virava exigência de cilindrada → faixa ±30%
+  // (113–325!) e os Honda CB 300 — os mais parecidos — ficavam de fora.
+  const ehAtributoDePedido = (c: string): boolean =>
+    c === 'nome' ||
+    detectarPapelColuna(c) === 'cilindrada' ||
+    /potenci|cavalos|\bcv\b|\bhp\b/i.test(c);
   const exigencias = !criteriosDinamicos
     ? []
-    : [...new Set([...(input.exigidos ?? []), ...faixasComLimite])];
+    : [...new Set([...(input.exigidos ?? []), ...faixasComLimite])].filter(
+        (c) => !ehAtributoDePedido(c),
+      );
   let casadas: MotoDoCatalogo[] = [];
   // `estrito` = havia exigência E ela casou algo. Diferente de "caiu no genérico
   // porque o estrito zerou" — só no primeiro não se completa com perfil alheio.
