@@ -359,3 +359,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20261005210000` | `0267_resumo_destino_grupo` | `conversation_summary_settings.destination_group` (JID `@g.us`) + `channel_session_id_group` (canal que envia ao grupo, FK `channel_sessions` ON DELETE SET NULL). Permite mandar o resumo para NÚMERO, GRUPO ou os DOIS, cada um com seu canal. Coexiste com `destination`/`destination_is_group` (legado). Baseline idempotente. |
 
 | `20261006010000` | `0268_resumo_numeros_origem` | `conversation_summary_settings.source_numbers` (jsonb array de telefones de CLIENTE). O resumo só rastreia/resume conversas cujo contato está na lista (vazio = nenhum). `fn_conversation_summary_touch` recriado para ignorar contatos fora da lista. Baseline idempotente. |
+
+| `20261006030000` | `0269_resumo_canais_excluir` | Corrige o rumo da 0268: `source_channel_session_ids` (jsonb; canais/números do sistema resumidos; vazio = TODOS) + `exclude_numbers` (clientes NÃO resumidos); remove `source_numbers`. Gatilho recriado. Baseline idempotente. |

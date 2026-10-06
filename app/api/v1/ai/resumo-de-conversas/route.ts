@@ -31,7 +31,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const SETTINGS_COLUMNS =
-  "enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, source_numbers, interval_minutes, batch_size, instructions, failure_alerts, updated_at";
+  "enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, source_channel_session_ids, exclude_numbers, interval_minutes, batch_size, instructions, failure_alerts, updated_at";
 
 /** Regra de aviso de falha POR AGENTE: número que ENVIA + número que RECEBE. */
 const regraAlertaSchema = z.object({
@@ -49,8 +49,10 @@ const putSchema = z.object({
   // Destino de GRUPO independente do número: pode coexistir com `destination`.
   destination_group: z.string().trim().max(120).nullable().optional(),
   channel_session_id_group: z.string().uuid().nullable().optional(),
-  // Números de CLIENTE que entram no resumo. Vazio = nenhum.
-  source_numbers: z.array(z.string().trim().min(1).max(40)).max(500).optional(),
+  // Canais (números do sistema) resumidos. Vazio = TODOS os canais.
+  source_channel_session_ids: z.array(z.string().uuid()).max(200).optional(),
+  // Números de cliente que NÃO são resumidos. Vazio = nenhum excluído.
+  exclude_numbers: z.array(z.string().trim().min(1).max(40)).max(500).optional(),
   interval_minutes: z.number().int().min(1).max(1440),
   batch_size: z.number().int().min(1).max(200),
   instructions: z.string().max(4000).nullable().optional(),
@@ -64,7 +66,8 @@ const PADRAO = {
   destination_is_group: false,
   destination_group: null as string | null,
   channel_session_id_group: null as string | null,
-  source_numbers: [] as string[],
+  source_channel_session_ids: [] as string[],
+  exclude_numbers: [] as string[],
   interval_minutes: 15,
   batch_size: 20,
   instructions: null as string | null,
@@ -155,7 +158,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
       destination_is_group: input.destination_is_group,
       destination_group: input.destination_group ?? null,
       channel_session_id_group: input.channel_session_id_group ?? null,
-      source_numbers: input.source_numbers ?? [],
+      source_channel_session_ids: input.source_channel_session_ids ?? [],
+      exclude_numbers: input.exclude_numbers ?? [],
       // Zera o cache do contato do destino: ele é resolvido no próximo envio.
       // Sem isto, trocar o destino deixava o contato VELHO gravado — e a guarda
       // anti-laço passava a pular a conversa do cliente errado.

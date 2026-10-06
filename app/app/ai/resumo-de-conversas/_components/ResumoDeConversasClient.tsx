@@ -42,7 +42,8 @@ interface Settings {
   destination_is_group: boolean;
   destination_group: string | null;
   channel_session_id_group: string | null;
-  source_numbers?: string[];
+  source_channel_session_ids?: string[];
+  exclude_numbers?: string[];
   interval_minutes: number;
   batch_size: number;
   instructions: string | null;
@@ -120,7 +121,8 @@ export function ResumoDeConversasClient() {
   const [destino, setDestino] = useState("");
   const [destinoGrupo, setDestinoGrupo] = useState("");
   const [sessionGrupoId, setSessionGrupoId] = useState<string>(NENHUMA);
-  const [numerosOrigem, setNumerosOrigem] = useState("");
+  const [canaisOrigem, setCanaisOrigem] = useState<string[]>([]);
+  const [numerosExcluidos, setNumerosExcluidos] = useState("");
   const [intervalo, setIntervalo] = useState(15);
   const [lote, setLote] = useState(20);
   const [instrucoes, setInstrucoes] = useState("");
@@ -149,7 +151,8 @@ export function ResumoDeConversasClient() {
         setDestino(legadoGrupo ? "" : (s.destination ?? ""));
         setDestinoGrupo(s.destination_group ?? (legadoGrupo ? (s.destination ?? "") : ""));
         setSessionGrupoId(s.channel_session_id_group ?? NENHUMA);
-        setNumerosOrigem((s.source_numbers ?? []).join("\n"));
+        setCanaisOrigem(s.source_channel_session_ids ?? []);
+        setNumerosExcluidos((s.exclude_numbers ?? []).join("\n"));
         setIntervalo(s.interval_minutes);
         setLote(s.batch_size);
         setPromptPadrao(cfg.data.prompt_padrao);
@@ -209,7 +212,8 @@ export function ResumoDeConversasClient() {
         destination_is_group: false,
         destination_group: destinoGrupo.trim() || null,
         channel_session_id_group: sessionGrupoId === NENHUMA ? null : sessionGrupoId,
-        source_numbers: numerosOrigem
+        source_channel_session_ids: canaisOrigem,
+        exclude_numbers: numerosExcluidos
           .split(/[\n,;]+/)
           .map((t) => t.trim())
           .filter((t) => t !== ""),
@@ -361,20 +365,50 @@ export function ResumoDeConversasClient() {
             vai para o número <strong>e</strong> para o grupo.
           </p>
 
+          <div className="space-y-2 rounded-md border p-3">
+            <Label>Números do sistema (canais) que serão resumidos</Label>
+            <p className="text-xs text-muted-foreground">
+              O resumo cobre as conversas recebidas nestes números.{" "}
+              <strong>Nenhum marcado = todos os canais.</strong>
+            </p>
+            <div className="space-y-1">
+              {sessoes.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum número conectado.</p>
+              )}
+              {sessoes.map((s) => {
+                const marcado = canaisOrigem.includes(s.id);
+                return (
+                  <label key={s.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      disabled={!podeEditar}
+                      onChange={(e) =>
+                        setCanaisOrigem((atual) =>
+                          e.target.checked ? [...atual, s.id] : atual.filter((id) => id !== s.id),
+                        )
+                      }
+                    />
+                    {(s.display_name ?? s.provider) + (s.phone_number ? ` — ${s.phone_number}` : "")}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="rs-numeros">Números que serão resumidos</Label>
+            <Label htmlFor="rs-excluidos">Números de cliente que NÃO serão resumidos</Label>
             <Textarea
-              id="rs-numeros"
-              value={numerosOrigem}
-              onChange={(e) => setNumerosOrigem(e.target.value)}
+              id="rs-excluidos"
+              value={numerosExcluidos}
+              onChange={(e) => setNumerosExcluidos(e.target.value)}
               placeholder={"Ex.:\n5511999998888\n5512988887777"}
               rows={4}
               disabled={!podeEditar}
             />
             <p className="text-xs text-muted-foreground">
-              O resumo cobre <strong>somente</strong> as conversas destes números de cliente (um por
-              linha, ou separados por vírgula). Pode ser mais de um. <strong>Vazio = não resume
-              ninguém.</strong>
+              Conversas destes números de cliente ficam <strong>fora</strong> do resumo (um por linha
+              ou separados por vírgula). Pode ser mais de um. Vazio = nenhum excluído.
             </p>
           </div>
 

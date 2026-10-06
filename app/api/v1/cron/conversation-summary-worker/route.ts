@@ -76,8 +76,10 @@ interface Settings {
   destination_group: string | null;
   channel_session_id_group: string | null;
   destination_contact_id: string | null;
-  /** Telefones de cliente que entram no resumo. Vazio = nenhum. */
-  source_numbers: unknown;
+  /** Canais (números do sistema) resumidos. Vazio = TODOS. */
+  source_channel_session_ids: unknown;
+  /** Números de cliente NÃO resumidos. Vazio = nenhum. */
+  exclude_numbers: unknown;
   interval_minutes: number;
   batch_size: number;
   instructions: string | null;
@@ -148,7 +150,7 @@ async function processarEstado(
 
   const { data: settingsRow } = await admin
     .from("conversation_summary_settings")
-    .select("enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, destination_contact_id, source_numbers, interval_minutes, batch_size, instructions")
+    .select("enabled, channel_session_id, destination, destination_is_group, destination_group, channel_session_id_group, destination_contact_id, source_channel_session_ids, exclude_numbers, interval_minutes, batch_size, instructions")
     .eq("organization_id", org)
     .maybeSingle();
   const settings = settingsRow as Settings | null;
@@ -157,29 +159,41 @@ async function processarEstado(
     return "ignorada";
   }
 
-  // SÓ NÚMEROS ESPECIFICADOS: o resumo cobre apenas as conversas cujo contato
-  // está em `source_numbers`. Lista vazia = não resume ninguém. (O gatilho já
-  // filtra na criação; aqui é defesa para estados criados antes da config.)
-  const fontes = Array.isArray(settings.source_numbers)
-    ? (settings.source_numbers as unknown[])
+  // CANAIS (números do sistema) + EXCLUSÃO por cliente. Canais vazio = TODOS.
+  // (O gatilho já filtra na criação; aqui é defesa para estados criados antes.)
+  const canais = Array.isArray(settings.source_channel_session_ids)
+    ? (settings.source_channel_session_ids as unknown[]).map((v) => String(v))
+    : [];
+  const excluidos = Array.isArray(settings.exclude_numbers)
+    ? (settings.exclude_numbers as unknown[])
         .map((v) => String(v).replace(/\D/g, ""))
         .filter((v) => v !== "")
     : [];
-  if (fontes.length === 0) {
-    await soltar(admin, estado.id);
-    return "ignorada";
-  }
-  if (estado.contact_id) {
-    const { data: ct } = await admin
-      .from("contacts")
-      .select("phone_number")
+  if (canais.length > 0 || excluidos.length > 0) {
+    const { data: conv } = await admin
+      .from("conversations")
+      .select("channel_session_id, contact_id")
       .eq("organization_id", org)
-      .eq("id", estado.contact_id)
+      .eq("id", estado.conversation_id)
       .maybeSingle();
-    const tel = String((ct as { phone_number?: string } | null)?.phone_number ?? "").replace(/\D/g, "");
-    if (!fontes.includes(tel)) {
+    const csid = (conv as { channel_session_id?: string } | null)?.channel_session_id ?? null;
+    if (canais.length > 0 && (csid === null || !canais.includes(csid))) {
       await soltar(admin, estado.id);
       return "ignorada";
+    }
+    if (excluidos.length > 0) {
+      const cid = (conv as { contact_id?: string } | null)?.contact_id ?? estado.contact_id;
+      const { data: ct } = await admin
+        .from("contacts")
+        .select("phone_number")
+        .eq("organization_id", org)
+        .eq("id", cid)
+        .maybeSingle();
+      const tel = String((ct as { phone_number?: string } | null)?.phone_number ?? "").replace(/\D/g, "");
+      if (excluidos.includes(tel)) {
+        await soltar(admin, estado.id);
+        return "ignorada";
+      }
     }
   }
 

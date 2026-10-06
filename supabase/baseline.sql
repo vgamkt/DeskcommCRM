@@ -25094,3 +25094,94 @@ begin
   return NEW;
 end;
 $function$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0269 · Resumo: incluir por CANAL e excluir por CLIENTE (apêndice idempotente)
+-- ════════════════════════════════════════════════════════════════════════════
+-- `source_channel_session_ids` (vazio = TODOS os canais); `exclude_numbers`
+-- (clientes que NÃO são resumidos). Remove `source_numbers` (0268).
+alter table public.conversation_summary_settings
+  add column if not exists exclude_numbers jsonb not null default '[]'::jsonb;
+alter table public.conversation_summary_settings
+  add column if not exists source_channel_session_ids jsonb not null default '[]'::jsonb;
+alter table public.conversation_summary_settings
+  drop column if exists source_numbers;
+
+create or replace function public.fn_conversation_summary_touch()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_enabled boolean;
+  v_interval int;
+  v_is_group boolean;
+  v_dest_contact uuid;
+  v_channels jsonb;
+  v_exclude jsonb;
+  v_phone text;
+begin
+  begin
+    select enabled, interval_minutes, destination_contact_id, source_channel_session_ids, exclude_numbers
+      into v_enabled, v_interval, v_dest_contact, v_channels, v_exclude
+      from public.conversation_summary_settings
+     where organization_id = NEW.organization_id;
+    if not found or v_enabled is not true then
+      return NEW;
+    end if;
+
+    if v_channels is not null and jsonb_array_length(v_channels) > 0 then
+      if NEW.channel_session_id is null
+         or not exists (
+           select 1 from jsonb_array_elements_text(v_channels) as t(sid)
+            where t.sid = NEW.channel_session_id::text
+         ) then
+        return NEW;
+      end if;
+    end if;
+
+    select regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g')
+      into v_phone
+      from public.contacts where id = NEW.contact_id;
+    if v_exclude is not null and jsonb_array_length(v_exclude) > 0
+       and exists (
+         select 1 from jsonb_array_elements_text(v_exclude) as t(num)
+          where regexp_replace(t.num, '[^0-9]', '', 'g') = v_phone
+       ) then
+      return NEW;
+    end if;
+
+    if v_dest_contact is not null and NEW.contact_id = v_dest_contact then
+      return NEW;
+    end if;
+
+    select is_group into v_is_group from public.conversations where id = NEW.conversation_id;
+    if coalesce(v_is_group, false) then
+      return NEW;
+    end if;
+
+    if NEW.direction = 'inbound' then
+      insert into public.conversation_summary_state
+        (organization_id, conversation_id, contact_id, status, last_message_at, next_eval_at)
+      values
+        (NEW.organization_id, NEW.conversation_id, NEW.contact_id, 'active',
+         NEW.sent_at, now() + make_interval(mins => v_interval))
+      on conflict (organization_id, conversation_id) do update
+        set last_message_at = greatest(public.conversation_summary_state.last_message_at, NEW.sent_at),
+            next_eval_at = now() + make_interval(mins => v_interval),
+            updated_at = now();
+    else
+      update public.conversation_summary_state
+         set last_message_at = greatest(last_message_at, NEW.sent_at),
+             next_eval_at = now() + make_interval(mins => v_interval),
+             updated_at = now()
+       where organization_id = NEW.organization_id
+         and conversation_id = NEW.conversation_id;
+    end if;
+  exception when others then
+    null;
+  end;
+  return NEW;
+end;
+$function$;
