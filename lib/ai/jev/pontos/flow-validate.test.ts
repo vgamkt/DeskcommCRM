@@ -71,6 +71,17 @@ describe('candidatasDeTexto', () => {
     expect(candidatasDeTexto('', 'Cidade')).toEqual([]);
     expect(candidatasDeTexto('tudo bem?', 'Cidade')).toEqual([]);
   });
+
+  it('resposta SECA vira candidata (o cliente só diz o valor)', () => {
+    expect(candidatasDeTexto('Sao paulo', 'Cidade')).toContain('Sao paulo');
+    expect(candidatasDeTexto('Taubaté', 'Cidade')).toContain('Taubaté');
+    expect(candidatasDeTexto('Vander', 'Nome')).toContain('Vander');
+  });
+
+  it('intenção genérica não vira candidata', () => {
+    expect(candidatasDeTexto('quero uma moto', 'Cidade')).toEqual([]);
+    expect(candidatasDeTexto('tenho interesse', 'Nome')).toEqual([]);
+  });
 });
 
 describe('candidatas por tipo (número/data)', () => {

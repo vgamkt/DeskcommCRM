@@ -44,6 +44,20 @@ export function candidatasDeTexto(mensagem: string, label: string): string[] {
   // "X mesmo" (confirmação de cidade) e "de X" capitalizado.
   for (const m of t.matchAll(/\b([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+[A-ZÀ-Ú][\wÀ-ú'-]*){0,3})\s+mesmo\b/g)) grava(m[1]);
   for (const m of t.matchAll(/\bde\s+([A-ZÀ-Ú][\wÀ-ú'-]*(?:\s+[A-ZÀ-Ú][\wÀ-ú'-]*){0,3})/g)) grava(m[1]);
+  // RESPOSTA SECA — o cliente só diz o valor, sem prefixo: "Sao paulo", "Vander",
+  // "Taubaté". Nenhum regex acima casa, então o campo de TEXTO ficava SEM candidata,
+  // a Jev não tinha valor a escolher e o dado se PERDIA — o fluxo reperguntava
+  // (medido 2026-10-06: "Sao paulo" não capturado, cidade perguntada 3x). Só entra
+  // quando NADA foi extraído por prefixo, a mensagem é curta e não é pergunta nem
+  // intenção genérica; quem julga se é o valor do campo continua sendo a Jev.
+  if (out.size === 0 && t.length <= 48 && !t.endsWith('?')) {
+    const palavras = t.split(/\s+/);
+    const pareceIntencao =
+      /^(quero|queria|gostaria|tenho|preciso|procuro|busco|vou|estou|sim|nao|ok|blz|beleza|obrigad[oa]|valeu|oi|ola|bom dia|boa tarde|boa noite|tudo|como|qual|quando|onde|porque|quem)\b/i.test(
+        t,
+      );
+    if (palavras.length <= 4 && !pareceIntencao) grava(t);
+  }
   // O rótulo do campo nunca é candidato (evita ecoar "Cidade").
   const alvo = label.toLowerCase();
   return [...out].filter((v) => v.toLowerCase() !== alvo).slice(0, 4);
