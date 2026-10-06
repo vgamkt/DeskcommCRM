@@ -51,6 +51,19 @@ const REGRAS: ReadonlyArray<RegraNota> = [
     re: /\b(ja|acabei de|acabo de)\s+(respondi|enviei|mandei|confirmei|perguntei|avisei|informei|passei)\b[^.!?\n]{0,50}\b(cliente|lead|vendedor|vendedora|responsavel|atendente)\b/g,
   },
   {
+    // Auto-relato no PASSADO dirigido a um TERCEIRO pelo nome ("já respondi ao
+    // Vander", "já mandei para a Ana"). Exclui o interlocutor ("seu/sua/te/você"):
+    // "já respondi sua pergunta" é fala legítima e NÃO casa.
+    categoria: 'auto_relato_terceiro_nome',
+    re: /\b(ja|acabei de|acabo de)\s+(respondi|enviei|mandei|confirmei|perguntei|avisei|informei|passei|registrei|repassei)\s+(ao|a|à|para o|pro|para a|pra o|pra a)\s+(?!seu\b|sua\b|te\b|voce\b|você\b)/g,
+  },
+  {
+    // Status/narrativa sobre o SISTEMA ou o FLUXO (o cliente nunca lê isso):
+    // "o sistema está conduzindo as perguntas do fluxo", "o fluxo foi iniciado".
+    categoria: 'status_sistema_fluxo',
+    re: /\bo\s+(sistema|fluxo|processo|atendimento)\s+(esta|está|foi|vai|ira|irá)\s+(conduzindo|iniciado|ativado|registrado|andando|seguindo|em\s+andamento|registrando)/g,
+  },
+  {
     categoria: 'espera_terceiro',
     re: /\baguardo\s+a\s+resposta\s+(dele|dela|do cliente|da cliente|do lead)\b/g,
   },

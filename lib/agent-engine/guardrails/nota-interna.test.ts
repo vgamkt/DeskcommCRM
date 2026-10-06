@@ -22,6 +22,15 @@ describe('detectarNotaInterna', () => {
     expect(detectarNotaInterna('nada a declarar').achou).toBe(true);
   });
 
+  it('bloqueia auto-relato ao terceiro pelo NOME e status do sistema/fluxo', () => {
+    expect(
+      detectarNotaInterna(
+        'Já respondi ao Vander e registrei o contexto da troca + financiamento. O sistema está conduzindo as perguntas do fluxo (',
+      ).achou,
+    ).toBe(true);
+    expect(detectarNotaInterna('Já mandei para a Ana a tabela.').achou).toBe(true);
+  });
+
   it('NÃO bloqueia fala legítima ao cliente (controles)', () => {
     const ok = [
       'Aguardo sua resposta.',
