@@ -336,66 +336,37 @@ export function pontuarPorCriterios(
 ): { pontos: number; colunasCasadas: number } {
   let pontos = 0;
   const colunasOk = new Set<string>();
-  const marca = (coluna: string): void => {
+  // REGRA DO DONO (2026-10-06): PONTOS por atributo que o cliente pediu. Cada
+  // atributo que a moto bate = 1 PONTO (ex.: "cb 250" → nome/família = 1 e
+  // cilindrada = 1; entram TODAS as CB e TODAS as 250, de qualquer marca).
+  // Numérico (cilindrada/ano/preço): bater PRÓXIMO (±tolerância) dá +0,5 e
+  // bater EXATO dá +0,5 (exato = 1,5). A ORDEM de envio é a SOMA dos pontos.
+  const pontosDaColuna = (coluna: string, alvo: string): void => {
+    if (colunasOk.has(coluna)) return;
     colunasOk.add(coluna);
-    pontos += 10;
-    if (principal !== null && coluna === principal) pontos += 50;
+    pontos += 1;
+    const alvoNum = valorNumerico(alvo);
+    const motoNum = valorNumerico(moto.valores?.[coluna] ?? '');
+    if (alvoNum !== null && motoNum !== null && alvoNum > 0) {
+      const margem = Math.max(1, (Math.abs(alvoNum) * toleranciaPct) / 100);
+      if (Math.abs(motoNum - alvoNum) <= margem) pontos += 0.5;
+    }
   };
   for (const hip of hipoteses) {
-    const entradas = Object.entries(hip).filter(
-      ([, v]) => typeof v === 'string' && v.trim() !== '',
-    );
-    if (entradas.length === 0) continue;
-    let casouHip = 0;
-    for (const [coluna, alvo] of entradas) {
-      if (casaColuna(moto, coluna, alvo as string, toleranciaPct)) {
-        marca(coluna);
-        casouHip += 1;
-        // PROXIMIDADE numérica (peso IGUAL aos demais): quanto mais PERTO o valor
-        // do pedido, mais pontos. Sem isto, "250" empatava com "150" (ambos +/-30%)
-        // e o teto cortava por ORDEM do catálogo — o defeito "CB 250 trouxe 150s".
-        const alvoNum = numeroDaCelula(alvo as string);
-        const motoNum = numeroDaCelula(moto.valores?.[coluna] ?? '');
-        if (alvoNum !== null && motoNum !== null && alvoNum > 0) {
-          const dist = Math.min(1, Math.abs(alvoNum - motoNum) / alvoNum);
-          pontos += Math.max(0, Math.round(30 * (1 - dist)));
-        }
-      }
+    for (const [coluna, alvo] of Object.entries(hip)) {
+      if (typeof alvo !== 'string' || alvo.trim() === '') continue;
+      if (casaColuna(moto, coluna, alvo, toleranciaPct)) pontosDaColuna(coluna, alvo);
     }
-    // C-100: a HIPÓTESE como BLOCO — casar quase toda (ou toda) vale muito mais
-    // que casar 1 coluna solta. Sem isso, uma moto que casa só `preco` (qualquer
-    // uma) empatava com a que é de fato parecida. NÃO exclui ninguém (OR segue).
-    const proporcao = casouHip / entradas.length;
-    if (casouHip >= 2) pontos += 15 * casouHip;
-    if (proporcao === 1) pontos += 40;
-    else if (proporcao >= 0.5) pontos += 20;
   }
   for (const [coluna, faixa] of Object.entries(faixas)) {
-    if (casaFaixaColuna(moto, coluna, faixa)) marca(coluna);
+    if (casaFaixaColuna(moto, coluna, faixa) && !colunasOk.has(coluna)) {
+      colunasOk.add(coluna);
+      pontos += 1;
+    }
   }
-  if (colunasOk.size >= 2) pontos += colunasOk.size * 5; // bônus de combinação
+  // O que o cliente ENFATIZOU vale um empurrãozinho (meio ponto) na ordem.
+  if (principal !== null && colunasOk.has(principal)) pontos += 0.5;
   return { pontos, colunasCasadas: colunasOk.size };
-}
-
-/**
- * As motos do catálogo cujo NOME casa o nome de uma hipótese da JEV — a DECISÃO
- * dela (P3.2). O motor só APRESENTA essas; não re-rankeia por conta própria.
- * Casa por nome normalizado (igual OU contido), tolerante a variações
- * ("CB 300" ⊂ "HONDA CB 300 R").
- */
-function casarPorNomeDasHipoteses(
-  candidatos: readonly MotoDoCatalogo[],
-  hipoteses: readonly HipoteseDeMoto[],
-): MotoDoCatalogo[] {
-  const alvos = hipoteses
-    .map((h) => h.nome)
-    .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
-    .map(normalizarNomeDeMoto);
-  if (alvos.length === 0) return [];
-  return candidatos.filter((m) => {
-    const nome = normalizarNomeDeMoto(m.nome);
-    return alvos.some((a) => nome === a || nome.includes(a) || a.includes(nome));
-  });
 }
 
 /**
@@ -555,23 +526,17 @@ export function selecionarPorIntencao(
       );
       estrito = casadas.length > 0;
     }
-    // Estrtio zerou (ou não havia exigência): a JEV DECIDE e o motor EXECUTA.
+    // Estrito zerou (ou não havia exigência): o motor PONTUA e ORDENA por
+    // semelhança. OR pontuado (dono, 2026-10-06): cada atributo que o cliente
+    // pediu vale 1 ponto (numérico próximo +0,5; exato +0,5); a ordem é a SOMA.
     if (casadas.length === 0) {
-      // (1) A decisão da Jev são as motos que ela marcou como parecidas (hipóteses,
-      // por NOME). O motor APRESENTA essas — sem re-rankear por conta própria (o
-      // re-rank por colunas trazia Yamahas para "cb 250"; medido 2026-10-06).
-      const porNome = casarPorNomeDasHipoteses(candidatos, input.hipoteses ?? []);
-      // (2) Só se NENHUMA casar por nome, cai no OR pontuado (fallback).
-      casadas =
-        porNome.length > 0
-          ? porNome
-          : filtrarPorHipoteses(
-              candidatos,
-              input.hipoteses ?? [],
-              input.faixas ?? {},
-              tolerancia,
-              input.principal ?? null,
-            );
+      casadas = filtrarPorHipoteses(
+        candidatos,
+        input.hipoteses ?? [],
+        input.faixas ?? {},
+        tolerancia,
+        input.principal ?? null,
+      );
     }
     if (casadas.length > 0) {
       // Cliente nomeou um modelo: o conjunto PREFERIDO também fica na LINHA do
@@ -621,7 +586,7 @@ export function selecionarPorIntencao(
   const basePreferida =
     preferidos !== null ? candidatos.filter((m) => preferidos!.has(m)) : candidatos;
   const quantidadeBase = semTeto ? Math.max(basePreferida.length, 1) : quantidade;
-  const motos = escolherComReferencia(termoFinal, basePreferida, {
+  let motos = escolherComReferencia(termoFinal, basePreferida, {
     quantidade: quantidadeBase,
     criteriosColunas: colunasRankingFinal,
     // No modo ALTERNATIVA a reserva por `moto_similar` NÃO se aplica: o cliente
@@ -632,6 +597,16 @@ export function selecionarPorIntencao(
     colunaSimilares: alternativo ? null : colunaDeSimilares(input.mapeamento),
     ...(Object.keys(preferencias).length > 0 ? { preferencias } : {}),
   });
+  // ORDEM POR SEMELHANÇA (dono, 2026-10-06): `casadas` já vem da MAIOR pontuação
+  // para a menor (OR pontuado). Preserva essa ordem — o re-rank por colunas do
+  // catálogo a perdia (quem tem mais atributos iguais tem que vir primeiro).
+  if (casadas.length > 0 && !estrito) {
+    const naLinha =
+      input.nomeiaModelo === true
+        ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, input.hipoteses ?? []))
+        : casadas;
+    motos = (naLinha.length > 0 ? naLinha : casadas).slice(0, quantidade);
+  }
   // COMPLETA até N SOMENTE com o MESMO PERFIL (decisão do dono, 2026-09-26):
   // mesma marca OU categoria das hipóteses/faixas. NÃO completa com perfil alheio
   // (era o defeito: "CB 250" trazia XMax/scooter/BMW). Se casou menos que N e não
