@@ -3,8 +3,6 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { renderAgora } from "@/lib/tempo/agora";
-
 /**
  * DOIS DEFEITOS MEDIDOS AO VIVO (2026-10-06, número comercial 2501):
  *
@@ -13,23 +11,29 @@ import { renderAgora } from "@/lib/tempo/agora";
  *
  * E o horário: 15h da tarde em America/Sao_Paulo, mas a IA disse "bom dia" —
  * copiou o cumprimento do cliente em vez de olhar o relógio.
+ *
+ * Conserto: a regra de cumprir pelo relógio saiu do bloco `## Agora` (que entra
+ * em TODO turno) e foi para um bloco de PRIMEIRO contato — só aparece quando
+ * ainda não há fala NOSSA no histórico.
  */
-
-const INSTANTE = new Date("2026-09-04T03:30:00Z"); // sexta 00:30 em SP
-
-describe("renderAgora — cumprimentar pelo relógio", () => {
-  it("manda a IA escolher o cumprimento pela hora do bloco, não pela fala do cliente", () => {
-    const bloco = renderAgora(INSTANTE, "America/Sao_Paulo");
-    expect(bloco).toMatch(/até 12h/i);
-    expect(bloco).toMatch(/boa tarde/i);
-    expect(bloco).toMatch(/boa noite/i);
-  });
-});
 
 const FONTE = fs.readFileSync(
   path.join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
   "utf8",
 );
+
+describe("turno — cumprimentar pelo relógio SÓ no primeiro contato", () => {
+  it("a regra de cumprimento está no bloco de primeiro contato, condicionado a !jaFalamosComOCliente", () => {
+    expect(FONTE).toMatch(/const saudacaoPrimeiroContato = !jaFalamosComOCliente/);
+    expect(FONTE).toMatch(/## Primeiro contato/);
+    expect(FONTE).toMatch(/boa tarde/);
+    expect(FONTE).toMatch(/boa noite/);
+  });
+
+  it("o bloco entra na abertura (openingSuffixes)", () => {
+    expect(FONTE).toMatch(/saudacaoPrimeiroContato,\n/);
+  });
+});
 
 describe("turno — não se reapresentar quando já falamos", () => {
   it("calcula se já há fala NOSSA no histórico", () => {

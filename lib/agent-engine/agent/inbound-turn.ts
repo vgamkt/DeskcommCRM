@@ -6168,6 +6168,13 @@ async function executarTurnoDoAgente(
     const jaFalamosComOCliente = effectiveContext.messages.some(
       (m) => m.direction === 'outbound' && (m.body ?? '').trim() !== '',
     );
+    // SAUDAÇÃO só no PRIMEIRO contato: a regra de cumprir pelo relógio morava no
+    // bloco `## Agora` (que entra em TODO turno) e fazia o modelo dizer "Boa
+    // tarde" no meio da conversa. Agora ela só aparece quando ainda não há fala
+    // NOSSA no histórico — a régua do horário continua valendo para a 1ª vez.
+    const saudacaoPrimeiroContato = !jaFalamosComOCliente
+      ? '## Primeiro contato\nCumprimente pelo horário do bloco ## Agora — até 12h "bom dia"; de 12h às 18h "boa tarde"; depois das 18h "boa noite" — e apresente-se. Nas próximas mensagens desta conversa NÃO cumprimente nem se apresente de novo.'
+      : '';
     // ── PARTE 1: BRIEF DO TURNO (quando a Jev está ligada) ────────────────────
     // A Jev já decidiu o essencial do turno; em vez de 4 blocos crus (estado,
     // fluxo, hint de estágio, objeção), manda-se UM brief compacto — mesmos
@@ -6233,6 +6240,7 @@ async function executarTurnoDoAgente(
     }
     const openingSuffixes = [
       agoraBlock,
+      saudacaoPrimeiroContato,
       jaFalamosComOCliente
         ? '## Você já falou com este cliente\nHá mensagens SUAS no histórico desta conversa — a apresentação ("Sou a <seu nome>, da <loja>") JÁ FOI FEITA. NÃO se apresente de novo, NÃO repita o nome da loja e NÃO recomece a conversa; continue o assunto de onde parou.'
         : '',

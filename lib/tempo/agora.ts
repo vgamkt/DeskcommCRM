@@ -88,10 +88,6 @@ export function renderAgora(agora: Date, fuso: string): string {
       "\"semana que vem\") você resolve a partir desta data, nunca de memória. " +
       "Ferramenta que pede um instante recebe o formato de `instante_absoluto`; " +
       "com a pessoa você fala como gente (\"quinta às 14h\").",
-    // Cumprimento pelo RELÓGIO, não pela fala do cliente: medido ao vivo
-    // (2026-10-06) o cliente escreveu "bom dia" às 15h e a IA devolveu "bom dia".
-    "Cumprimente pelo horário DESTE bloco, não pelo que o cliente escreveu: até 12h " +
-      "\"bom dia\"; de 12h às 18h \"boa tarde\"; depois das 18h \"boa noite\".",
   ].join("\n");
 }
 

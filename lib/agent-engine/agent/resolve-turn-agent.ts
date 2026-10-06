@@ -275,12 +275,23 @@ export async function resolveConversationTurn(
     'select active_ai_agent_id,active_intent from conversations where organization_id=$1 and id=$2',
     [input.tenantId, input.conversationId],
   );
-  const signal = input.inbound
-    ? (await db.query<{ body: string | null }>(
-        "select body from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
-        [input.tenantId, input.conversationId],
-      )).rows[0]?.body ?? null
-    : null;
+  // ÁUDIO == TEXTO: para o Intent Router, o "sinal" é o `body` OU a transcrição
+  // (`media_derived_text`). Antes, um áudio (body vazio) virava signal=null e não
+  // era classificado por intenção — divergia do texto. Mesma regra de
+  // `loadInboundBodyForJob` (`inbound-turn.ts`).
+  let signal: string | null = null;
+  if (input.inbound) {
+    const ultima = await db.query<{ body: string | null; media_derived_text: string | null }>(
+      "select body, media_derived_text from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
+      [input.tenantId, input.conversationId],
+    );
+    const row = ultima.rows[0];
+    if (row !== undefined) {
+      const body = (row.body ?? '').trim();
+      signal = body !== '' ? body : (row.media_derived_text ?? '').trim();
+      if (signal === '') signal = null;
+    }
+  }
   return resolveTurnAgent(db, llmCfg, {
     ...input,
     signal,
