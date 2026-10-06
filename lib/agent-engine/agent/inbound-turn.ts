@@ -6159,6 +6159,15 @@ async function executarTurnoDoAgente(
       }
     }
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    // ── JÁ CONVERSAMOS COM ESTE CLIENTE? ─────────────────────────────────────
+    // Há fala NOSSA no histórico deste turno? Se sim, a apresentação já foi
+    // feita e o modelo NÃO pode repetir "Sou a <nome>, da <loja>". Medido ao vivo
+    // (2026-10-06): depois de um `#limpar` que recriou o contato, o 1º turno
+    // saudou certo e o 2º ("Cb 250") se apresentou DE NOVO — a persona manda não
+    // repetir, mas sem este fato o modelo não sabia que já tinha falado.
+    const jaFalamosComOCliente = effectiveContext.messages.some(
+      (m) => m.direction === 'outbound' && (m.body ?? '').trim() !== '',
+    );
     // ── PARTE 1: BRIEF DO TURNO (quando a Jev está ligada) ────────────────────
     // A Jev já decidiu o essencial do turno; em vez de 4 blocos crus (estado,
     // fluxo, hint de estágio, objeção), manda-se UM brief compacto — mesmos
@@ -6224,6 +6233,9 @@ async function executarTurnoDoAgente(
     }
     const openingSuffixes = [
       agoraBlock,
+      jaFalamosComOCliente
+        ? '## Você já falou com este cliente\nHá mensagens SUAS no histórico desta conversa — a apresentação ("Sou a <seu nome>, da <loja>") JÁ FOI FEITA. NÃO se apresente de novo, NÃO repita o nome da loja e NÃO recomece a conversa; continue o assunto de onde parou.'
+        : '',
       matchedSkillsBlock,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
