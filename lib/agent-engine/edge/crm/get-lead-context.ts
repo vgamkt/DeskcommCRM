@@ -315,11 +315,17 @@ function fitToBudget(
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
     const derived = m.media_derived_text;
-    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
-    // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
-    // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
+    // ── ÁUDIO = TEXTO (entrada PARALELA) ──────────────────────────────────────
+    // A TRANSCRIÇÃO do áudio entra como o TEXTO PURO do cliente — exatamente como
+    // uma mensagem de texto — para o modelo (e o motor) percorrerem o MESMO
+    // caminho e responderem IGUAL (dono, 2026-10-06: "áudio e texto são iguais").
+    // Antes o áudio vinha ENQUADRADO ("[Mídia do cliente: …] Conteúdo: …") e o
+    // modelo via algo diferente de um texto igual. Imagem/vídeo/pdf continuam
+    // enquadrados (o derivado ali é descrição, não a fala do cliente).
     const body = derived
-      ? frameMediaBody(m.type, m.body, derived)
+      ? m.type === 'audio'
+        ? derived
+        : frameMediaBody(m.type, m.body, derived)
       : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
     return {
       direction: m.direction,
