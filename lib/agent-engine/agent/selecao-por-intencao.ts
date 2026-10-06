@@ -389,12 +389,57 @@ function notaDaJev(moto: MotoDoCatalogo, hipoteses: readonly HipoteseDeMoto[]): 
   return nota;
 }
 
+/** A cilindrada (cc) da moto, se houver coluna de cilindrada no mapeamento. */
+function cilindradaDaMoto(moto: MotoDoCatalogo): number | null {
+  for (const [coluna, valor] of Object.entries(moto.valores ?? {})) {
+    if (typeof valor !== 'string') continue;
+    if (detectarPapelColuna(coluna) !== 'cilindrada') continue;
+    const n = numeroDaCelula(valor);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+/** Números plausíveis de cilindrada citados na mensagem (ex.: "cb 250" → [250]). */
+function ccsDoTermo(termo: string): number[] {
+  const nums = termo.match(/\d{2,4}/g) ?? [];
+  return [...new Set(nums.map(Number))].filter((n) => n >= 50 && n <= 2000);
+}
+
+/**
+ * FREIO determinístico da nota da Jev (dono, 2026-10-06): a Jev escorrega na nota
+ * (ex.: "cb 250" → Dominar 400 nota 0,81). Se o cliente citou um MODELO e/ou uma
+ * CILINDRADA, a candidata que NÃO casa nenhum dos dois tem a nota LIMITADA a 0,2 —
+ * não pode ir na frente de quem casa. Sem modelo/cc no pedido, não mexe na nota.
+ */
+function freioDaNota(moto: MotoDoCatalogo, termo: string, nota: number): number {
+  if (termo.trim() === '') return nota;
+  const tokensPedido = tokensDoNome(termo);
+  const modelos = [...tokensPedido].filter((t) => TOKENS_DE_MODELO.has(t));
+  const ccs = ccsDoTermo(termo);
+  if (modelos.length === 0 && ccs.length === 0) return nota;
+  const tokensMoto = tokensDoNome(moto.nome);
+  const casaModelo = modelos.some((t) => tokensMoto.has(t));
+  const ccMoto = cilindradaDaMoto(moto);
+  const casaCc = ccMoto !== null && ccs.some((cc) => Math.abs(ccMoto - cc) / cc <= 0.3);
+  if (!casaModelo && !casaCc) return Math.min(nota, 0.2);
+  return nota;
+}
+
+/** Tokens que identificam um MODELO/LINHA de moto (não marca nem categoria). */
+const TOKENS_DE_MODELO = new Set([
+  'cb', 'cbx', 'cg', 'biz', 'titan', 'fan', 'factor', 'fazer', 'fz', 'xre',
+  'xtz', 'crosser', 'dominar', 'vstrom', 'boulevard', 'xmax', 'neo', 'nmax',
+  'twister', 'tener', 'bros', 'pcx', 'pop', 'adv',
+]);
+
 export function filtrarPorHipoteses(
   candidatos: readonly MotoDoCatalogo[],
   hipoteses: readonly HipoteseDeMoto[],
   faixas: FaixasDoPedido,
   toleranciaPct: number,
   principal: string | null = null,
+  termo = '',
 ): MotoDoCatalogo[] {
   const temHipoteses = hipoteses.some((h) =>
     Object.values(h).some((v) => typeof v === 'string' && v.trim() !== ''),
@@ -406,7 +451,9 @@ export function filtrarPorHipoteses(
       moto,
       i,
       ...pontuarPorCriterios(moto, hipoteses, faixas, toleranciaPct, principal),
-      nota: notaDaJev(moto, hipoteses),
+      // A nota da Jev passa pelo FREIO determinístico (quem não casa modelo/cc
+      // do pedido não pode ir na frente), e o maior entre nota e pontos ordena.
+      nota: Math.max(freioDaNota(moto, termo, notaDaJev(moto, hipoteses)), 0),
     }))
     .filter((x) => x.pontos > 0 || x.nota > 0)
     // PASSO EXTRA (dono, 2026-10-06): a ORDEM é a NOTA da Jev (ela assimila o
@@ -557,6 +604,7 @@ export function selecionarPorIntencao(
         input.faixas ?? {},
         tolerancia,
         input.principal ?? null,
+        input.termoBase,
       );
     }
     if (casadas.length > 0) {
