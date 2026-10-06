@@ -29,6 +29,9 @@ import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { canonicalPhoneBR } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
 import { logger } from "@/lib/logger";
+import { audit } from "@/lib/audit";
+import { configDeLimpezaDoAgente, lerComandoDeLimpeza } from "@/lib/escalacao/limpeza-de-conversa";
+import { apagarDadosDoContato } from "@/lib/settings/apagar-dados-do-contato";
 import {
   MOTIVO_COMANDO_OFF,
   pausarIaDuravelmente,
@@ -178,6 +181,32 @@ export async function ingestMetaInbound(
   );
   if (erroConversa || !conversationId) {
     return { status: "failed", reason: `conversa: ${erroConversa?.message ?? "sem id"}` };
+  }
+
+  // ── PEDIDO DE LIMPEZA DO PRÓPRIO CLIENTE (C-104) — mesmo contrato do canal por QR ──
+  // O cliente manda a sequência (default `#limpar`) e o cadastro inteiro some; o
+  // próximo inbound recria do zero. A checagem vem ANTES do insert da mensagem:
+  // o pedido não é fala de atendimento e não pode virar turno. SILENCIOSO de
+  // propósito — responder recriaria o contato (o eco viraria inbound novo).
+  const textoComando = e.type === "text" ? (e.text ?? "") : "";
+  const podeSerComando = textoComando.length > 0 && textoComando.length <= 32;
+  const limpeza = podeSerComando
+    ? await configDeLimpezaDoAgente(admin, orgId)
+    : null;
+  if (limpeza?.aceitaCliente && lerComandoDeLimpeza(textoComando, limpeza.sequencia)) {
+    const resultado = await apagarDadosDoContato(admin, {
+      organizationId: orgId,
+      contactId: contactId as string,
+    });
+    // Auditoria SEM PII (o telefone/nome nunca entram no metadata).
+    await audit({
+      action: "contact.erased_by_customer",
+      organizationId: orgId,
+      resourceType: "contact",
+      requestId: `meta-limpar:${e.externalId}`,
+      metadata: { ok: resultado.ok, counts: resultado.counts },
+    });
+    return { status: "ingested", messageId: "", conversationId: conversationId as string };
   }
 
   // Citação ("responder em cima"): a Meta manda só o `context.id` da citada; o
