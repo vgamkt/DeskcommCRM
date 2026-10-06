@@ -59,6 +59,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
+import { canalIsolado } from "@/lib/escalacao/canal-isolado";
 import { logger } from "@/lib/logger";
 
 /**
@@ -110,7 +111,7 @@ export async function pausarIaDuravelmente(
   try {
     const { data: atual, error: readErr } = await admin
       .from("conversations")
-      .select("bot_silenced_until")
+      .select("bot_silenced_until, channel_session_id")
       .eq("organization_id", input.organizationId)
       .eq("id", input.conversationId)
       .maybeSingle();
@@ -124,6 +125,27 @@ export async function pausarIaDuravelmente(
       return false;
     }
     if (atual == null) return false;
+
+    // CANAL ISOLADO: uma resposta manual aqui NÃO pausa a IA — e, por não gravar
+    // o silêncio durável, não cala o MESMO contato em outro número (o telefone
+    // pessoal/de teste não influencia o número comercial). Ver `canal-isolado.ts`.
+    const channelSessionId = (atual as { channel_session_id?: string | null }).channel_session_id;
+    if (channelSessionId != null) {
+      const { data: canal } = await admin
+        .from("channel_sessions")
+        .select("metadata")
+        .eq("organization_id", input.organizationId)
+        .eq("id", channelSessionId)
+        .maybeSingle();
+      if (canalIsolado((canal as { metadata?: unknown } | null)?.metadata)) {
+        logger.info("[atendimento-manual] canal isolado — IA NÃO pausada por resposta manual", {
+          organization_id: input.organizationId,
+          conversation_id: input.conversationId,
+          canal: input.canal ?? "desconhecido",
+        });
+        return false;
+      }
+    }
 
     // `'infinity'` já em vigor (handoff formal ou pausa anterior): nada a fazer.
     // `normalizarInstante` traduz o literal do Postgres para `Infinity`; só ele

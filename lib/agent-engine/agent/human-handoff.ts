@@ -24,6 +24,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { AI_CANAL_ISOLADO_KEY } from '@/lib/escalacao/canal-isolado';
 import { ehOptOutProvavel } from '@/lib/opt-out/deteccao';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 
@@ -92,13 +93,20 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
        c.force_human
        or exists (
          select 1 from conversations v
+         join channel_sessions s
+           on s.id = v.channel_session_id
+          and s.organization_id = v.organization_id
          where v.organization_id = $1 and v.contact_id = c.id
            and v.bot_silenced_until is not null and v.bot_silenced_until > now()
+           -- CANAL ISOLADO não bloqueia o atendimento dos outros canais: um
+           -- telefone pessoal/de teste que calou o contato nele não cala a IA no
+           -- número comercial. Ausente/false = comportamento de sempre.
+           and coalesce(s.metadata ->> $3, 'false') <> 'true'
        )
      ) as handoff
      from contacts c
      where c.organization_id = $1 and c.id = $2`,
-    [tenantId, leadId],
+    [tenantId, leadId, AI_CANAL_ISOLADO_KEY],
   );
   return rows[0]?.handoff === true;
 }
