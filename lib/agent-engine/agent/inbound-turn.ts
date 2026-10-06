@@ -6162,6 +6162,26 @@ async function executarTurnoDoAgente(
       preEscolhaDescricao !== undefined
         ? `## Escolha do cliente (já identificada)\nO cliente escolheu ESTA moto: ${preEscolhaDescricao.nome}. Confirme exatamente ESTA moto (não outra) e conduza o fechamento; NÃO ofereça outras.`
         : '',
+      // ── MOTO JÁ ESCOLHIDA (TRAVA DURA entre turnos) ───────────────────────
+      // A escolha persiste (`conversations.metadata.agent_catalogo.escolhida`). O
+      // modelo NÃO pode re-oferecer outras motos por TEXTO — a régua só bloqueia o
+      // argumento `motos`, e o modelo driblava escrevendo os nomes (medido
+      // 2026-10-06). Exceções (dono): objeção sobre a escolhida com possibilidades
+      // esgotadas; pedido EXPLÍCITO de uma moto; pedido de ver outras — a qualquer
+      // momento.
+      catalogoDaConversa.escolhida !== null
+        ? `## Moto já escolhida — TRAVADA\nO cliente JÁ escolheu: ${catalogoDaConversa.escolhida.nome}. Conduza o fechamento DESSA moto (pagamento, troca ou visita) e confirme detalhes dela. NÃO apresente nem LISTE outras motos (nem por texto). Só ofereça/troque de moto se UMA destas for verdadeira: (a) o cliente pedir EXPLICITAMENTE outra moto ou "ver outras opções"; (b) houver objeção sobre a escolhida E as possibilidades dela se esgotarem; (c) o cliente citar/pedir uma moto específica pelo nome. Fora disso, foque SÓ na escolhida.`
+        : '',
+      // ── CLARIFICAÇÃO: não entendi QUAL moto → PERGUNTE por escrito ─────────
+      // O cliente falou de uma moto (áudio/texto) mas o motor NÃO travou escolha:
+      // pode estar ambíguo. Em vez de despejar imagens/várias motos "adivinhando",
+      // faça UMA pergunta por escrito, clara e simpática. Vale para QUALQUER dúvida:
+      // se não entendeu, pergunte antes de concluir (dono, 2026-10-06).
+      mencionaMoto(currentInboundText ?? '') &&
+      preEscolhaDescricao === undefined &&
+      catalogoDaConversa.escolhida === null
+        ? '## Se não entender QUAL moto, PERGUNTE (por escrito)\nO cliente falou de moto, mas não ficou claro QUAL. Se você NÃO conseguir identificar com segurança, faça UMA pergunta por ESCRITO — curta, clara e simpática — para confirmar (ex.: "Só pra eu não te mostrar a errada: você quis dizer a <A> ou a <B>?"). NÃO responda com imagens nem liste várias motos para adivinhar; pergunte e, com a resposta dele, siga. Regra geral: se você não entendeu algo que o cliente disse ou perguntou, PERGUNTE antes de concluir.'
+        : '',
       // Catálogo configurado pela tela: tabela e colunas REAIS (migration 0244).
       // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
       // prefixo fixo da persona.
