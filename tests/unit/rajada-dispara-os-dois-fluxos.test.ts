@@ -74,13 +74,17 @@ describe("fiação — o gatilho de fluxo lê a rajada inteira", () => {
     expect(FONTE).toMatch(/const textoDoGatilho =/);
   });
 
-  it("o gatilho por palavra e a decisão por IA usam o texto da rajada", () => {
-    // Sem trocar as DUAS chamadas, o Troca seguiria invisível para o motor.
+  it("a decisão por INTENÇÃO e o gatilho por palavra (fallback) usam o texto da rajada", () => {
+    // A intenção é a fonte; o regex de palavra é só o último recurso.
+    expect(FONTE).toMatch(
+      /escolherFluxosPorIA\([\s\S]*?texto: textoDoGatilho,/,
+    );
     expect(FONTE).toMatch(
       /escolherFluxosPeloGatilho\(pool, \{[\s\S]*?texto: textoDoGatilho,/,
     );
-    expect(FONTE).toMatch(
-      /escolherFluxoPorIA\([\s\S]*?texto: textoDoGatilho,/,
-    );
+  });
+
+  it("o regex de palavra é só fallback (quando a IA devolve ok:false)", () => {
+    expect(FONTE).toMatch(/porIntencao\.ok\s*\?[\s\S]*?porIntencao\.fluxos[\s\S]*?: await escolherFluxosPeloGatilho/);
   });
 });

@@ -155,8 +155,8 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
   // `llmOverride` do agente publicado (mesmo par model+provider) — sem entrar
   // aqui, a tela anunciaria o padrão da org num ponto que usa o modelo do agente.
   "catalog_criteria",
-  // Decisão de qual fluxo iniciar (C-108): chamada em `inbound-turn.ts` com o
-  // modelo do agente publicado (`escolherFluxoPorIA`) — herda o par model+provider.
+  // Decisão de QUAIS fluxos iniciar (C-108): chamada em `inbound-turn.ts` com o
+  // modelo do agente publicado (`escolherFluxosPorIA`) — herda o par model+provider.
   "flow_intent",
 ]);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildFlowIntentPrompt, parseFlowIntent, type FluxoParaIA } from './flow-intent';
+import { buildFlowIntentPrompt, parseFlowIntents, type FluxoParaIA } from './flow-intent';
 
 const FLUXOS: FluxoParaIA[] = [
   { id: 'f1', nome: 'Qualificação', gatilhos: ['quero comprar', 'tenho interesse'] },
@@ -8,51 +8,57 @@ const FLUXOS: FluxoParaIA[] = [
   { id: 'f3', nome: 'Troca', gatilhos: ['moto na troca'] },
 ];
 
-describe('buildFlowIntentPrompt (C-108)', () => {
-  it('lista os fluxos com nome e exemplos e pede JSON com "none"', () => {
+describe('buildFlowIntentPrompt (multi-fluxo por intenção)', () => {
+  it('lista os fluxos com nome e exemplos e pede JSON com lista de fluxos', () => {
     const p = buildFlowIntentPrompt(FLUXOS, 'quero financiar');
     expect(p).toContain('Qualificação');
     expect(p).toContain('Financiamento');
     expect(p).toContain('exemplos: financiar, parcelar');
-    expect(p).toContain('"none"');
+    expect(p).toContain('"fluxos"');
     expect(p).toContain('quero financiar');
   });
 
-  it('explica que consulta de catálogo / pedido de informação NÃO inicia fluxo', () => {
+  it('explica que catálogo/informação e objeção de preço → lista vazia', () => {
     const p = buildFlowIntentPrompt(FLUXOS, 'quero uma moto até 20 mil');
-    expect(p).toMatch(/catálogo/i);
-    expect(p).toMatch(/informa/i); // "mais informações" = catálogo
+    expect(p).toMatch(/lista VAZIA/i);
+    expect(p).toMatch(/objeção|objeç/i);
   });
 
-  it('manda iniciar a QUALIFICAÇÃO quando o cliente ESCOLHE uma moto', () => {
-    const p = buildFlowIntentPrompt(FLUXOS, 'gostei dessa');
-    expect(p).toMatch(/escolha/i);
-    expect(p).toContain('Qualificação');
-    expect(p).toMatch(/gostei dessa/);
+  it('ensina o exemplo de SEQUÊNCIA (troca + financiar)', () => {
+    const p = buildFlowIntentPrompt(FLUXOS, 'quero dar minha moto na troca e financiar o resto');
+    expect(p).toMatch(/Troca.*Financiamento|Financiamento.*Troca/);
   });
 });
 
-describe('parseFlowIntent', () => {
-  it('casa o nome exato do fluxo', () => {
-    expect(parseFlowIntent('{"fluxo":"Financiamento"}', FLUXOS)?.id).toBe('f2');
+describe('parseFlowIntents', () => {
+  it('devolve os fluxos na ordem da resposta', () => {
+    expect(parseFlowIntents('{"fluxos":["Troca","Financiamento"]}', FLUXOS).map((f) => f.id)).toEqual([
+      'f3',
+      'f2',
+    ]);
   });
 
-  it('"none" vira null', () => {
-    expect(parseFlowIntent('{"fluxo":"none"}', FLUXOS)).toBeNull();
-    expect(parseFlowIntent('{"fluxo":"None"}', FLUXOS)).toBeNull();
+  it('lista vazia vira [] (nenhum fluxo)', () => {
+    expect(parseFlowIntents('{"fluxos":[]}', FLUXOS)).toEqual([]);
   });
 
-  it('nome fora da lista vira null (nunca chuta)', () => {
-    expect(parseFlowIntent('{"fluxo":"Inventado"}', FLUXOS)).toBeNull();
+  it('aceita o formato antigo {"fluxo":"..."} por compatibilidade', () => {
+    expect(parseFlowIntents('{"fluxo":"Financiamento"}', FLUXOS).map((f) => f.id)).toEqual(['f2']);
+  });
+
+  it('nome fora da lista é ignorado (nunca chuta)', () => {
+    expect(parseFlowIntents('{"fluxos":["Inventado"]}', FLUXOS)).toEqual([]);
   });
 
   it('tolera prosa/cerca em volta do JSON', () => {
-    expect(parseFlowIntent('claro: ```json\n{"fluxo":"Troca"}\n```', FLUXOS)?.nome).toBe('Troca');
+    expect(
+      parseFlowIntents('claro: ```json\n{"fluxos":["Troca"]}\n```', FLUXOS).map((f) => f.nome),
+    ).toEqual(['Troca']);
   });
 
   it('nunca lança com saída inválida', () => {
-    expect(parseFlowIntent('sem json', FLUXOS)).toBeNull();
-    expect(parseFlowIntent('{quebrado', FLUXOS)).toBeNull();
-    expect(parseFlowIntent('{"fluxo": 123}', FLUXOS)).toBeNull();
+    expect(parseFlowIntents('sem json', FLUXOS)).toEqual([]);
+    expect(parseFlowIntents('{quebrado', FLUXOS)).toEqual([]);
+    expect(parseFlowIntents('{"fluxos": 123}', FLUXOS)).toEqual([]);
   });
 });

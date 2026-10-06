@@ -276,7 +276,7 @@ import {
   valorBateComTipo,
 } from '@/lib/followup/captura-do-fluxo';
 import { validarRespostaDoFluxo } from './flow-validate';
-import { escolherFluxoPorIA } from './flow-intent';
+import { escolherFluxosPorIA } from './flow-intent';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -2425,14 +2425,30 @@ async function executarTurnoDoAgente(
         [currentInboundText, ...rajada]
           .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
           .join('\n') || null;
-      // TODOS os fluxos que a mensagem aciona, na ORDEM citada. O cliente pode
-      // pedir mais de um processo na mesma frase ("dar a moto na troca e
-      // financiar o restante") — a fila preserva a ordem.
-      const acionados = await escolherFluxosPeloGatilho(pool, {
-        organizationId: tenantId,
-        texto: textoDoGatilho,
-        contactId: leadId,
-      });
+      // TODOS os fluxos que a mensagem aciona, na ORDEM citada, decididos por
+      // INTENÇÃO (Jev/IA). O cliente pode pedir mais de um processo na mesma
+      // frase ("dar a moto na troca e financiar o restante") — a fila preserva a
+      // ordem. O regex por palavra é só ÚLTIMO recurso (quando a IA não decidiu).
+      const porIntencao = await escolherFluxosPorIA(
+        pool,
+        deps.llmCfg,
+        {
+          organizationId: tenantId,
+          contactId: leadId,
+          texto: textoDoGatilho,
+          model: agentConfig?.model ?? '',
+          provider: agentConfig?.provider ?? null,
+          jobId: liveJob().id,
+        },
+        { log: runLog },
+      );
+      const acionados: Array<{ id: string; nome: string }> = porIntencao.ok
+        ? porIntencao.fluxos
+        : await escolherFluxosPeloGatilho(pool, {
+            organizationId: tenantId,
+            texto: textoDoGatilho,
+            contactId: leadId,
+          });
       if (atendimento !== null) {
         // JÁ HÁ FLUXO ATIVO. Não dá para iniciar o segundo agora (o índice
         // `idx_followup_enrollments_one_live` admite um enrollment vivo por
@@ -2456,37 +2472,20 @@ async function executarTurnoDoAgente(
           }
         }
       } else {
-        // SEM FLUXO ATIVO: inicia UM (IA > gatilho > fila) e mantém o RESTO na
-        // fila para os próximos turnos. C-108: a IA primeiro (entende CONTEÚDO e
-        // não atropela a conversa de motos); sem ela, o gatilho por palavra; sem
-        // ele, a intenção guardada de um fluxo pedido antes.
-        let alvo: { id: string; nome: string } | null = await escolherFluxoPorIA(
-          pool,
-          deps.llmCfg,
-          {
-            organizationId: tenantId,
-            contactId: leadId,
-            texto: textoDoGatilho,
-            model: agentConfig?.model ?? '',
-            provider: agentConfig?.provider ?? null,
-            jobId: liveJob().id,
-          },
-          { log: runLog },
-        );
-        if (alvo === null && acionados.length > 0) alvo = acionados[0]!;
-
+        // SEM FLUXO ATIVO: inicia o PRIMEIRO da lista de intenções e mantém o
+        // RESTO na fila para os próximos turnos. A ordem já veio da intenção
+        // (Jev/IA); sem nenhuma intenção, vale a fila guardada de um pedido antes.
         const filaAtual = await lerFluxosPendentes(pool, {
           organizationId: tenantId,
           conversationId: input.conversationId,
         });
         let fila = filaAtual;
         for (const f of acionados) fila = enfileirarFluxo(fila, { pointer_id: f.id, nome: f.nome });
-        if (alvo === null && fila.length > 0) {
-          alvo = { id: fila[0]!.pointer_id, nome: fila[0]!.nome };
-        }
+        const alvo: { id: string; nome: string } | null =
+          acionados[0] ?? (fila.length > 0 ? { id: fila[0]!.pointer_id, nome: fila[0]!.nome } : null);
         if (alvo !== null) {
           const restante = fila.filter((f) => f.pointer_id !== alvo.id);
-          runLog.info('fluxo: iniciado no turno (IA/gatilho/fila)', {
+          runLog.info('fluxo: iniciado no turno (intenção/fila)', {
             flow_pointer_id: alvo.id,
             nome: alvo.nome,
           });

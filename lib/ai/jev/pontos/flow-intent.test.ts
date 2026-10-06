@@ -1,41 +1,71 @@
 import { describe, expect, it } from "vitest";
 import {
   OPCAO_NENHUM,
-  nomeDoFluxoDaRespostaDeJev,
-  perguntaDeFluxoDeJev,
+  fluxosDaRespostaDeJev,
+  perguntasDeFluxosDeJev,
   type FluxoParaJev,
 } from "./flow-intent";
 
 const fluxos: FluxoParaJev[] = [
   { nome: "Qualificação", gatilhos: ["gostei dessa", "quero essa"] },
   { nome: "Financiamento", gatilhos: ["quero financiar"] },
+  { nome: "Troca", gatilhos: ["moto na troca"] },
 ];
 
-function respostaChoice(choice: string) {
-  return { fluxo: { type: "choice" as const, choice, confidence: 1, probabilities: {} } };
+function respostas(principal: string, adicionais: Record<number, number>): unknown {
+  const r: Record<string, unknown> = {
+    fluxo_principal: { type: "choice", choice: principal, confidence: 1, probabilities: {} },
+  };
+  for (const [i, noul] of Object.entries(adicionais)) {
+    r[`fluxo_adicional_${i}`] = { type: "noul", noul };
+  }
+  return r;
 }
 
-describe("perguntaDeFluxoDeJev", () => {
-  it("oferece 'none' mais um critério por fluxo", () => {
-    const p = perguntaDeFluxoDeJev(fluxos).fluxo;
-    expect(p?.type).toBe("choice");
-    if (!p || p.type !== "choice") throw new Error("esperava choice");
-    expect(Object.keys(p.criteria).sort()).toEqual(["Financiamento", "Qualificação", OPCAO_NENHUM]);
+describe("perguntasDeFluxosDeJev", () => {
+  it("oferece 'none' + um critério por fluxo no principal, e um noul por fluxo", () => {
+    const p = perguntasDeFluxosDeJev(fluxos);
+    expect(p.fluxo_principal?.type).toBe("choice");
+    if (!p.fluxo_principal || p.fluxo_principal.type !== "choice") throw new Error("esperava choice");
+    expect(Object.keys(p.fluxo_principal.criteria).sort()).toEqual([
+      "Financiamento",
+      "Qualificação",
+      "Troca",
+      OPCAO_NENHUM,
+    ]);
+    expect(p.fluxo_adicional_0?.type).toBe("noul");
+    expect(p.fluxo_adicional_1?.type).toBe("noul");
+    expect(p.fluxo_adicional_2?.type).toBe("noul");
   });
 });
 
-describe("nomeDoFluxoDaRespostaDeJev", () => {
-  it("devolve o nome escolhido", () => {
-    expect(nomeDoFluxoDaRespostaDeJev(respostaChoice("Financiamento"))).toBe("Financiamento");
+describe("fluxosDaRespostaDeJev", () => {
+  it("um só fluxo: o principal", () => {
+    expect(fluxosDaRespostaDeJev(respostas("Financiamento", {}) as never, fluxos)).toEqual([
+      "Financiamento",
+    ]);
   });
 
-  it("'none' (qualquer caixa) → null", () => {
-    expect(nomeDoFluxoDaRespostaDeJev(respostaChoice("none"))).toBeNull();
-    expect(nomeDoFluxoDaRespostaDeJev(respostaChoice("NONE"))).toBeNull();
+  it("dois fluxos: principal + adicional, na ordem", () => {
+    const r = respostas("Troca", { 1: 0.95 }); // principal Troca, adicional idx1=Financiamento
+    expect(fluxosDaRespostaDeJev(r as never, fluxos)).toEqual(["Troca", "Financiamento"]);
   });
 
-  it("ausente/outro tipo → null", () => {
-    expect(nomeDoFluxoDaRespostaDeJev({})).toBeNull();
-    expect(nomeDoFluxoDaRespostaDeJev(respostaChoice("  "))).toBeNull();
+  it("adicional abaixo do limiar (0.5) não entra", () => {
+    const r = respostas("Troca", { 1: 0.2 });
+    expect(fluxosDaRespostaDeJev(r as never, fluxos)).toEqual(["Troca"]);
+  });
+
+  it("principal 'none' e nenhum adicional → vazio", () => {
+    expect(fluxosDaRespostaDeJev(respostas("none", {}) as never, fluxos)).toEqual([]);
+  });
+
+  it("adicional igual ao principal não duplica", () => {
+    const r = respostas("Troca", { 2: 0.9 }); // principal Troca, adicional idx2=Troca
+    expect(fluxosDaRespostaDeJev(r as never, fluxos)).toEqual(["Troca"]);
+  });
+
+  it("resposta vazia/inválida → lista vazia (nunca lança)", () => {
+    expect(fluxosDaRespostaDeJev({} as never, fluxos)).toEqual([]);
   });
 });

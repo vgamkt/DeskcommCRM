@@ -1,21 +1,17 @@
 /**
- * Classificador de FLUXO por IA (C-108, decisão do dono 2026-09-29).
+ * Classificador de FLUXOS por IA (C-108 + decisão do dono 2026-10-06).
  *
  * ─── O defeito que isto resolve ─────────────────────────────────────────────
  * O fluxo de atendimento começava por PALAVRA-GATILHO (regex): "quero uma moto"
- * ligava a Qualificação até quando o cliente só queria VER o catálogo
- * ("quero uma moto barata", "até 20 mil", "de 2024") — o fluxo atropelava a
- * conversa de motos. Medido ao vivo (2026-09-29).
+ * ligava a Qualificação até quando o cliente só queria VER o catálogo. Medido ao
+ * vivo (2026-09-29). E, quando o cliente pedia DOIS processos ("moto na troca e
+ * financiar"), o regex precisava acertar as duas palavras na ordem.
  *
  * ─── A solução ──────────────────────────────────────────────────────────────
- * Uma pergunta FECHADA a um modelo BARATO (o mesmo do agente), pelo seam
- * `runModelCall`: dado o que o cliente escreveu e a lista de fluxos ativos
- * (nome + exemplos-gatilho), ele deve INICIAR algum? Qual? Se for só consulta de
- * catálogo, `none`. O regex continua como FALLBACK (falha/timeout da IA → cai no
- * comportamento antigo).
- *
- * O classificador SUGERE, o motor decide iniciar — mesmo padrão do
- * `intent-classifier`. `parseFlowIntent` NUNCA lança.
+ * A Jev (ou, sem ela, um modelo barato) decide QUAIS fluxos iniciar, na ORDEM em
+ * que o cliente os pediu. O motor inicia o primeiro e enfileira o resto. O regex
+ * por palavra continua existindo, mas só como ÚLTIMO recurso (quando a Jev e o
+ * modelo de chat não respondem) — a intenção vence a palavra.
  */
 import type pg from 'pg';
 
@@ -23,7 +19,7 @@ import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
 import { decidir } from '../../ai/jev';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
-import { nomeDoFluxoDaRespostaDeJev, perguntaDeFluxoDeJev } from '../../ai/jev/pontos/flow-intent';
+import { fluxosDaRespostaDeJev, perguntasDeFluxosDeJev } from '../../ai/jev/pontos/flow-intent';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
 import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 
@@ -35,43 +31,70 @@ export interface FluxoParaIA {
   gatilhos: string[];
 }
 
+/**
+ * Resultado da classificação por IA. `ok: true` = a intenção foi decidida
+ * (lista vazia = "nenhum fluxo"; o regex NÃO deve redecidir). `ok: false` =
+ * a IA não conseguiu responder — aí sim o chamador usa o regex de palavra.
+ */
+export type EscolhaDeFluxosPorIA =
+  | { ok: true; fluxos: Array<{ id: string; nome: string }> }
+  | { ok: false };
+
 export function buildFlowIntentPrompt(fluxos: readonly FluxoParaIA[], mensagem: string): string {
   const lista = fluxos
     .map((f) => `- ${f.nome} (exemplos: ${f.gatilhos.join(', ') || '—'})`)
     .join('\n');
   return [
     'Você é um classificador auxiliar (NÃO responde ao cliente).',
-    'Decida se a mensagem do cliente deve INICIAR um dos fluxos de atendimento abaixo.',
+    'Decida QUAIS fluxos de atendimento a mensagem deve INICIAR, na ORDEM em que o cliente os pediu.',
     'Fluxos disponíveis:',
     lista,
     'REGRAS:',
-    '- CATÁLOGO / INFORMAÇÃO (o cliente quer VER ou SABER MAIS: modelo, preço, faixa, fotos, detalhes — ex.: "quero uma moto até 20 mil", "tem uma CB 300?", "me fala mais da CB 300", "qual o preço da CB 300?", "tem fotos?"): responda "none". O sistema responde/continua o catálogo.',
-    '- ESCOLHA da moto (o cliente DECIDE/GOSTA de uma moto específica — ex.: "gostei dessa", "essa mesmo", "quero essa", "vou levar essa", "fechado, essa", "pode ser a Biz 125"): inicie o fluxo de QUALIFICAÇÃO (o que coleta nome, cidade e CNH).',
-    '- Outros processos: financiamento/parcelamento → Financiamento; dar a moto na troca → Troca; vender/consignar → Venda ou Consignação.',
-    '- Em dúvida ou saudação, responda "none".',
-    'Responda SOMENTE JSON: {"fluxo":"<nome exato de um fluxo da lista ou none>"}',
+    '- CATÁLOGO / INFORMAÇÃO (o cliente quer VER ou SABER MAIS: modelo, preço, faixa, fotos, detalhes — ex.: "quero uma moto até 20 mil", "tem uma CB 300?", "me fala mais da CB 300"): responda lista VAZIA [].',
+    '- ESCOLHA da moto (o cliente DECIDE/GOSTA de uma moto específica — ex.: "gostei dessa", "quero essa", "vou levar essa"): inicie QUALIFICAÇÃO.',
+    '- Outros processos: financiamento/parcelar → Financiamento; dar a moto na troca → Troca; vender/consignar → Venda ou Consignação.',
+    '- OBJEÇÃO/comentário de preço ("achei caro", "não tenho condições") NÃO é financiamento: lista VAZIA [].',
+    '- Se a mensagem pede MAIS de um processo, liste TODOS na ordem citada. Ex.: "quero dar minha moto na troca e financiar o resto" → ["Troca","Financiamento"].',
+    '- Em dúvida ou saudação, lista VAZIA [].',
+    'Responda SOMENTE JSON: {"fluxos":["<nome exato de um fluxo da lista>", ...]} (vazio = nenhum)',
     '',
     'Mensagem do cliente:',
     mensagem,
   ].join('\n');
 }
 
-/** Parse tolerante: devolve o fluxo cujo nome bate exatamente, ou null. Nunca lança. */
-export function parseFlowIntent(text: string, fluxos: readonly FluxoParaIA[]): FluxoParaIA | null {
+/**
+ * Parse tolerante: devolve os fluxos cujos nomes batem exatamente, na ordem
+ * da resposta. Aceita o formato novo ({"fluxos":[...]}) e o antigo ({"fluxo":"..."}).
+ * Nunca lança.
+ */
+export function parseFlowIntents(text: string, fluxos: readonly FluxoParaIA[]): FluxoParaIA[] {
   const match = /\{[\s\S]*\}/.exec(text);
-  if (match === null) return null;
+  if (match === null) return [];
   let bruto: unknown;
   try {
     bruto = JSON.parse(match[0]);
   } catch {
-    return null;
+    return [];
   }
-  const nome =
-    typeof bruto === 'object' && bruto !== null && typeof (bruto as { fluxo?: unknown }).fluxo === 'string'
-      ? (bruto as { fluxo: string }).fluxo.trim()
-      : '';
-  if (nome === '' || nome.toLowerCase() === 'none') return null;
-  return fluxos.find((f) => f.nome === nome) ?? null;
+  const obj = typeof bruto === 'object' && bruto !== null ? (bruto as Record<string, unknown>) : {};
+  let lista: unknown[] = [];
+  if (Array.isArray(obj.fluxos)) lista = obj.fluxos;
+  else if (typeof obj.fluxo === 'string') lista = [obj.fluxo];
+
+  const saida: FluxoParaIA[] = [];
+  const vistos = new Set<string>();
+  for (const item of lista) {
+    if (typeof item !== 'string') continue;
+    const nome = item.trim();
+    if (nome === '' || nome.toLowerCase() === 'none') continue;
+    const f = fluxos.find((x) => x.nome === nome);
+    if (f !== undefined && !vistos.has(f.id)) {
+      saida.push(f);
+      vistos.add(f.id);
+    }
+  }
+  return saida;
 }
 
 async function carregarFluxosAtivos(
@@ -111,16 +134,17 @@ async function carregarFluxosAtivos(
     }));
 }
 
-export interface EscolherFluxoPorIADeps {
+export interface EscolherFluxosPorIADeps {
   log: Logger;
   runModelCall?: typeof runModelCall;
 }
 
 /**
- * Decide, por IA, qual fluxo iniciar (ou null). NUNCA lança: sem texto, sem
- * fluxos, sem modelo ou falha do modelo → null (o chamador usa o regex/fallback).
+ * Decide, por IA, QUAIS fluxos iniciar (em ordem), ou lista vazia para "nenhum".
+ * NUNCA lança: sem texto/modelo → lista vazia; falha da IA → `{ ok: false }`
+ * (o chamador usa o regex como último recurso).
  */
-export async function escolherFluxoPorIA(
+export async function escolherFluxosPorIA(
   db: pg.Pool,
   llmCfg: LlmEdgeConfig,
   input: {
@@ -131,22 +155,25 @@ export async function escolherFluxoPorIA(
     provider?: string | null;
     jobId?: string | null;
   },
-  deps: EscolherFluxoPorIADeps,
-): Promise<{ id: string; nome: string } | null> {
-  if (input.texto === null || input.texto.trim() === '' || input.model.trim() === '') return null;
+  deps: EscolherFluxosPorIADeps,
+): Promise<EscolhaDeFluxosPorIA> {
+  // Sem texto não há o que classificar (nenhum fluxo). Sem modelo a IA não pode
+  // responder — devolve `ok: false` para o chamador cair no regex de palavra.
+  if (input.texto === null || input.texto.trim() === '') return { ok: true, fluxos: [] };
+  if (input.model.trim() === '') return { ok: false };
   try {
     const fluxos = await carregarFluxosAtivos(db, input.organizationId, input.contactId);
-    if (fluxos.length === 0) return null;
+    if (fluxos.length === 0) return { ok: true, fluxos: [] };
 
     // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
-    // A Jev é AUTORITATIVA quando responde (inclusive "none"); se ela esgotar, cai
-    // no modelo de chat (último recurso), e o regex do chamador segue como fallback.
+    // A Jev é AUTORITATIVA quando responde (inclusive "none"/vazio); se esgotar,
+    // cai no modelo de chat (último recurso) e o regex só vem se ambos falharem.
     const alvosJev = await alvosDeJevDaOrg(db, input.organizationId, 'flow_intent');
     if (alvosJev.length > 0) {
       const decisaoJev = await decidir({
         alvos: alvosJev,
         state: { mensagem: input.texto },
-        questions: perguntaDeFluxoDeJev(fluxos),
+        questions: perguntasDeFluxosDeJev(fluxos),
         aoEsgotar: (info) =>
           enfileirarDecisaoJev(db, {
             organizationId: input.organizationId,
@@ -156,9 +183,11 @@ export async function escolherFluxoPorIA(
       });
       if (decisaoJev !== null) {
         registrarDecisaoJev(deps.log, 'flow_intent', decisaoJev);
-        const nome = nomeDoFluxoDaRespostaDeJev(decisaoJev.respostas);
-        const escolhido = nome ? (fluxos.find((f) => f.nome === nome) ?? null) : null;
-        return escolhido === null ? null : { id: escolhido.id, nome: escolhido.nome };
+        const nomes = fluxosDaRespostaDeJev(decisaoJev.respostas, fluxos);
+        const escolhidos = nomes
+          .map((n) => fluxos.find((f) => f.nome === n))
+          .filter((f): f is FluxoParaIA => f !== undefined);
+        return { ok: true, fluxos: escolhidos.map((f) => ({ id: f.id, nome: f.nome })) };
       }
     }
 
@@ -177,12 +206,12 @@ export async function escolherFluxoPorIA(
       },
       { log: deps.log },
     );
-    const escolhido = parseFlowIntent(result.text, fluxos);
-    return escolhido === null ? null : { id: escolhido.id, nome: escolhido.nome };
+    const escolhidos = parseFlowIntents(result.text, fluxos);
+    return { ok: true, fluxos: escolhidos.map((f) => ({ id: f.id, nome: f.nome })) };
   } catch (err) {
     deps.log.warn('flow-intent: falha — cai no gatilho por palavra', {
       error: err instanceof Error ? err.message : String(err),
     });
-    return null;
+    return { ok: false };
   }
 }

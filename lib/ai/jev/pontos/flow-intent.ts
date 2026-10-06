@@ -1,9 +1,16 @@
 /**
- * Mapeamento do ponto `flow_intent` para a Jev (Fase 5).
+ * Mapeamento do ponto `flow_intent` para a Jev (Fase 5) — agora MULTI-FLUXO.
  *
- * A decisão é: a mensagem deve INICIAR um fluxo de atendimento — e QUAL? É uma
- * escolha única entre os fluxos ativos (pelos NOMES) ou `none`. A Jev devolve o
- * rótulo direto. (O regex por palavra-gatilho continua como fallback no chamador.)
+ * A decisão: a mensagem deve INICIAR fluxos de atendimento — e QUAIS, na ORDEM
+ * em que o cliente os pediu. Ex.: "quero dar minha moto na troca e financiar o
+ * resto" → [Troca, Financiamento] (o motor inicia um e enfileira o resto).
+ *
+ * A Jev responde duas coisas:
+ *   - `fluxo_principal` (choice): o PRIMEIRO fluxo a iniciar, ou `none`;
+ *   - `fluxo_adicional_<i>` (noul): para cada fluxo, se a mensagem TAMBÉM o pede.
+ *
+ * O regex por palavra-gatilho continua existindo, mas só como ÚLTIMO recurso do
+ * chamador (quando a Jev e o modelo de chat não respondem).
  *
  * Módulo PURO (sem env, sem rede) para ser testável isolado.
  */
@@ -17,8 +24,8 @@ export interface FluxoParaJev {
 
 export const OPCAO_NENHUM = 'none';
 
-/** Pergunta `choice` da Jev: qual fluxo iniciar, ou `none`. */
-export function perguntaDeFluxoDeJev(fluxos: readonly FluxoParaJev[]): PerguntasDeJev {
+/** Pergunta `choice` do fluxo principal + um `noul` por fluxo (adicionais). */
+export function perguntasDeFluxosDeJev(fluxos: readonly FluxoParaJev[]): PerguntasDeJev {
   const criteria: Record<string, string> = {
     [OPCAO_NENHUM]: 'não iniciar nenhum fluxo (catálogo/informação, saudação ou dúvida)',
   };
@@ -26,11 +33,13 @@ export function perguntaDeFluxoDeJev(fluxos: readonly FluxoParaJev[]): Perguntas
     criteria[f.nome] =
       f.gatilhos.length > 0 ? `exemplos: ${f.gatilhos.join(', ')}` : 'fluxo de atendimento';
   }
-  return {
-    fluxo: {
+
+  const perguntas: PerguntasDeJev = {
+    fluxo_principal: {
       type: 'choice',
       instructions:
         'A mensagem do cliente deve INICIAR algum fluxo de atendimento? ' +
+        'Se houver MAIS de um processo pedido, escolha o PRIMEIRO na ordem que o cliente mencionou/priorizou. ' +
         'Catálogo/informação (ver/saber preço, fotos, detalhes), saudação ou dúvida → "none". ' +
         'Escolha da moto (gostou/quer essa) → Qualificação. Financiamento/parcelar → Financiamento. ' +
         'Dar a moto na troca → Troca. Vender/consignar → Venda ou Consignação. ' +
@@ -42,13 +51,39 @@ export function perguntaDeFluxoDeJev(fluxos: readonly FluxoParaJev[]): Perguntas
       criteria,
     },
   };
+
+  fluxos.forEach((f, i) => {
+    perguntas[`fluxo_adicional_${i}`] = {
+      type: 'noul',
+      instructions:
+        `Além do fluxo principal, a mensagem TAMBÉM pede o processo "${f.nome}"? ` +
+        'Probabilidade ALTA (0.8–1) se o cliente pediu esse processo além do principal; ' +
+        'BAIXA (0–0.2) se não pediu.',
+    };
+  });
+
+  return perguntas;
 }
 
-/** Nome do fluxo escolhido pela Jev; `null` = "none"/ausente/desconhecido. */
-export function nomeDoFluxoDaRespostaDeJev(respostas: RespostasDeJev): string | null {
-  const a = respostas.fluxo;
-  if (!a || a.type !== 'choice' || typeof a.choice !== 'string') return null;
-  const escolhido = a.choice.trim();
-  if (escolhido === '' || escolhido.toLowerCase() === OPCAO_NENHUM) return null;
-  return escolhido;
+/** Nomes dos fluxos pedidos, na ordem (principal primeiro, depois os adicionais). */
+export function fluxosDaRespostaDeJev(
+  respostas: RespostasDeJev,
+  fluxos: readonly FluxoParaJev[],
+): string[] {
+  const saida: string[] = [];
+
+  const principal = respostas.fluxo_principal;
+  if (principal && principal.type === 'choice' && typeof principal.choice === 'string') {
+    const p = principal.choice.trim();
+    if (p !== '' && p.toLowerCase() !== OPCAO_NENHUM) saida.push(p);
+  }
+
+  fluxos.forEach((f, i) => {
+    const a = respostas[`fluxo_adicional_${i}`];
+    if (a && a.type === 'noul' && typeof a.noul === 'number' && a.noul >= 0.5) {
+      if (f.nome !== saida[0]) saida.push(f.nome);
+    }
+  });
+
+  return saida;
 }
