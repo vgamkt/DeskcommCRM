@@ -128,6 +128,18 @@ export const MAX_MOTOS_GUARDADAS = 40;
 const MOTIVOS_OBJECAO = ['preco', 'km', 'ano', 'outro'] as const;
 
 /**
+ * Palavras que NÃO contam como "nome de moto" no casamento por nome parcial
+ * ("gostei da CBX 250" → o termo útil é "cbx 250", não "gostei/da"). Sem esta
+ * lista, "quero uma moto" casaria por engano.
+ */
+const PALAVRAS_NAO_NOME = new Set([
+  'a', 'o', 'as', 'os', 'de', 'da', 'do', 'das', 'dos', 'e', 'gostei', 'gosto',
+  'quero', 'queria', 'essa', 'esse', 'dessa', 'desse', 'mesmo', 'mesma', 'esta',
+  'este', 'por', 'pra', 'para', 'com', 'um', 'uma', 'no', 'na', 'em', 'tenho',
+  'interesse', 'moto', 'motos', 'sim', 'nao', 'ok', 'aquela', 'aquele', 'esta',
+]);
+
+/**
  * Aceita o formato ATUAL (`{moto, motivo, tentativas}`) e converte o LEGADO
  * (`{moto, fase}`) para o novo — assim uma conversa em andamento não perde o
  * estado quando o motor é atualizado.
@@ -447,6 +459,22 @@ export function motoEscolhidaPeloCliente(
   const citadasCliente = citadasMaximais(textoParaNome, candidatas);
   if (citadasCliente.length === 1) return citadasCliente[0];
   if (citadasCliente.length > 1) return undefined;
+
+  // (2b) NOME PARCIAL — o cliente cita um TRECHO do nome ("CBX 250", "300 F").
+  // Se exatamente UMA candidata contém TODOS os termos significativos citados, é
+  // ela; mais de uma = ambíguo. (dono, 2026-10-06: "o nome que tiver, com tudo o
+  // que tem cadastrado, é suficiente para definir".)
+  const tokens = normalizarNomeDeMoto(textoDoCliente)
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !PALAVRAS_NAO_NOME.has(t));
+  if (tokens.length > 0) {
+    const contem = candidatas.filter((m) => {
+      const nome = normalizarNomeDeMoto(m.nome);
+      return tokens.every((t) => nome.includes(t));
+    });
+    if (contem.length === 1) return contem[0];
+    if (contem.length > 1) return undefined;
+  }
 
   const anos = anosCitados(textoDoCliente);
   if (anos.length > 0) {
