@@ -517,15 +517,17 @@ export function selecionarPorIntencao(
           );
         })
         .map(([coluna]) => coluna);
-  // Atributos de PEDIDO — nome/modelo/versão, cilindrada e potência — NÃO viram
-  // FILTRO rígido: PONTUAM, com PESO IGUAL (regra do dono, 2026-10-05: nada
-  // domina; nenhuma marca é excluída; o que mais encaixa vem primeiro). Só o que
-  // o cliente pediu EXPLÍCITO e À PARTE (cor, marca, faixa de PREÇO) continua
+  // Atributos de PEDIDO — nome/modelo/versão, cilindrada, ANO e potência — NÃO
+  // viram FILTRO rígido: PONTUAM (o que mais encaixa vem primeiro). Só o que o
+  // cliente pediu EXPLÍCITO e À PARTE (cor, marca, faixa de PREÇO) continua
   // filtrando. Antes, "CB 250" virava exigência de cilindrada → faixa ±30%
-  // (113–325!) e os Honda CB 300 — os mais parecidos — ficavam de fora.
+  // (113–325!) e os Honda CB 300 — os mais parecidos — ficavam de fora. Idem o
+  // ANO: "CB 2025" (sem 2025 no estoque) virava filtro de ano EXATO → zerava e o
+  // motor caía no fallback trazendo motos nada a ver (dono, 2026-10-06).
   const ehAtributoDePedido = (c: string): boolean =>
     c === 'nome' ||
     detectarPapelColuna(c) === 'cilindrada' ||
+    detectarPapelColuna(c) === 'ano' ||
     /potenci|cavalos|\bcv\b|\bhp\b/i.test(c);
   const exigencias = !criteriosDinamicos
     ? []
