@@ -551,15 +551,23 @@ export async function motoEscolhidaPeloClienteComJev(
     if (decisao !== null) {
       const escolhido = motoEscolhidaDaRespostaDeJev(decisao.respostas);
       const idx = escolhido !== null ? rotulos.indexOf(escolhido) : -1;
-      deps?.log?.info('escolha: a JEV decidiu', {
-        fonte: 'jev',
-        escolhida: idx >= 0 ? candidatas[idx]!.nome : null,
+      if (idx >= 0) {
+        deps?.log?.info('escolha: a JEV decidiu', {
+          fonte: 'jev',
+          escolhida: candidatas[idx]!.nome,
+        });
+        return candidatas[idx];
+      }
+      // A Jev disse "nenhuma" — pode ser ambiguidade REAL ou uma falha dela. Cai
+      // no determinístico como COBERTURA (logado); se ele também não achar, é
+      // "sem escolha".
+      deps?.log?.info('escolha: Jev disse "nenhuma" — checando o determinístico', {
+        fonte: 'jev_nenhuma',
       });
-      return idx >= 0 ? candidatas[idx] : undefined;
     }
   }
 
-  // ── FALLBACK de EMERGÊNCIA (só quando a Jev está indisponível) ─────────────
+  // ── FALLBACK determinístico (Jev indisponível OU disse "nenhuma") ──────────
   const deterministica = motoEscolhidaPeloCliente(
     textoDoModelo,
     textoDoCliente,
@@ -567,7 +575,7 @@ export async function motoEscolhidaPeloClienteComJev(
     jaDetalhadas,
     textoCitado,
   );
-  deps?.log?.warn('escolha: Jev indisponível — usei o determinístico (FALLBACK)', {
+  deps?.log?.info('escolha: determinístico (cobertura/fallback)', {
     fonte: 'deterministica',
     escolhida: deterministica?.nome ?? null,
   });
