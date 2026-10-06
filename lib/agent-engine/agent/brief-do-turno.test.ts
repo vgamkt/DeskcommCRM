@@ -136,9 +136,10 @@ describe('renderBriefDoTurno', () => {
     });
 
     expect(brief).toContain('Fluxo de atendimento "Financiamento" ativo');
-    expect(brief).toContain('no máximo 3x');
+    expect(brief).not.toContain('no máximo 3x');
     expect(brief).toContain('- Tem CNH? (key cnh, tipo boolean, obrigatória).');
-    expect(brief).toContain('perguntar: "Você tem CNH?".');
+    expect(brief).not.toContain('perguntar:');
+    expect(brief).toContain('enviada pelo SISTEMA');
     expect(brief).toContain('- Entrada (key entrada, tipo number, opcional).');
     expect(brief).toContain('não aceita correção.');
     expect(brief).toContain('- Cor (key cor, tipo select, obrigatória).');

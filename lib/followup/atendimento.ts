@@ -364,14 +364,13 @@ export function renderBlocoDeAtendimento(
       cfg.type === "select" && (cfg.options?.length ?? 0) > 0
         ? ` Opções: ${cfg.options!.join(", ")}.`
         : "";
-    const sugerida = cfg.question ? ` Pergunta sugerida: "${cfg.question}".` : "";
     const corrige = cfg.permite_correcao ? "" : " Não aceite correção depois de preenchida.";
-    return `- ${cfg.label} (campo: ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${sugerida}${corrige}`;
+    return `- ${cfg.label} (campo: ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${corrige}`;
   });
 
   return [
     `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
-    "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO; encaixe no máximo UMA pergunta por resposta, quando houver abertura.",
+    "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria.",
     "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
     "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
     "Se o cliente corrigir um dado já preenchido, o sistema registra a correção — não chame flow_collect para isso; apenas reconheça a mudança na conversa.",

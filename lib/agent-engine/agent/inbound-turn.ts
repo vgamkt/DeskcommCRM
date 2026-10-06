@@ -3751,7 +3751,7 @@ async function executarTurnoDoAgente(
             obrigatoria: n.config.required,
           })),
           instrucao:
-            'O fluxo começou. Faça no máximo UMA pergunta agora e registre a resposta com flow_collect quando o cliente responder.',
+            'O fluxo começou. O SISTEMA já envia a pergunta do primeiro campo pendente (mensagem própria) — NÃO faça a pergunta do fluxo; só registre a resposta com flow_collect quando o cliente responder.',
         };
       },
     }),

@@ -52,9 +52,8 @@ function linhaDaPendente(n: EstadoDeAtendimento['situacao']['pendentes'][number]
     cfg.type === 'select' && (cfg.options?.length ?? 0) > 0
       ? ` opções: ${cfg.options!.join(', ')}.`
       : '';
-  const sugerida = cfg.question ? ` perguntar: "${cfg.question}".` : '';
   const corrige = cfg.permite_correcao ? '' : ' não aceita correção.';
-  return `- ${cfg.label} (key ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${sugerida}${corrige}`;
+  return `- ${cfg.label} (key ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${corrige}`;
 }
 
 /** Bloco do fluxo em forma compacta — mesmos fatos de `renderBlocoDeAtendimento`. */
@@ -74,7 +73,7 @@ function blocoDoFluxoCompacto(estado: EstadoDeAtendimento, finalizacao?: EndFini
 
   const linhas = estado.situacao.pendentes.map(linhaDaPendente);
   return [
-    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o; atenda o cliente PRIMEIRO, no máximo UMA pergunta por resposta. Registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pergunta sem resposta pode repetir no máximo ${estado.maxTentativas}x. Pendentes:`,
+    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o; atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria; só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
     ...linhas,
   ].join('\n');
 }
