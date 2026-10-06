@@ -70,6 +70,23 @@ describe("a linha canônica é lida pelo id do job", () => {
       loadInboundBodyForJob(db, { tenantId: "o", conversationId: "c", inboundMessageId: "m" }),
     ).resolves.toBeNull();
   });
+
+  it("áudio (corpo vazio) usa a DERIVAÇÃO (transcrição) — entrada PARALELA ao texto", async () => {
+    // O dono (2026-10-06): "áudio e texto são iguais". No áudio o `body` é vazio e
+    // o texto está em `media_derived_text`; sem ler isso, o motor acha que o cliente
+    // não disse nada e pula as checagens que faz no texto → resposta diferente.
+    const { db } = pool([{ body: null, media_derived_text: "Quero uma CB 250" }] as never);
+    await expect(
+      loadInboundBodyForJob(db, { tenantId: "o", conversationId: "c", inboundMessageId: "m" }),
+    ).resolves.toBe("Quero uma CB 250");
+  });
+
+  it("texto tem prioridade sobre a derivação", async () => {
+    const { db } = pool([{ body: "oi", media_derived_text: "transcricao" }] as never);
+    await expect(
+      loadInboundBodyForJob(db, { tenantId: "o", conversationId: "c", inboundMessageId: "m" }),
+    ).resolves.toBe("oi");
+  });
 });
 
 const FONTE = fs.readFileSync(

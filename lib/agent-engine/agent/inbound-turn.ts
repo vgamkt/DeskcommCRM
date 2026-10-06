@@ -689,8 +689,8 @@ export async function loadInboundBodyForJob(
   db: Queryable,
   input: { tenantId: string; conversationId: string; inboundMessageId: string },
 ): Promise<string | null> {
-  const result = await db.query<{ body: string | null }>(
-    `select body
+  const result = await db.query<{ body: string | null; media_derived_text: string | null }>(
+    `select body, media_derived_text
        from messages
       where organization_id = $1
         and conversation_id = $2
@@ -700,7 +700,18 @@ export async function loadInboundBodyForJob(
     [input.tenantId, input.conversationId, input.inboundMessageId],
   );
   const row = result.rows[0];
-  return row === undefined ? null : (row.body ?? '');
+  if (row === undefined) return null;
+  const body = (row.body ?? '').trim();
+  if (body !== '') return body;
+  // ── ÁUDIO/IMAGEM: a entrada é PARALELA ao texto ─────────────────────────────
+  // No áudio o `body` é vazio; o que o cliente "disse" é a DERIVAÇÃO
+  // (`media_derived_text` — a transcrição). O motor TEM que ler esse texto, senão
+  // trata o áudio como "sem conteúdo" e pula as checagens que faz no texto (gatilho,
+  // fluxo, escolha, oferta) → a resposta sai DIFERENTE de um texto igual (dono,
+  // 2026-10-06: "áudio e texto são iguais"). Com isto, a transcrição vira o texto e
+  // as MESMAS sequências rodam. Marcador de "não lida" (ex.: "[áudio]") fica como
+  // veio — o modelo vê que não deu para transcrever, mas o caminho é o mesmo.
+  return (row.media_derived_text ?? '').trim();
 }
 
 /**
