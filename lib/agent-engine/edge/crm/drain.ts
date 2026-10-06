@@ -140,12 +140,14 @@ const ESPERA_DERIVACAO_MS = 4_000;
  * de transcrição lenta (como o do Alfran) sem impor essa espera longa.
  */
 // Teto de espera pela DERIVAÇÃO da mídia (transcrição de áudio / descrição de
-// imagem) antes de o turno seguir SEM o texto. Era 120s: o turno ficava 2 minutos
-// travado esperando a transcrição e, com contexto longo, a chamada do modelo
-// ESTOURAVA o timeout (`turn_model_timeout_ms`) → cliente SEM RESPOSTA (medido
-// 2026-10-06). 20s cobre a transcrição normal; se passar disso, o turno segue com
-// o marcador ("[áudio]") e a transcrição entra no próximo turno. Nunca trava a fila.
-const TETO_ESPERA_DERIVACAO_MS = 20_000;
+// imagem) antes de o turno seguir SEM o texto. O áudio PRECISA chegar ao modelo
+// como TEXTO (o dono: "tem que esperar ser convertido por algum tempo"). O que não
+// pode é (a) travar 2 minutos (o turno estourava o timeout do modelo → cliente sem
+// resposta, medido 2026-10-06) nem (b) seguir cedo demais e responder sem entender
+// o áudio. 60s é a janela de espera; se passar disso, o turno segue com o marcador
+// e a transcrição entra no próximo. A derivação roda em paralelo, à frente das
+// ações do turno, para caber nessa janela.
+const TETO_ESPERA_DERIVACAO_MS = 60_000;
 
 type DesfechoEvento = 'processado' | 'adiar';
 
