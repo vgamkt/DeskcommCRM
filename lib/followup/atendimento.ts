@@ -371,6 +371,14 @@ export function renderBlocoDeAtendimento(
   return [
     `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
     "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria.",
+    // ANTI-REPETIÇÃO (medido ao vivo 2026-10-06): com o fluxo ativo, o modelo somava à
+    // pergunta do sistema uma pergunta PRÓPRIA (visita/detalhes/fechamento). Como o
+    // cliente só consegue responder UMA por vez, a pergunta do modelo ficava pendente
+    // e era repetida, quase literal, no turno seguinte ("Pra eu te ajudar a fechar,
+    // você prefere vir conhecer ela na loja ou quer que eu te mande mais detalhes
+    // dela?"). Enquanto o fluxo conduz, a vez é dele: o modelo responde/acolhe o que o
+    // cliente disse e NÃO abre outra pergunta.
+    "Enquanto houver campo pendente, NÃO faça NENHUMA pergunta por sua iniciativa (visita, mais detalhes, fechamento, pagamento, cor, etc.): UMA pergunta por vez, e a vez é do SISTEMA, que envia a próxima sozinho. Sua mensagem apenas responde ao que o cliente disse.",
     "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
     "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
     "Se o cliente corrigir um dado já preenchido, o sistema registra a correção — não chame flow_collect para isso; apenas reconheça a mudança na conversa.",

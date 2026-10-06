@@ -73,7 +73,7 @@ function blocoDoFluxoCompacto(estado: EstadoDeAtendimento, finalizacao?: EndFini
 
   const linhas = estado.situacao.pendentes.map(linhaDaPendente);
   return [
-    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o; atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria; só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
+    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o; atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria E não abra OUTRA pergunta (visita, detalhes, fechamento): a vez é do sistema, uma por vez; só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
     ...linhas,
   ].join('\n');
 }
