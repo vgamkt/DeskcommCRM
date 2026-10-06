@@ -715,6 +715,49 @@ export async function loadInboundBodyForJob(
 }
 
 /**
+ * TODAS as mensagens inbound ainda não respondidas (desde a última outbound), na
+ * ordem em que o cliente as mandou. É a rajada que o drain COALESCE num job só:
+ * o job pina a ÚLTIMA mensagem em `inbound_message_id`, então ler só o texto
+ * pinado perde o que veio antes na mesma rajada.
+ *
+ * Medido ao vivo (2026-10-06): o cliente mandou "Queria dar uma moto na troca" e,
+ * 6 s depois, "E financiar o resto". O job pinou a SEGUNDA; o gatilho de fluxo,
+ * que lia só o texto pinado, reconheceu apenas o Financiamento — o Troca nunca
+ * entrou na fila e o cliente ficou em um fluxo só, embora tivesse pedido os dois.
+ * Mesma régua de `inboundsNaoRespondidos` (a lista do LeadContext), mas lida do
+ * banco ANTES de o contexto abrir — o gatilho de fluxo roda mais acima no turno.
+ */
+export async function loadUnansweredInboundTexts(
+  db: Queryable,
+  input: { tenantId: string; conversationId: string },
+): Promise<string[]> {
+  // `limit 20` espelha a janela de histórico (default do motor): se o cliente
+  // deixou muitas mensagens sem resposta, interessam as RECENTES — a rajada que
+  // este turno responde. O `order by desc` + reversão devolve a ordem cronológica.
+  const result = await db.query<{ body: string | null; media_derived_text: string | null }>(
+    `select body, media_derived_text
+       from messages
+      where organization_id = $1
+        and conversation_id = $2
+        and direction = 'inbound'
+        and created_at > coalesce(
+          (select max(created_at) from messages
+            where organization_id = $1 and conversation_id = $2 and direction = 'outbound'),
+          '-infinity'::timestamptz
+        )
+      order by created_at desc
+      limit 20`,
+    [input.tenantId, input.conversationId],
+  );
+  const textos: string[] = [];
+  for (const row of result.rows) {
+    const texto = (row.body ?? '').trim() !== '' ? (row.body ?? '').trim() : (row.media_derived_text ?? '').trim();
+    if (texto !== '') textos.push(texto);
+  }
+  return textos.reverse();
+}
+
+/**
  * O texto da mensagem CITADA (resposta "em cima") que este turno responde —
  * lido de `metadata.citacao.texto`, gravado na ingestão do WAHA. Existe porque
  * "Gostei dessa" não nomeia moto; a mensagem que o cliente respondeu (a
@@ -2369,12 +2412,25 @@ async function executarTurnoDoAgente(
   let validadorGravouNesteTurno = false;
   if (!preview && liveJob().kind === 'inbound_turn' && input.inboundMessageId !== undefined) {
     try {
+      // O gatilho olha a RAJADA inteira, não só a mensagem pinada. O job coalesce
+      // as mensagens do mesmo contato dentro do debounce e pina a ÚLTIMA; ler só
+      // ela perde o pedido que veio antes ("Queria dar uma moto na troca" +
+      // "E financiar o resto" → só o Financiamento era reconhecido). Ver
+      // `loadUnansweredInboundTexts`.
+      const rajada = await loadUnansweredInboundTexts(pool, {
+        tenantId,
+        conversationId: input.conversationId,
+      }).catch(() => [] as string[]);
+      const textoDoGatilho =
+        [currentInboundText, ...rajada]
+          .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+          .join('\n') || null;
       // TODOS os fluxos que a mensagem aciona, na ORDEM citada. O cliente pode
       // pedir mais de um processo na mesma frase ("dar a moto na troca e
       // financiar o restante") — a fila preserva a ordem.
       const acionados = await escolherFluxosPeloGatilho(pool, {
         organizationId: tenantId,
-        texto: currentInboundText,
+        texto: textoDoGatilho,
         contactId: leadId,
       });
       if (atendimento !== null) {
@@ -2410,7 +2466,7 @@ async function executarTurnoDoAgente(
           {
             organizationId: tenantId,
             contactId: leadId,
-            texto: currentInboundText,
+            texto: textoDoGatilho,
             model: agentConfig?.model ?? '',
             provider: agentConfig?.provider ?? null,
             jobId: liveJob().id,
