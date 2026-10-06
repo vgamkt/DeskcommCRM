@@ -6687,7 +6687,15 @@ async function executarTurnoDoAgente(
             payload: { origem },
           }).catch(() => {});
         };
-        if (perguntaSaiuNosTextos(pergunta, corposEnviados)) {
+        // O TEXTO LIVRE do modelo conta como fala do turno. Sem isto, quando o
+        // modelo responde por texto (não pela ferramenta `send_message`), a trava
+        // não via a pergunta em `corposEnviados`, mandava a dela — e o texto do
+        // modelo, enviado logo depois, repetia a MESMA pergunta. Medido ao vivo
+        // (2026-10-06): "De qual cidade você fala?" saiu duas vezes no mesmo turno.
+        const textoLivreDoModelo = (turn.result.text ?? '').trim();
+        const textosDoTurno =
+          textoLivreDoModelo !== '' ? [...corposEnviados, textoLivreDoModelo] : corposEnviados;
+        if (perguntaSaiuNosTextos(pergunta, textosDoTurno)) {
           eventoPergunta('modelo');
         } else {
           try {
