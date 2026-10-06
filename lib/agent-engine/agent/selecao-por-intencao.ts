@@ -407,23 +407,29 @@ function ccsDoTermo(termo: string): number[] {
 }
 
 /**
- * FREIO determinístico da nota da Jev (dono, 2026-10-06): a Jev escorrega na nota
- * (ex.: "cb 250" → Dominar 400 nota 0,81). Se o cliente citou um MODELO e/ou uma
- * CILINDRADA, a candidata que NÃO casa nenhum dos dois tem a nota LIMITADA a 0,2 —
- * não pode ir na frente de quem casa. Sem modelo/cc no pedido, não mexe na nota.
+ * A candidata está FORA do pedido? (o cliente citou um MODELO e/ou uma
+ * CILINDRADA e a moto não casa NENHUM dos dois). Sem modelo/cc no pedido, nunca
+ * está fora. É a base do FREIO determinístico (dono, 2026-10-06).
  */
-function freioDaNota(moto: MotoDoCatalogo, termo: string, nota: number): number {
-  if (termo.trim() === '') return nota;
+function foraDoPedido(moto: MotoDoCatalogo, termo: string): boolean {
+  if (termo.trim() === '') return false;
   const tokensPedido = tokensDoNome(termo);
   const modelos = [...tokensPedido].filter((t) => TOKENS_DE_MODELO.has(t));
   const ccs = ccsDoTermo(termo);
-  if (modelos.length === 0 && ccs.length === 0) return nota;
+  if (modelos.length === 0 && ccs.length === 0) return false;
   const tokensMoto = tokensDoNome(moto.nome);
   const casaModelo = modelos.some((t) => tokensMoto.has(t));
   const ccMoto = cilindradaDaMoto(moto);
   const casaCc = ccMoto !== null && ccs.some((cc) => Math.abs(ccMoto - cc) / cc <= 0.3);
-  if (!casaModelo && !casaCc) return Math.min(nota, 0.2);
-  return nota;
+  return !casaModelo && !casaCc;
+}
+
+/**
+ * FREIO determinístico da nota da Jev: a Jev escorrega (ex.: "cb 250" → Dominar
+ * 400 nota 0,81). Quem está FORA do pedido tem a nota limitada a 0,2.
+ */
+function freioDaNota(moto: MotoDoCatalogo, termo: string, nota: number): number {
+  return foraDoPedido(moto, termo) ? Math.min(nota, 0.2) : nota;
 }
 
 /** Tokens que identificam um MODELO/LINHA de moto (não marca nem categoria). */
@@ -446,16 +452,23 @@ export function filtrarPorHipoteses(
   );
   const temFaixas = Object.keys(faixas).length > 0;
   if (!temHipoteses && !temFaixas) return [];
-  return candidatos
+  const avaliados = candidatos
     .map((moto, i) => ({
       moto,
       i,
       ...pontuarPorCriterios(moto, hipoteses, faixas, toleranciaPct, principal),
-      // A nota da Jev passa pelo FREIO determinístico (quem não casa modelo/cc
-      // do pedido não pode ir na frente), e o maior entre nota e pontos ordena.
+      // A nota da Jev passa pelo FREIO determinístico (quem não casa modelo/cc do
+      // pedido não pode ir na frente) e o maior entre nota e pontos ordena.
       nota: Math.max(freioDaNota(moto, termo, notaDaJev(moto, hipoteses)), 0),
+      fora: foraDoPedido(moto, termo),
     }))
-    .filter((x) => x.pontos > 0 || x.nota > 0)
+    .filter((x) => x.pontos > 0 || x.nota > 0);
+  // FREIO: se o cliente citou modelo/cc, as candidatas FORA do pedido (ex.:
+  // "cb 250" → Dominar 400) NÃO entram quando há opções que casam — só aparecem
+  // se NENHUMA casar (aí é a melhor alternativa que temos). Dono, 2026-10-06.
+  const dentro = avaliados.filter((x) => !x.fora);
+  const usar = dentro.length > 0 ? dentro : avaliados;
+  return usar
     // PASSO EXTRA (dono, 2026-10-06): a ORDEM é a NOTA da Jev (ela assimila o
     // conjunto, sem cor); os pontos determinísticos desempatam.
     .sort((a, b) => b.nota - a.nota || b.pontos - a.pontos || a.i - b.i)
