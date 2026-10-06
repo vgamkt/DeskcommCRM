@@ -6137,9 +6137,24 @@ async function executarTurnoDoAgente(
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
       // isto, o modelo chutava a moto (medido ao vivo 2026-09-30: escolheu CBX
-      // 250 quando o cliente citou a CB 300 F Twister).
+      // 250 quando o cliente citou a CB 300 F Twister). Além da citada, entra o
+      // ASSUNTO EM VOLTA dela (do banco) — o modelo precisa do contexto para
+      // escrever a resposta, como um humano relendo o trecho.
       currentInboundQuote !== null && currentInboundQuote.trim() !== ''
-        ? `## O cliente respondeu a esta mensagem sua\n"${currentInboundQuote.trim()}"\nQuando a resposta dele for curta ("essa", "gostei dessa"), é a ESTA moto/assunto que ele se refere.`
+        ? [
+            '## O cliente respondeu a esta mensagem sua',
+            `"${currentInboundQuote.trim()}"`,
+            'Quando a resposta dele for curta ("essa", "gostei dessa"), é a ESTA moto/assunto que ele se refere.',
+            ...(currentInboundCitacao !== null && currentInboundCitacao.vizinhos.length > 0
+              ? [
+                  '',
+                  '### Contexto em volta da mensagem citada (o assunto)',
+                  ...currentInboundCitacao.vizinhos.map(
+                    (v) => `- ${v.de === 'cliente' ? 'CLIENTE' : 'LOJA'}: ${v.texto}`,
+                  ),
+                ]
+              : []),
+          ].join('\n')
         : '',
       // ── ESCOLHA JÁ IDENTIFICADA (pela citação/mensagem) ───────────────────
       // O MOTOR resolve antes do modelo escrever, para ele confirmar a moto
