@@ -36,6 +36,7 @@ import type pg from 'pg';
 
 import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { EstadoObjecao } from './objecao-de-valor';
+import type { Logger } from '../obs/logger';
 import { decidir } from '../../ai/jev';
 import { alvosDeJevDe } from '../../ai/jev/config';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
@@ -490,11 +491,10 @@ export function motoEscolhidaPeloCliente(
 }
 
 /**
- * Versão ASSÍNCRONA de `motoEscolhidaPeloCliente`: o determinístico decide
- * primeiro; só quando ele fica em DÚVIDA (`undefined`), HÁ sinal de escolha e há
- * MAIS DE UMA candidata, a Jev **desempata** (`choice` entre as candidatas +
- * "nenhuma"). Desligada por padrão (`JEV_ENABLED`) → comportamento idêntico ao de
- * antes. Nunca lança.
+ * Versão ASSÍNCRONA: **a JEV DECIDE a escolha PRIMEIRO** (dono, 2026-10-06) — com
+ * TODOS os atributos (nome, ano, cor, cilindrada, km). O motor NÃO decide por conta
+ * própria; o determinístico vira **fallback de emergência**, usado SÓ quando a Jev
+ * está indisponível, e é LOGADO. Nunca lança.
  */
 export async function motoEscolhidaPeloClienteComJev(
   textoDoModelo: string,
@@ -506,8 +506,60 @@ export async function motoEscolhidaPeloClienteComJev(
    * Banco + tenant para resolver a Jev pelo BINDING do ponto (`moto_escolhida__jev`,
    * a tela) em vez do ambiente. Sem eles, cai no ambiente (comportamento antigo).
    */
-  deps?: { db?: pg.Pool; tenantId?: string },
+  deps?: {
+    db?: pg.Pool;
+    tenantId?: string;
+    log?: Logger;
+  },
 ): Promise<MotoDoCatalogo | undefined> {
+  if (catalogo.length === 0) return undefined;
+  // Pergunta/objeção NÃO é escolha — barra ANTES (vale para a Jev e o fallback).
+  if (bloqueiaEscolha(textoDoCliente)) return undefined;
+
+  const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
+  const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
+
+  // RÓTULO com os ATRIBUTOS (ano, cor, cilindrada, km) — a Jev casa o que o cliente
+  // disse ("a 2015", "a preta", "a 300 F") com a candidata. "Dinâmico" = qualquer
+  // atributo cadastrado.
+  const rotulo = (m: MotoDoCatalogo): string => {
+    const extras = [m.ano, m.cor, m.cilindrada, m.quilometragem].filter(
+      (v): v is string => typeof v === 'string' && v.trim() !== '',
+    );
+    return extras.length > 0 ? `${m.nome} (${extras.join(', ')})` : m.nome;
+  };
+
+  // ── JEV PRIMEIRO ──────────────────────────────────────────────────────────
+  const alvos =
+    deps?.db !== undefined && deps.tenantId !== undefined
+      ? await alvosDeJevDaOrg(deps.db, deps.tenantId, 'moto_escolhida')
+      : alvosDeJevDe(process.env);
+
+  if (alvos.length > 0 && candidatas.length >= 1) {
+    const rotulos = candidatas.map(rotulo);
+    const decisao = await decidir({
+      alvos,
+      state: {
+        cliente: textoDoCliente,
+        citado: textoCitado,
+        modelo: textoDoModelo,
+        candidatas: rotulos,
+      },
+      questions: perguntaDeMotoEscolhidaJev(rotulos),
+      perguntasObrigatorias: ['moto'],
+    });
+    if (decisao !== null) {
+      const escolhido = motoEscolhidaDaRespostaDeJev(decisao.respostas);
+      const idx = escolhido !== null ? rotulos.indexOf(escolhido) : -1;
+      deps?.log?.info('escolha: a JEV decidiu', {
+        fonte: 'jev',
+        escolhida: idx >= 0 ? candidatas[idx]!.nome : null,
+      });
+      return idx >= 0 ? candidatas[idx] : undefined;
+    }
+  }
+
+  // ── FALLBACK de EMERGÊNCIA (só quando a Jev está indisponível) ─────────────
   const deterministica = motoEscolhidaPeloCliente(
     textoDoModelo,
     textoDoCliente,
@@ -515,47 +567,9 @@ export async function motoEscolhidaPeloClienteComJev(
     jaDetalhadas,
     textoCitado,
   );
-  if (deterministica !== undefined) return deterministica;
-  if (catalogo.length === 0) return undefined;
-
-  // Sem sinal positivo de escolha (é pergunta/objeção) → NÃO chama a Jev.
-  if (bloqueiaEscolha(textoDoCliente)) return undefined;
-  // Binding do ponto (`moto_escolhida__jev`) quando há banco+tenant; senão ambiente.
-  const alvos =
-    deps?.db !== undefined && deps.tenantId !== undefined
-      ? await alvosDeJevDaOrg(deps.db, deps.tenantId, 'moto_escolhida')
-      : alvosDeJevDe(process.env);
-  if (alvos.length === 0) return undefined;
-
-  const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
-  const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
-  if (candidatas.length < 2) return undefined; // 0/1 candidata: a determinística já bastava
-
-  // RÓTULO com os ATRIBUTOS (ano, cor, cilindrada, km) — a Jev precisa deles para
-  // casar o que o cliente disse ("a 2015", "a preta", "a 300 F") com a candidata.
-  // Só o NOME não basta: "dinâmico" pode ser qualquer atributo (dono, 2026-10-06).
-  const rotulo = (m: MotoDoCatalogo): string => {
-    const extras = [m.ano, m.cor, m.cilindrada, m.quilometragem].filter(
-      (v): v is string => typeof v === 'string' && v.trim() !== '',
-    );
-    return extras.length > 0 ? `${m.nome} (${extras.join(', ')})` : m.nome;
-  };
-  const rotulos = candidatas.map(rotulo);
-
-  const decisao = await decidir({
-    alvos,
-    state: {
-      cliente: textoDoCliente,
-      citado: textoCitado,
-      modelo: textoDoModelo,
-      candidatas: rotulos,
-    },
-    questions: perguntaDeMotoEscolhidaJev(rotulos),
-    perguntasObrigatorias: ['moto'],
+  deps?.log?.warn('escolha: Jev indisponível — usei o determinístico (FALLBACK)', {
+    fonte: 'deterministica',
+    escolhida: deterministica?.nome ?? null,
   });
-  if (decisao === null) return undefined;
-  const escolhido = motoEscolhidaDaRespostaDeJev(decisao.respostas);
-  if (escolhido === null) return undefined;
-  const idx = rotulos.indexOf(escolhido);
-  return idx >= 0 ? candidatas[idx] : undefined;
+  return deterministica;
 }

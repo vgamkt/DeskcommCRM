@@ -4150,7 +4150,7 @@ async function executarTurnoDoAgente(
                 catalogoEfetivo,
                 catalogoDaConversa.detalhadas,
                 currentInboundQuote ?? '',
-                { db: pool, tenantId },
+                { db: pool, tenantId, log: runLog },
               )
             : undefined;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
