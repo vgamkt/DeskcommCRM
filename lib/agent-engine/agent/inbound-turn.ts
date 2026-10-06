@@ -4153,6 +4153,11 @@ async function executarTurnoDoAgente(
                 { db: pool, tenantId },
               )
             : undefined;
+        // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
+        runLog.info('escolha: decisão (antes/depois)', {
+          antes: { ja_apresentou: jaApresentou, pediu_outra: pediuOutraMoto, msg: (mensagemDoJob ?? '').slice(0, 60), candidatas: catalogoEfetivo.length },
+          depois: { escolhida: escolhidaNesteTurno?.nome ?? null },
+        });
         if (escolhidaNesteTurno !== undefined) {
           motoDetalhadaNome = escolhidaNesteTurno.nome;
           escolhaDetectadaNesteTurno = escolhidaNesteTurno;
