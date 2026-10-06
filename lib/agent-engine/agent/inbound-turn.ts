@@ -2724,8 +2724,21 @@ async function executarTurnoDoAgente(
           de: 'cliente' as const,
           texto,
         }));
+        // A mensagem CITADA ("responder marcando" outra): a Jev precisa saber A QUE
+        // o cliente se refere — "Gostei dessa" aponta para a foto/legenda citada.
+        // Sem isto o contexto da Jev fica cego à referência (medido 2026-10-06).
+        const citacaoComoMensagem =
+          currentInboundQuote !== null && currentInboundQuote.trim() !== ''
+            ? [
+                {
+                  de: 'loja' as const,
+                  texto: `(mensagem que o cliente CITOU/respondeu) ${currentInboundQuote.trim()}`,
+                },
+              ]
+            : [];
         const jaNoHistorico = new Set(historico.map((m) => `${m.de}\u0000${m.texto}`));
         const ultimasMensagens = [
+          ...citacaoComoMensagem,
           ...pendentesComoMensagens.filter((m) => !jaNoHistorico.has(`${m.de}\u0000${m.texto}`)),
           ...historico,
         ];
