@@ -168,6 +168,11 @@ ponto de decisão e **não se reordena**:
 [`docs/doctrine/jev-decide-sempre.md`](docs/doctrine/jev-decide-sempre.md) — leia antes de
 tocar em qualquer ponto de decisão do turno.**
 
+**Quem manda em cada comportamento do turno** (saudação, pergunta de coleta, catálogo,
+pergunta de avanço, objeção) e a hierarquia `Fluxo > Objeção(Jev) > Skill > Persona`:
+[`docs/doctrine/hierarquia-do-turno.md`](docs/doctrine/hierarquia-do-turno.md). Nunca crie
+uma segunda "ordem" para o mesmo comportamento em camada diferente.
+
 ---
 
 ## Anti-patterns proibidos
