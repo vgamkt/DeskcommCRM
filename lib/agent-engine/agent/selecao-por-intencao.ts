@@ -378,6 +378,27 @@ export function pontuarPorCriterios(
 }
 
 /**
+ * As motos do catálogo cujo NOME casa o nome de uma hipótese da JEV — a DECISÃO
+ * dela (P3.2). O motor só APRESENTA essas; não re-rankeia por conta própria.
+ * Casa por nome normalizado (igual OU contido), tolerante a variações
+ * ("CB 300" ⊂ "HONDA CB 300 R").
+ */
+function casarPorNomeDasHipoteses(
+  candidatos: readonly MotoDoCatalogo[],
+  hipoteses: readonly HipoteseDeMoto[],
+): MotoDoCatalogo[] {
+  const alvos = hipoteses
+    .map((h) => h.nome)
+    .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+    .map(normalizarNomeDeMoto);
+  if (alvos.length === 0) return [];
+  return candidatos.filter((m) => {
+    const nome = normalizarNomeDeMoto(m.nome);
+    return alvos.some((a) => nome === a || nome.includes(a) || a.includes(nome));
+  });
+}
+
+/**
  * FILTRA/PONTUA os candidatos por hipóteses/faixas (decisão do dono, 2026-09-27):
  * OR pontuado. Devolve as motos com pontos > 0, da MAIOR pontuação para a menor.
  * Quem não casa nada NÃO entra. Lista vazia = filtro ignorado (o chamador cai no
@@ -532,16 +553,23 @@ export function selecionarPorIntencao(
       );
       estrito = casadas.length > 0;
     }
-    // Estrtio zerou (ou não havia exigência): cai no genérico (OR pontuado) —
-    // nunca responde vazio por causa de um pedido que não casou.
+    // Estrtio zerou (ou não havia exigência): a JEV DECIDE e o motor EXECUTA.
     if (casadas.length === 0) {
-      casadas = filtrarPorHipoteses(
-        candidatos,
-        input.hipoteses ?? [],
-        input.faixas ?? {},
-        tolerancia,
-        input.principal ?? null,
-      );
+      // (1) A decisão da Jev são as motos que ela marcou como parecidas (hipóteses,
+      // por NOME). O motor APRESENTA essas — sem re-rankear por conta própria (o
+      // re-rank por colunas trazia Yamahas para "cb 250"; medido 2026-10-06).
+      const porNome = casarPorNomeDasHipoteses(candidatos, input.hipoteses ?? []);
+      // (2) Só se NENHUMA casar por nome, cai no OR pontuado (fallback).
+      casadas =
+        porNome.length > 0
+          ? porNome
+          : filtrarPorHipoteses(
+              candidatos,
+              input.hipoteses ?? [],
+              input.faixas ?? {},
+              tolerancia,
+              input.principal ?? null,
+            );
     }
     if (casadas.length > 0) {
       // Cliente nomeou um modelo: o conjunto PREFERIDO também fica na LINHA do
