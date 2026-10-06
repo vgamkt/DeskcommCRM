@@ -730,6 +730,60 @@ export async function loadInboundQuoteForJob(
   return texto !== null && texto !== undefined && texto.trim() !== '' ? texto : null;
 }
 
+/**
+ * CONTEXTO EM VOLTA da mensagem CITADA — quando o cliente responde "marcando" uma
+ * mensagem mais antiga, a Jev (e o motor) precisa saber do que se fala: não só o
+ * texto citado solto, mas o ASSUNTO em volta dele (as mensagens próximas). É o
+ * que um humano faria ao ler "em resposta a…": reler o trecho em volta.
+ *
+ * Devolve `null` quando não há citação. `vizinhos` são as mensagens da conversa
+ * numa janela de tempo em torno da citada (cliente+loja), já sem vazios.
+ */
+export async function loadCitacaoComVizinhanca(
+  db: Queryable,
+  input: { tenantId: string; conversationId: string; inboundMessageId: string },
+): Promise<{ citada: string; vizinhos: { de: 'cliente' | 'loja'; texto: string }[] } | null> {
+  const base = await db
+    .query<{ cit_id: string | null; cit_texto: string | null }>(
+      `select metadata->'citacao'->>'id' as cit_id,
+              metadata->'citacao'->>'texto' as cit_texto
+         from messages
+        where organization_id=$1 and conversation_id=$2 and id=$3 and direction='inbound'
+        limit 1`,
+      [input.tenantId, input.conversationId, input.inboundMessageId],
+    )
+    .catch(() => ({ rows: [] as { cit_id: string | null; cit_texto: string | null }[] }));
+  const citId = base.rows[0]?.cit_id ?? null;
+  const citTexto = (base.rows[0]?.cit_texto ?? '').trim();
+  if (citId === null && citTexto === '') return null;
+
+  let vizinhos: { de: 'cliente' | 'loja'; texto: string }[] = [];
+  if (citId !== null) {
+    const v = await db
+      .query<{ direction: string; body: string | null }>(
+        `with alvo as (
+           select created_at from messages
+            where organization_id=$1 and conversation_id=$2 and external_id=$3 limit 1
+         )
+         select direction, body from messages
+          where organization_id=$1 and conversation_id=$2
+            and created_at >= (select created_at from alvo) - interval '15 minutes'
+            and created_at <= (select created_at from alvo) + interval '15 minutes'
+          order by created_at asc
+          limit 16`,
+        [input.tenantId, input.conversationId, citId],
+      )
+      .catch(() => ({ rows: [] as { direction: string; body: string | null }[] }));
+    vizinhos = v.rows
+      .filter((r) => (r.body ?? '').trim() !== '')
+      .map((r) => ({
+        de: r.direction === 'inbound' ? ('cliente' as const) : ('loja' as const),
+        texto: (r.body ?? '').trim(),
+      }));
+  }
+  return { citada: citTexto, vizinhos };
+}
+
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
 export const checkpointContentSchema = z.object({
   commitments: z.array(z.string()).default([]),
@@ -2276,6 +2330,16 @@ async function executarTurnoDoAgente(
           conversationId: input.conversationId,
           inboundMessageId: input.inboundMessageId,
         }).catch(() => null);
+  // A citação COM o assunto em volta (vizinhos) — para a Jev entender a que o
+  // cliente se refere quando cita algo mais antigo.
+  const currentInboundCitacao =
+    input.inboundMessageId === undefined
+      ? null
+      : await loadCitacaoComVizinhanca(pool, {
+          tenantId,
+          conversationId: input.conversationId,
+          inboundMessageId: input.inboundMessageId,
+        }).catch(() => null);
 
   // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
   // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
@@ -2724,18 +2788,26 @@ async function executarTurnoDoAgente(
           de: 'cliente' as const,
           texto,
         }));
-        // A mensagem CITADA ("responder marcando" outra): a Jev precisa saber A QUE
-        // o cliente se refere — "Gostei dessa" aponta para a foto/legenda citada.
-        // Sem isto o contexto da Jev fica cego à referência (medido 2026-10-06).
-        const citacaoComoMensagem =
-          currentInboundQuote !== null && currentInboundQuote.trim() !== ''
-            ? [
-                {
-                  de: 'loja' as const,
-                  texto: `(mensagem que o cliente CITOU/respondeu) ${currentInboundQuote.trim()}`,
-                },
-              ]
-            : [];
+        // A mensagem CITADA ("responder marcando" outra) E O ASSUNTO EM VOLTA dela:
+        // a Jev precisa saber A QUE o cliente se refere — "Gostei dessa" aponta para
+        // a foto/legenda citada, e a vizinhança dá o assunto. Sem isto o contexto da
+        // Jev fica cego à referência (medido 2026-10-06).
+        const citacaoComoMensagem: { de: 'cliente' | 'loja'; texto: string }[] = [];
+        if (currentInboundCitacao !== null) {
+          const { citada, vizinhos } = currentInboundCitacao;
+          if (citada !== '') {
+            citacaoComoMensagem.push({
+              de: 'loja',
+              texto: `(mensagem que o cliente CITOU/respondeu) ${citada}`,
+            });
+          }
+          for (const v of vizinhos) {
+            citacaoComoMensagem.push({
+              de: v.de,
+              texto: `(contexto da mensagem citada) ${v.texto}`,
+            });
+          }
+        }
         const jaNoHistorico = new Set(historico.map((m) => `${m.de}\u0000${m.texto}`));
         const ultimasMensagens = [
           ...citacaoComoMensagem,
