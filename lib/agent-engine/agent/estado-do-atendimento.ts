@@ -58,9 +58,11 @@ export function renderBlocoDeEstado(input: EstadoDoAtendimentoInput): string {
 
   if (input.escolhida !== null) {
     const detalhe = [input.escolhida.ano, input.escolhida.cor].filter(Boolean).join(', ');
+    // Só o FATO aqui. A REGRA ("não ofereça outras / conduza o fechamento") é do
+    // bloco "Moto já escolhida — TRAVADA" (`inbound-turn.ts`), que tem as exceções
+    // completas. Repetir a ordem aqui era duplicação (medido 2026-10-06).
     linhas.push(
-      `- Moto escolhida pelo cliente: ${input.escolhida.nome}${detalhe ? ` (${detalhe})` : ''}. ` +
-        'NÃO ofereça outras motos nem reabra a escolha — conduza ao fechamento (forma de pagamento e o que falta).',
+      `- Moto escolhida pelo cliente: ${input.escolhida.nome}${detalhe ? ` (${detalhe})` : ''}.`,
     );
   } else if (input.motoEmFoco !== null && input.motoEmFoco !== undefined) {
     // Sem escolha travada, mas há uma moto EM FOCO (o cliente pediu/consultou uma

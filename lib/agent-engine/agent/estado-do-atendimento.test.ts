@@ -16,13 +16,14 @@ describe('renderBlocoDeEstado', () => {
     );
   });
 
-  it('declara a moto escolhida com a trava de não oferecer outra', () => {
+  it('declara a moto escolhida (o fato; a regra fica no bloco TRAVADA)', () => {
     const bloco = renderBlocoDeEstado({
       contact: { name: null, custom_fields: {} },
       escolhida: TWISTER,
     });
     expect(bloco).toContain('Moto escolhida pelo cliente: CB 300 F Twister (2025, Vermelho)');
-    expect(bloco).toContain('NÃO ofereça outras motos');
+    // Sem duplicar a regra que já vive no bloco "Moto já escolhida — TRAVADA".
+    expect(bloco).not.toContain('conduza ao fechamento');
   });
 
   it('lê de volta os dados do contato (CPF/nascimento inclusos) — não reperguntar', () => {
