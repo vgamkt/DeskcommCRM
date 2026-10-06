@@ -6208,10 +6208,12 @@ async function executarTurnoDoAgente(
         ? `## Moto já escolhida — TRAVADA\nO cliente JÁ escolheu: ${catalogoDaConversa.escolhida.nome}. Conduza o fechamento DESSA moto (pagamento, troca ou visita) e confirme detalhes dela. NÃO apresente nem LISTE outras motos (nem por texto). Só ofereça/troque de moto se UMA destas for verdadeira: (a) o cliente pedir EXPLICITAMENTE outra moto ou "ver outras opções"; (b) houver objeção sobre a escolhida E as possibilidades dela se esgotarem; (c) o cliente citar/pedir uma moto específica pelo nome. Fora disso, foque SÓ na escolhida.`
         : '',
       // ── CLARIFICAÇÃO: não entendi QUAL moto → PERGUNTE por escrito ─────────
-      // O cliente falou de uma moto (áudio/texto) mas o motor NÃO travou escolha:
-      // pode estar ambíguo. Em vez de despejar imagens/várias motos "adivinhando",
-      // faça UMA pergunta por escrito, clara e simpática. Vale para QUALQUER dúvida:
-      // se não entendeu, pergunte antes de concluir (dono, 2026-10-06).
+      // SÓ DEPOIS de já ter apresentado motos (o cliente está TENTANDO ESCOLHER
+      // algo ambíguo). Num PEDIDO inicial ("Cb 250") NÃO pergunta — apresenta o
+      // que a Jev decidiu (o acolhimento explica; medido 2026-10-06: o bloco
+      // disparava num pedido e "comia" o acolhimento). Vale para áudio e texto
+      // (a condição usa `currentInboundText`, que no áudio já é a transcrição).
+      catalogoDaConversa.motos.length > 0 &&
       mencionaMoto(currentInboundText ?? '') &&
       preEscolhaDescricao === undefined &&
       catalogoDaConversa.escolhida === null
