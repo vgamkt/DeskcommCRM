@@ -26,7 +26,11 @@ export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasD
       instructions:
         'Dentre as motos abaixo, qual o cliente ESCOLHEU/gostou nesta mensagem? Só marque uma moto se ' +
         'o cliente demonstrou a escolha ("gostei dessa", "quero essa", "essa mesmo"). Se foi pergunta, ' +
-        'objeção ou não houve escolha, responda "nenhuma".',
+        'objeção ou não houve escolha, responda "nenhuma". ' +
+        'AMBIGUIDADE: se a mensagem aponta para MAIS DE UMA moto da lista — ex.: o cliente diz "gostei da ' +
+        '300" e há DUAS 300 (CB 300 R e CB 300 R FLEX), ou "a preta" quando há várias pretas — responda ' +
+        '"nenhuma". NÃO escolha uma no lugar dele: é ambíguo e o sistema vai PERGUNTAR qual ele quer. ' +
+        'Só marque uma moto quando a mensagem apontar para UMA só (nome/versão específicos ou citação única).',
       criteria,
     },
   };
