@@ -298,6 +298,29 @@ export async function salvarCatalogoDaConversa(
         }),
       ],
     );
+    // Espelha a escolha no CADASTRO (`contacts.custom_fields.moto_interesse`) —
+    // visível no CRM e SUBSTITUÍVEL: a cada nova escolha, sobrescreve (jsonb_set
+    // com `true`). Best-effort: falha aqui não derruba o estado da conversa.
+    if (escolhidaFinal !== null) {
+      try {
+        await db.query(
+          `update contacts c
+              set custom_fields = jsonb_set(
+                    coalesce(c.custom_fields, '{}'::jsonb),
+                    '{moto_interesse}',
+                    to_jsonb($3::text),
+                    true
+                  ),
+                  updated_at = now()
+             from conversations v
+            where v.organization_id = $1 and v.id = $2
+              and c.id = v.contact_id and c.organization_id = $1`,
+          [organizationId, conversationId, escolhidaFinal.nome],
+        );
+      } catch {
+        // best-effort
+      }
+    }
   } catch {
     // silencioso de propósito: memória de apresentação é best-effort.
   }
