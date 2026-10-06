@@ -34,6 +34,8 @@ import { aplicarEdicaoZernio, ingestZernioInbound } from "./zernio/ingest";
 import { lerEnvelopeZernio } from "./zernio/envelope";
 import { parseZernioEdicao, verifyZernioSignature } from "./zernio/webhook";
 import type { ChannelProvider } from "./types";
+import { enviarHandoffPorLentidao } from "@/lib/agent-engine/agent/handoff-por-lentidao";
+import { logger } from "@/lib/logger";
 
 /** Curto demais para ser segredo — placeholder ou lixo de decrypt. */
 const MIN_SECRET_LEN = 16;
@@ -276,6 +278,16 @@ async function datafyInbound(
         .update({ status: e.status === "failed" ? "failed" : "sent", updated_at: agora })
         .eq("organization_id", input.session.organization_id)
         .eq("external_id", e.externalId);
+      // ENTREGA RECUSADA pelo canal (ex.: 131042 — pendência de pagamento da WABA):
+      // o cliente NÃO recebeu. AVISA o responsável (o turno "deu certo" mas o
+      // WhatsApp recusou — antes isso ficava só como `status=failed`, mudo).
+      if (e.status === "failed") {
+        await alertarEnvioFalhou(admin, input.session, {
+          externalId: e.externalId,
+          errorCode: e.errorCode,
+          errorTitle: e.errorTitle,
+        });
+      }
       desfechos.push("status");
       continue;
     }
@@ -285,4 +297,53 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * AVISA o responsável quando o CANAL recusa a entrega (status `failed`). O turno
+ * pode ter "dado certo" (resposta gerada), mas o WhatsApp recusou — sem isto o
+ * cliente fica sem resposta e ninguém sabe. Best-effort (nunca derruba o webhook).
+ */
+async function alertarEnvioFalhou(
+  admin: SupabaseClient,
+  session: { id: string; organization_id: string },
+  e: { externalId: string; errorCode: number | null; errorTitle: string | null },
+): Promise<void> {
+  try {
+    const { data: msg } = await admin
+      .from("messages")
+      .select("conversation_id, contact_id")
+      .eq("organization_id", session.organization_id)
+      .eq("external_id", e.externalId)
+      .maybeSingle();
+    const m = msg as { conversation_id?: string; contact_id?: string } | null;
+    if (!m?.conversation_id) return;
+
+    const { data: ag } = await admin
+      .from("ai_agents")
+      .select("id")
+      .eq("organization_id", session.organization_id)
+      .not("published_version_id", "is", null)
+      .is("archived_at", null)
+      .order("priority", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    await enviarHandoffPorLentidao(null, {
+      tenantId: session.organization_id,
+      channelSessionId: session.id,
+      notificationNumber: null,
+      agentId: (ag as { id?: string } | null)?.id ?? null,
+      conversationId: m.conversation_id,
+      contactId: m.contact_id ?? null,
+      tentativas: 0,
+      motivo: 'envio_falhou',
+      causa: [e.errorCode, e.errorTitle].filter(Boolean).join(' ') || 'o canal recusou a entrega',
+      log: logger as never,
+    });
+  } catch (err) {
+    logger.warn('[inbound] falha ao avisar envio recusado (best-effort)', {
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
 }

@@ -46,6 +46,9 @@ export function explicarCausa(causa: string | null | undefined): string {
   if (/429|rate limit|limite de uso/.test(c)) {
     return 'limite de uso do provedor de IA atingido';
   }
+  if (/131042|payment|pagamento|billing|faturamento|currency|moeda|eligibility/.test(c)) {
+    return 'a conta do WhatsApp Business está com pendência de pagamento/faturamento (verifique o cartão no Meta)';
+  }
   if (/50[0-9]|overloaded|fetch failed|econnreset|econnrefused|network/.test(c)) {
     return 'instabilidade de rede/provedor de IA';
   }
@@ -100,7 +103,7 @@ export async function enviarHandoffPorLentidao(
      * Contexto do aviso (mesma frase no WhatsApp). Default = lentidão do modelo;
      * o encaminhamento por negociação (cliente negou as opções) reusa o canal.
      */
-    motivo?: 'lentidao' | 'negociacao' | 'sem_resposta';
+    motivo?: 'lentidao' | 'negociacao' | 'sem_resposta' | 'envio_falhou';
     /** Erro que causou a falha (ex.: mensagem da exceção do turno). Vai no aviso. */
     causa?: string | null;
     log: Logger;
@@ -208,7 +211,12 @@ export async function enviarHandoffPorLentidao(
             `Número não respondido: ${quem}.\n` +
             `Motivo: ${causa}.\n` +
             `Assuma a conversa para responder o cliente.`
-          : `⚠️ Atendimento sem resposta automática\n` +
+          : args.motivo === 'envio_falhou'
+            ? `⚠️ NÃO consegui ENTREGAR a mensagem ao cliente\n` +
+              `Número: ${quem}.\n` +
+              `Motivo: ${causa}.\n` +
+              `O cliente NÃO recebeu a resposta — assuma a conversa e responda manualmente.`
+            : `⚠️ Atendimento sem resposta automática\n` +
             `Número não respondido: ${quem}.\n` +
             `Motivo: ${causa} (após ${args.tentativas} tentativa(s)).\n` +
             `Assuma a conversa para responder o cliente.`;
