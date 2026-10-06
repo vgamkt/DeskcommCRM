@@ -503,19 +503,31 @@ export async function motoEscolhidaPeloClienteComJev(
   const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
   if (candidatas.length < 2) return undefined; // 0/1 candidata: a determinística já bastava
 
+  // RÓTULO com os ATRIBUTOS (ano, cor, cilindrada, km) — a Jev precisa deles para
+  // casar o que o cliente disse ("a 2015", "a preta", "a 300 F") com a candidata.
+  // Só o NOME não basta: "dinâmico" pode ser qualquer atributo (dono, 2026-10-06).
+  const rotulo = (m: MotoDoCatalogo): string => {
+    const extras = [m.ano, m.cor, m.cilindrada, m.quilometragem].filter(
+      (v): v is string => typeof v === 'string' && v.trim() !== '',
+    );
+    return extras.length > 0 ? `${m.nome} (${extras.join(', ')})` : m.nome;
+  };
+  const rotulos = candidatas.map(rotulo);
+
   const decisao = await decidir({
     alvos,
     state: {
       cliente: textoDoCliente,
       citado: textoCitado,
       modelo: textoDoModelo,
-      candidatas: candidatas.map((m) => m.nome),
+      candidatas: rotulos,
     },
-    questions: perguntaDeMotoEscolhidaJev(candidatas.map((m) => m.nome)),
+    questions: perguntaDeMotoEscolhidaJev(rotulos),
     perguntasObrigatorias: ['moto'],
   });
   if (decisao === null) return undefined;
-  const nome = motoEscolhidaDaRespostaDeJev(decisao.respostas);
-  if (nome === null) return undefined;
-  return candidatas.find((m) => m.nome === nome);
+  const escolhido = motoEscolhidaDaRespostaDeJev(decisao.respostas);
+  if (escolhido === null) return undefined;
+  const idx = rotulos.indexOf(escolhido);
+  return idx >= 0 ? candidatas[idx] : undefined;
 }
