@@ -351,25 +351,23 @@ export const AGENT_TOOL_DEFS = {
   send_message: {
     description:
       'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
-      'Para FOTO(S), preencha media_urls com uma ou mais URLs e use body como LEGENDA — a legenda vai SÓ na primeira foto; as demais saem sem legenda. ' +
-      'APRESENTAR MOTOS DO CATÁLOGO: escreva em `body` a abertura SEM citar/ listar as motos + a pergunta final, e preencha `motos` com os nomes exatos. ' +
+      'NÃO envie fotos e NÃO MENCIONE fotos ("seguem as fotos", "veja a foto", "olha a imagem"): quem envia as fotos das motos é o SISTEMA, automaticamente. Escreva só o TEXTO (abertura + pergunta), sem falar de foto. ' +
+      'APRESENTAR MOTOS DO CATÁLOGO: escreva em `body` a abertura SEM citar/listar as motos + a pergunta final, e preencha `motos` com os nomes exatos. ' +
       'O sistema envia a foto de CADA moto com a legenda dela (nome/ano, cor, km, preço) entre o seu texto de abertura e a sua pergunta final.',
     inputSchema: z.object({
       body: z
         .string()
         .min(1)
-        .describe('texto da mensagem (ou a legenda da 1ª foto), em pt-br, pronto para envio'),
+        .describe('texto da mensagem, em pt-br, pronto para envio (NÃO mencione fotos)'),
       media_urls: z
         .array(z.string().min(1))
         .max(10)
         .optional()
-        .describe(
-          'URLs das imagens a enviar EM SEQUÊNCIA (ex.: as 5 fotos de uma moto). A legenda (body) vai só na 1ª.',
-        ),
+        .describe('NÃO USE — quem envia as fotos das motos é o sistema. Deixe vazio.'),
       media_url: z
         .string()
         .optional()
-        .describe('URL de UMA imagem (compatibilidade). Prefira media_urls para várias.'),
+        .describe('NÃO USE — quem envia as fotos das motos é o sistema. Deixe vazio.'),
       motos: z
         .array(z.string().min(1))
         .max(10)
