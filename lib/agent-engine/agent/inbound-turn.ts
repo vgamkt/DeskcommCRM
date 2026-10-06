@@ -4537,6 +4537,16 @@ async function executarTurnoDoAgente(
                 pedeMotoExplicito(mensagemDoJob ?? '') ||
                 motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0,
             });
+            // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
+            // motor EXECUTA (filtra/ordena). Registra os dois lados.
+            runLog.info('apresentação: decisão da Jev → motos (antes/depois)', {
+              antes: {
+                hipoteses: hipotesesDoTurno.map((h) => h.nome ?? '?'),
+                exigidos: exigidosDoTurno,
+                principal: principalDoTurno,
+              },
+              depois: { motos: selecao.motos.map((m) => m.nome), filtrados: selecao.filtrados },
+            });
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no
               // catálogo da conversa: sem isso a ESCOLHA do cliente no turno
