@@ -350,10 +350,10 @@ export function criteriosDaRespostaDeJev(
     faixas[marcaCol] = [marcaResp.choice];
   }
 
-  const hipoteses: HipoteseDeMoto[] = [];
-  e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
-    const resp = respostas[`parecida_${i}`];
-    if (!ehVerdadeiro(resp)) return;
+  const comoHipotese = (
+    m: { nome: string; valores?: Record<string, string> },
+    score?: number,
+  ): HipoteseDeMoto => {
     const hip: HipoteseDeMoto = { nome: m.nome };
     for (const col of e.colunas) {
       const v = m.valores?.[col];
@@ -361,9 +361,33 @@ export function criteriosDaRespostaDeJev(
     }
     // O "passo extra": guarda a NOTA (0–1) que a Jev deu à candidata, para o
     // motor ORDENAR por ela (maior primeiro) — não só pelo sim/não.
-    if (resp?.type === 'noul' && typeof resp.noul === 'number') hip.score = resp.noul;
-    hipoteses.push(hip);
+    if (typeof score === 'number') hip.score = score;
+    return hip;
+  };
+
+  const notaDa = (i: number): number => {
+    const resp = respostas[`parecida_${i}`];
+    return resp?.type === 'noul' && typeof resp.noul === 'number' ? resp.noul : 0;
+  };
+
+  const hipoteses: HipoteseDeMoto[] = [];
+  e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
+    if (!ehVerdadeiro(respostas[`parecida_${i}`])) return;
+    hipoteses.push(comoHipotese(m, notaDa(i)));
   });
+
+  // A Jev NÃO pode devolver VAZIO quando pontuou (dono, 2026-10-06): se nenhuma
+  // passou do limiar, mantém as MELHORES pela própria nota dela (top 3). Assim o
+  // motor sempre tem a decisão da Jev e não cai no ranking geral por texto.
+  if (hipoteses.length === 0) {
+    const top = e.estoque
+      .slice(0, MAX_MOTOS_HIPOTESES)
+      .map((m, i) => ({ m, score: notaDa(i) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+    for (const x of top) hipoteses.push(comoHipotese(x.m, x.score));
+  }
 
   return { intencao, criterios: {}, hipoteses, faixas, principal, exigidos };
 }
