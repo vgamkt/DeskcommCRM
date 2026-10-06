@@ -57,7 +57,7 @@ describe("criteriosDaRespostaDeJev", () => {
     expect(c.faixas.preco).toEqual({ min: 10500, max: 26000 });
     expect(c.faixas.cilindrada).toEqual({ min: 113, max: 325 });
     expect(c.hipoteses).toEqual([
-      { nome: "Honda CB 300", preco: "14990", cilindrada: "293.5", marca: "Honda" },
+      { nome: "Honda CB 300", preco: "14990", cilindrada: "293.5", marca: "Honda", score: 0.8 },
     ]);
     expect(c.criterios).toEqual({});
   });

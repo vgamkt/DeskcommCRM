@@ -222,7 +222,7 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       // cliente PEDE UMA MARCA por si, a marca É o filtro — o motor casa a marca
       // pelas hipóteses, então marcar moto de OUTRA marca como parecida anula o
       // filtro e mistura concorrentes. Nesse caso, só a MESMA marca é parecida.
-      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Julgue pelo CONJUNTO dos atributos que ele pediu (nome/modelo/família, cilindrada, ano, preço, cor, marca): marque SIM quando a moto combina a MAIORIA deles. A CILINDRADA pesa um pouco MAIS que os demais. cor/marca só pesam se o cliente pediu; quando ele pediu PREÇO, moto de preço equivalente também conta. PESOS: (1) quando o cliente NÃO especificou marca, preço, cor nem outro atributo à parte, a CILINDRADA é o critério que MAIS pesa — moto de cilindrada próxima (±30%) conta como PARECIDA, mesmo de OUTRA marca (ex.: quer "250" → a Yamaha XMax 250 conta). (2) Se o cliente deu FILTROS COMBINADOS (ex.: "CB 2025" = modelo + ano; "Honda 300" = marca + cilindrada; "CB 300 preta" = modelo + cor), a moto que casa a COMBINAÇÃO INTEIRA é MUITO mais parecida que a que casa só UMA parte. IMPORTANTE: NÃO existe match EXATO? Mesmo assim marque SIM para as motos MAIS SEMELHANTES (as que mais combinam com o conjunto pedido) — NUNCA marque NÃO para TODAS; sempre deixe as top como SIM; na dúvida, responda SIM. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca — qualquer marca pode servir. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só marque SIM para motos DESSA MESMA marca. "${m.nome}"`,
+      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Dê uma NOTA de 0 a 1 de semelhança (assimile o CONJUNTO do que ele pediu — nome/modelo/família, cilindrada COM MARGEM, ano, preço, categoria, potência — mas NÃO pontue por COR, cor não ordena). 1 = combina quase tudo; 0,7 = combina a maioria; 0,5 = combina em parte/próximo (ex.: cilindrada perto ±30%); 0 = não combina quase nada. A CILINDRADA pesa um pouco MAIS. PESOS: (1) quando o cliente NÃO especificou marca, preço, cor nem outro atributo à parte, a CILINDRADA é o critério que MAIS pesa — moto de cilindrada próxima (±30%) conta como PARECIDA, mesmo de OUTRA marca (ex.: quer "250" → a Yamaha XMax 250 conta). (2) FILTROS COMBINADOS (ex.: "CB 2025" = modelo + ano; "Honda 300" = marca + cilindrada) — a moto que casa a COMBINAÇÃO INTEIRA é MUITO mais parecida. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só dê nota alta (>0) para motos DESSA MESMA marca. "${m.nome}"`,
     };
   });
 
@@ -352,12 +352,16 @@ export function criteriosDaRespostaDeJev(
 
   const hipoteses: HipoteseDeMoto[] = [];
   e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
-    if (!ehVerdadeiro(respostas[`parecida_${i}`])) return;
+    const resp = respostas[`parecida_${i}`];
+    if (!ehVerdadeiro(resp)) return;
     const hip: HipoteseDeMoto = { nome: m.nome };
     for (const col of e.colunas) {
       const v = m.valores?.[col];
       if (typeof v === 'string' && v.trim() !== '') hip[col] = v.trim();
     }
+    // O "passo extra": guarda a NOTA (0–1) que a Jev deu à candidata, para o
+    // motor ORDENAR por ela (maior primeiro) — não só pelo sim/não.
+    if (resp?.type === 'noul' && typeof resp.noul === 'number') hip.score = resp.noul;
     hipoteses.push(hip);
   });
 

@@ -375,6 +375,20 @@ export function pontuarPorCriterios(
  * Quem não casa nada NÃO entra. Lista vazia = filtro ignorado (o chamador cai no
  * ranking) — nunca zera a resposta forçadamente.
  */
+/** A NOTA da JEV (0–1) para uma candidata: a maior entre as hipóteses cujo NOME casa. */
+function notaDaJev(moto: MotoDoCatalogo, hipoteses: readonly HipoteseDeMoto[]): number {
+  const nome = normalizarNomeDeMoto(moto.nome);
+  let nota = 0;
+  for (const h of hipoteses) {
+    if (typeof h.score !== 'number') continue;
+    const alvo = normalizarNomeDeMoto(typeof h.nome === 'string' ? h.nome : '');
+    if (alvo !== '' && (nome === alvo || nome.includes(alvo) || alvo.includes(nome))) {
+      nota = Math.max(nota, h.score);
+    }
+  }
+  return nota;
+}
+
 export function filtrarPorHipoteses(
   candidatos: readonly MotoDoCatalogo[],
   hipoteses: readonly HipoteseDeMoto[],
@@ -388,9 +402,16 @@ export function filtrarPorHipoteses(
   const temFaixas = Object.keys(faixas).length > 0;
   if (!temHipoteses && !temFaixas) return [];
   return candidatos
-    .map((moto, i) => ({ moto, i, ...pontuarPorCriterios(moto, hipoteses, faixas, toleranciaPct, principal) }))
-    .filter((x) => x.pontos > 0)
-    .sort((a, b) => b.pontos - a.pontos || a.i - b.i)
+    .map((moto, i) => ({
+      moto,
+      i,
+      ...pontuarPorCriterios(moto, hipoteses, faixas, toleranciaPct, principal),
+      nota: notaDaJev(moto, hipoteses),
+    }))
+    .filter((x) => x.pontos > 0 || x.nota > 0)
+    // PASSO EXTRA (dono, 2026-10-06): a ORDEM é a NOTA da Jev (ela assimila o
+    // conjunto, sem cor); os pontos determinísticos desempatam.
+    .sort((a, b) => b.nota - a.nota || b.pontos - a.pontos || a.i - b.i)
     .map((x) => x.moto);
 }
 

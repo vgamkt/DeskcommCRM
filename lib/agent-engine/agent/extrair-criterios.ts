@@ -51,7 +51,13 @@ export interface HipoteseDeMoto {
   categoria?: string;
   cilindrada?: string;
   preco?: string;
-  [coluna: string]: string | undefined;
+  /**
+   * NOTA de semelhança da JEV (0–1) para esta candidata — o "passo extra":
+   * a Jev assimila o conjunto (o que a moto tem em comum/próximo do pedido,
+   * SEM cor) e dá a nota. O motor ordena por ela (maior primeiro).
+   */
+  score?: number;
+  [coluna: string]: string | number | undefined;
 }
 
 /** Faixa/intervalo aceitável por coluna (ex.: cilindrada 125–300). */
