@@ -211,16 +211,18 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
   e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
     perguntas[`parecida_${i}`] = {
       type: 'noul',
-      // Julgamento por TODOS os atributos relevantes, com PESO IGUAL — nome/
-      // modelo/família, cilindrada, potência, categoria/tipo — e cor/marca/preço
-      // só quando o cliente pediu. A FAMÍLIA do nome (ex.: "CB") conta, mas NÃO
-      // é obrigatória nem excludente; NÃO exclua por marca. Na dúvida, sim.
+      // Julgamento por TODOS os atributos relevantes — cor/marca/preço só quando o
+      // cliente pediu. PESO: a CILINDRADA pesa mais quando não há outro filtro
+      // (moto de cc próxima conta, mesmo de outra marca — dono, 2026-10-06), e os
+      // FILTROS COMBINADOS ("CB 2025" = modelo+ano) pesam mais que uma parte só.
+      // A FAMÍLIA do nome (ex.: "CB") conta, mas NÃO é obrigatória nem excludente;
+      // NÃO exclua por marca. Na dúvida, sim.
       //
       // EXCEÇÃO (2026-10-05, medido: "quero uma Honda" trazia Yamaha): quando o
       // cliente PEDE UMA MARCA por si, a marca É o filtro — o motor casa a marca
       // pelas hipóteses, então marcar moto de OUTRA marca como parecida anula o
       // filtro e mistura concorrentes. Nesse caso, só a MESMA marca é parecida.
-      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Julgue por TODOS os atributos relevantes com PESO IGUAL (nome/modelo/família, cilindrada, potência, categoria/tipo); cor, marca e preço só pesam se o cliente pediu. Família do nome igual (ex.: "CB") conta, mas NÃO é obrigatória nem excludente. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca — qualquer marca pode servir; na dúvida, responda SIM. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só marque SIM para motos DESSA MESMA marca. "${m.nome}"`,
+      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Julgue por TODOS os atributos relevantes; cor, marca e preço só pesam se o cliente pediu. PESOS: (1) quando o cliente NÃO especificou marca, preço, cor nem outro atributo à parte, a CILINDRADA é o critério que MAIS pesa — moto de cilindrada próxima (±30%) conta como PARECIDA, mesmo de OUTRA marca (ex.: quer "250" → a Yamaha XMax 250 conta como parecida). (2) Se o cliente deu FILTROS COMBINADOS (ex.: "CB 2025" = modelo + ano; "Honda 300" = marca + cilindrada; "CB 300 preta" = modelo + cor), a moto que casa a COMBINAÇÃO INTEIRA é MUITO mais parecida que a que casa só UMA parte — some os filtros e marque SIM com prioridade. Fora (1) e (2), os atributos relevantes pesam igual. Família do nome igual (ex.: "CB") conta, mas NÃO é obrigatória nem excludente. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca — qualquer marca pode servir; na dúvida, responda SIM. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só marque SIM para motos DESSA MESMA marca. "${m.nome}"`,
     };
   });
 

@@ -113,13 +113,14 @@ describe("potência (atributo-chave) e marca", () => {
     expect(String(q["exigidos_marca"]?.instructions)).toMatch(/DENTRO do nome/i);
   });
 
-  it("a hipótese 'parecida' pesa TODOS os atributos igualmente e NÃO exclui por marca", () => {
+  it("a hipótese 'parecida' dá peso maior à CILINDRADA (sem outro filtro) e aos FILTROS COMBINADOS, e NÃO exclui por marca", () => {
     const q = perguntaDeCriteriosDeJev({
       colunas: ["categoria"],
       estoque: [{ nome: "Honda CB 300" }],
     });
     const instrucao = String(q["parecida_0"]?.instructions);
-    expect(instrucao).toMatch(/PESO IGUAL/i);
+    expect(instrucao).toMatch(/CILINDRADA é o critério que MAIS pesa/i);
+    expect(instrucao).toMatch(/FILTROS COMBINADOS/i);
     expect(instrucao).toMatch(/NUNCA exclua por marca/i);
   });
 });
