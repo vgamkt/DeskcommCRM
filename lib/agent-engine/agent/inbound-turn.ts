@@ -6161,8 +6161,8 @@ async function executarTurnoDoAgente(
      * — usado pelas contingências (turno sem resposta / modelo esgotado). Best-effort:
      * nunca lança. No preview não envia. Devolve `true` se saiu.
      */
-    const enviarTextoDoMotor = async (texto: string): Promise<boolean> => {
-      if (preview || texto.trim() === '' || seq >= maxSendsPerTurn) return false;
+    const enviarTextoDoMotor = async (texto: string): Promise<'sent' | 'neutro' | 'falhou'> => {
+      if (preview || texto.trim() === '' || seq >= maxSendsPerTurn) return 'falhou';
       const tentar = async (corpo: string): Promise<boolean> => {
         const r = await runBeforeSend({
           pool,
@@ -6206,23 +6206,22 @@ async function executarTurnoDoAgente(
         return r.status === 'sent';
       };
       try {
-        if (await tentar(texto)) return true;
+        if (await tentar(texto)) return 'sent';
         // A régua VETOU o texto (ex.: nota interna do modelo). NUNCA mandar o texto
         // barrado: cai na contingência neutra, para o cliente não ficar mudo.
-        const NEUTRO =
-          TEXTO_ATENDIMENTO_HUMANO;
+        const NEUTRO = TEXTO_ATENDIMENTO_HUMANO;
         if (texto.trim() !== NEUTRO && seq < maxSendsPerTurn) {
           if (await tentar(NEUTRO)) {
             runLog.warn('contingência do motor: texto vetado pela régua — mandei o neutro', {});
-            return true;
+            return 'neutro';
           }
         }
-        return false;
+        return 'falhou';
       } catch (err) {
         runLog.warn('envio de contingência falhou — o turno segue', {
           error: err instanceof Error ? err.message.slice(0, 120) : String(err),
         });
-        return false;
+        return 'falhou';
       }
     };
 
@@ -6292,7 +6291,7 @@ async function executarTurnoDoAgente(
       const saiu = await enviarTextoDoMotor(
         TEXTO_ATENDIMENTO_HUMANO,
       );
-      if (saiu) runLog.info('modelo esgotou — mensagem de contingência enviada ao cliente');
+      if (saiu === 'sent') runLog.info('modelo esgotou — mensagem de contingência enviada ao cliente');
       return;
     }
 
@@ -6891,47 +6890,56 @@ async function executarTurnoDoAgente(
       );
     }
 
-    // ── NUNCA TERMINAR SEM RESPOSTA (ESTRUTURAL) ────────────────────────────
-    // O turno rodou e é inbound, mas o modelo NÃO enviou pelo canal (não chamou
-    // `send_message`). O motor NÃO encaminha o TEXTO LIVRE do modelo ao cliente:
-    // ele pode ser uma anotação interna ("Já respondi ao…, aguardo a resposta
-    // dele") — medido em produção 2026-10-05, quando o texto vazou para o cliente.
-    // Aqui é ESTRUTURAL, não detecção de frase: texto livre do modelo nunca vira
-    // fala do cliente. O motor RECONHECE a anomalia, REMONTA uma resposta segura
-    // (contingência da negociação ou neutra) e AVISA o responsável.
+    // ── NUNCA TERMINAR SEM RESPOSTA ─────────────────────────────────────────
+    // O turno rodou e é inbound, mas o modelo NÃO enviou pela ferramenta — o
+    // modelo lite às vezes escreve a resposta como TEXTO (ignora o `send_message`).
+    // O texto dele passa pela RÉGUA (vocabulário interno + NOTA INTERNA):
+    //   - passou  → é a resposta legítima; sai;
+    //   - vetado  → o cliente recebe a contingência NEUTRA e o responsável é avisado.
+    // É o que o dono pediu: o motor NÃO deixa vazar nota interna, RECONHECE a
+    // anomalia, REMONTA uma resposta segura e AVISA — sem descartar resposta boa.
     if (
       !preview &&
       liveJob().kind === 'inbound_turn' &&
       outcomes.length === 0 &&
       seq < maxSendsPerTurn
     ) {
-      const teveTextoLivre = (turn.result.text ?? '').trim() !== '';
+      const textoDoModelo = (turn.result.text ?? '').trim();
       const negociacao = (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '').trim();
       const texto =
-        negociacao !== ''
-          ? negociacao
-          : TEXTO_ATENDIMENTO_HUMANO;
-      const saiu = await enviarTextoDoMotor(texto);
-      if (saiu) {
-        runLog.info('turno sem envio do modelo — contingência segura enviada ao cliente', {
-          chars: texto.length,
-          tinha_texto_livre: teveTextoLivre,
+        textoDoModelo !== ''
+          ? textoDoModelo
+          : negociacao !== ''
+            ? negociacao
+            : TEXTO_ATENDIMENTO_HUMANO;
+      const desfecho = await enviarTextoDoMotor(texto);
+      if (desfecho === 'sent') {
+        runLog.info('turno sem envio pela ferramenta — resposta do modelo passou pela régua e saiu', {
+          tinha_texto_livre: textoDoModelo !== '',
         });
+      } else {
+        // 'neutro' (texto vetado) ou 'falhou': o cliente NÃO recebeu a resposta do
+        // modelo. AVISA o responsável (com a causa) — o cliente recebeu a neutra.
+        runLog.warn(
+          'turno sem envio pela ferramenta — resposta do modelo não saiu; aviso ao responsável',
+          { desfecho },
+        );
+        await enviarHandoffPorLentidao(pool, {
+          tenantId,
+          channelSessionId: input.channelSessionId,
+          notificationNumber: null,
+          agentId: agentConfig?.agentId ?? null,
+          conversationId: input.conversationId,
+          contactId: leadId || null,
+          tentativas: 0,
+          motivo: 'sem_resposta',
+          causa:
+            desfecho === 'neutro'
+              ? 'a resposta do modelo foi vetada pela régua (nota interna ou vocabulário interno)'
+              : 'o modelo não enviou resposta ao cliente neste turno (não chamou a ferramenta de envio)',
+          log: runLog,
+        }).catch(() => {});
       }
-      // AVISA o responsável: o turno não produziu envio pelo canal (anomalia).
-      await enviarHandoffPorLentidao(pool, {
-        tenantId,
-        channelSessionId: input.channelSessionId,
-        notificationNumber: null,
-        agentId: agentConfig?.agentId ?? null,
-        conversationId: input.conversationId,
-        contactId: leadId || null,
-        tentativas: 0,
-        motivo: 'sem_resposta',
-        causa:
-          'o modelo não enviou resposta ao cliente neste turno (não chamou a ferramenta de envio)',
-        log: runLog,
-      }).catch(() => {});
     }
 
     runLog.info('turno do agente concluído', {
