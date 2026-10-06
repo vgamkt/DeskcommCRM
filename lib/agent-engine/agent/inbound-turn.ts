@@ -4080,6 +4080,17 @@ async function executarTurnoDoAgente(
         // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
         // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
         // C-107: preço sem valor / pedido vago → nenhuma foto sai neste turno (só a pergunta).
+        //
+        // MOTOR É O DONO DAS FOTOS DO CATÁLOGO: o modelo NÃO manda foto de moto do
+        // catálogo por `media_urls` — nesse caminho a legenda sai SÓ na 1ª (as
+        // demais viram bolhas vazias) e fura o formato do dono. As fotos do catálogo
+        // saem SEMPRE pela apresentação do motor (1 foto por moto, cada uma com a
+        // legenda dela) ou pelas fotos da moto ESCOLHIDA. Removemos do `media_urls`
+        // as URLs que são de moto do catálogo; fotos que NÃO são do catálogo seguem.
+        const fotosDoCatalogoConhecidas = new Set<string>();
+        for (const m of [...catalogoDoTurno, ...catalogoDaConversa.motos]) {
+          for (const f of m.fotos) fotosDoCatalogoConhecidas.add(f);
+        }
         const fotosDeclaradas = perguntaDeFaltaTurno
           ? []
           : [
@@ -4089,7 +4100,7 @@ async function executarTurnoDoAgente(
                   .map((s) => s.trim())
                   .filter((s) => /^https?:\/\//i.test(s)),
               ),
-            ];
+            ].filter((s) => !fotosDoCatalogoConhecidas.has(s));
         // FOTO QUE O MODELO ESQUECEU (formato do dono, 2026-09-19): se ele NÃO
         // mandou mídia mas citou no texto motos que `crm_query_external_data`
         // devolveu neste turno, o motor manda o TEXTO dele (mensagem inicial +
