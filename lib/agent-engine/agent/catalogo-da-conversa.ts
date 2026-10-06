@@ -418,6 +418,49 @@ function bloqueiaEscolha(texto: string): boolean {
 }
 
 /**
+ * A mensagem do cliente (ou a CITADA) faz REFERÊNCIA a alguma moto mostrada?
+ * (nome/trecho do nome, ano ou cor de alguma candidata).
+ *
+ * ─── TRAVA ESTRUTURAL contra "escolha inventada" (medido ao vivo 2026-10-06) ──
+ * `bloqueiaEscolha` só barra pergunta/objeção; TODO o resto passava e a Jev era
+ * consultada — e ela "escolhia" uma moto para "Sao paulo" (resposta de CIDADE) e
+ * para "Gostei" (afirmação sem alvo). Sem esta trava, uma fala qualquer travava
+ * `escolhida` e o agente passava a dizer "a moto que você escolheu" — coisa que o
+ * cliente NUNCA disse. Sem referência a uma moto, NÃO é escolha.
+ */
+export function temReferenciaAMoto(
+  textoDoCliente: string,
+  textoCitado: string,
+  candidatas: readonly MotoDoCatalogo[],
+): boolean {
+  if (candidatas.length === 0) return false;
+  const texto = textoCitado === '' ? textoDoCliente : `${textoDoCliente} ${textoCitado}`;
+  // (1) nome (maximal) de alguma candidata no cliente/na citação.
+  if (citadasMaximais(texto, candidatas).length > 0) return true;
+  // (2) trecho do nome: todos os termos significativos citados caem no nome de alguma.
+  const tokens = normalizarNomeDeMoto(textoDoCliente)
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !PALAVRAS_NAO_NOME.has(t));
+  if (
+    tokens.length > 0 &&
+    candidatas.some((m) => tokens.every((t) => normalizarNomeDeMoto(m.nome).includes(t)))
+  ) {
+    return true;
+  }
+  // (3) ano citado bate com alguma candidata.
+  const anos = anosCitados(textoDoCliente);
+  if (
+    anos.length > 0 &&
+    candidatas.some((m) => m.ano !== undefined && anos.includes(m.ano.trim()))
+  ) {
+    return true;
+  }
+  // (4) cor citada bate com alguma candidata.
+  if (candidatas.some((m) => textoContemCor(textoDoCliente, m.cor))) return true;
+  return false;
+}
+
+/**
  * A moto que o cliente ESCOLHEU, se houver exatamente uma.
  *
  * `textoDoModelo` = o que o agente escreveu no turno (diz qual moto, quando ele
@@ -518,6 +561,11 @@ export async function motoEscolhidaPeloClienteComJev(
 
   const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
   const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
+
+  // TRAVA ESTRUTURAL: sem referência a NENHUMA moto mostrada, a mensagem NÃO é
+  // escolha ("Sao paulo", "Gostei", "ok", número solto). NÃO consulta a Jev nem
+  // trava `escolhida` — era o defeito da "escolha inventada" (2026-10-06).
+  if (!temReferenciaAMoto(textoDoCliente, textoCitado, candidatas)) return undefined;
 
   // RÓTULO com os ATRIBUTOS (ano, cor, cilindrada, km) — a Jev casa o que o cliente
   // disse ("a 2015", "a preta", "a 300 F") com a candidata. "Dinâmico" = qualquer
