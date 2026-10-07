@@ -38,12 +38,13 @@ import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { EstadoObjecao } from './objecao-de-valor';
 import type { Logger } from '../obs/logger';
 import { decidir } from '../../ai/jev';
+import { arbitrar } from '../../ai/jev/arbitro';
 import { alvosDeJevDe } from '../../ai/jev/config';
-import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import {
   motoEscolhidaDaRespostaDeJev,
   perguntaDeMotoEscolhidaJev,
 } from '../../ai/jev/pontos/moto-escolhida';
+import type { RespostasDeJev } from '../../ai/jev/tipos';
 
 /** Estado persistido por conversa. */
 export interface CatalogoDaConversa {
@@ -592,27 +593,55 @@ export async function motoEscolhidaPeloClienteComJev(
     return extras.length > 0 ? `${m.nome} (${extras.join(', ')})` : m.nome;
   };
 
-  // ── JEV PRIMEIRO ──────────────────────────────────────────────────────────
-  const alvos =
-    deps?.db !== undefined && deps.tenantId !== undefined
-      ? await alvosDeJevDaOrg(deps.db, deps.tenantId, 'moto_escolhida')
-      : alvosDeJevDe(process.env);
-
-  if (alvos.length > 0 && candidatas.length >= 1) {
+  // ── JEV PRIMEIRO (via ÁRBITRO DE TURNO — Fase 4) ──────────────────────────
+  // 1 ponto → o Árbitro faz a chamada IDÊNTICA à que o ponto faria sozinho (estado
+  // PLANO, perguntas sem prefixo). O pipeline único fica em vigor; o merge
+  // multi-ponto (escolha + critérios numa chamada só) entra quando os pontos de
+  // "significado" forem co-localizados. Sem `db` (binding), mantém o caminho
+  // legado de ambiente.
+  let respostasDaEscolha: RespostasDeJev | undefined;
+  if (candidatas.length >= 1) {
     const rotulos = candidatas.map(rotulo);
-    const decisao = await decidir({
-      alvos,
-      state: {
-        cliente: textoDoCliente,
-        citado: textoCitado,
-        modelo: textoDoModelo,
-        candidatas: rotulos,
-      },
-      questions: perguntaDeMotoEscolhidaJev(rotulos),
-      perguntasObrigatorias: ['moto'],
-    });
-    if (decisao !== null) {
-      const escolhido = motoEscolhidaDaRespostaDeJev(decisao.respostas);
+    if (deps?.db !== undefined && deps.tenantId !== undefined) {
+      const veredito = await arbitrar({
+        db: deps.db,
+        tenantId: deps.tenantId,
+        turno: {},
+        pedidos: [
+          {
+            ponto: 'moto_escolhida',
+            contexto: {
+              cliente: textoDoCliente,
+              citado: textoCitado,
+              modelo: textoDoModelo,
+              candidatas: rotulos,
+            },
+            perguntas: perguntaDeMotoEscolhidaJev(rotulos),
+            obrigatorias: ['moto'],
+          },
+        ],
+        ...(deps.log !== undefined ? { log: deps.log } : {}),
+      });
+      respostasDaEscolha = veredito?.porPonto.moto_escolhida;
+    } else {
+      const alvos = alvosDeJevDe(process.env);
+      if (alvos.length > 0) {
+        const decisao = await decidir({
+          alvos,
+          state: {
+            cliente: textoDoCliente,
+            citado: textoCitado,
+            modelo: textoDoModelo,
+            candidatas: rotulos,
+          },
+          questions: perguntaDeMotoEscolhidaJev(rotulos),
+          perguntasObrigatorias: ['moto'],
+        });
+        respostasDaEscolha = decisao?.respostas;
+      }
+    }
+    if (respostasDaEscolha !== undefined) {
+      const escolhido = motoEscolhidaDaRespostaDeJev(respostasDaEscolha);
       const idx = escolhido !== null ? rotulos.indexOf(escolhido) : -1;
       if (idx >= 0) {
         deps?.log?.info('escolha: a JEV decidiu', {

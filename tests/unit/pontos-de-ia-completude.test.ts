@@ -136,9 +136,12 @@ const FORA_DO_SEAM: Record<string, { arquivo: string; marcador: string }> = {
     arquivo: "lib/agent-engine/agent/knowledge-route-jev.ts",
     marcador: "alvosDeJevDaOrg(db, tenantId, 'knowledge_route')",
   },
+  // A escolha passou a ser emitida pelo ÁRBITRO DE TURNO (Fase 4): a chamada da
+  // Jev saiu de `alvosDeJevDaOrg(...)` e virou um `pedido` do Árbitro. O marcador
+  // mudou junto — o teste continua provando que o ponto está vivo.
   moto_escolhida: {
     arquivo: "lib/agent-engine/agent/catalogo-da-conversa.ts",
-    marcador: "alvosDeJevDaOrg(deps.db, deps.tenantId, 'moto_escolhida')",
+    marcador: "ponto: 'moto_escolhida'",
   },
 };
 
