@@ -69,9 +69,12 @@ const FONTE = fs.readFileSync(
 );
 
 describe("fiação — o gatilho de fluxo lê a rajada inteira", () => {
-  it("concatena o texto pinado com as demais inbounds num texto único", () => {
-    expect(FONTE).toMatch(/loadUnansweredInboundTexts\(pool,/);
+  it("a intenção usa o contexto UNIFICADO (rajada + citação), não a mensagem pinada", () => {
+    // Fase 2 do Árbitro: as intenções saem do mesmo contexto do turno (rajada +
+    // citação), sem segunda consulta.
+    expect(FONTE).toMatch(/loadUnansweredInboundBurst\(pool,/);
     expect(FONTE).toMatch(/const textoDoGatilho =/);
+    expect(FONTE).toMatch(/\[textoDoClienteDoTurno, textoCitadoDoTurno\]/);
   });
 
   it("a decisão por INTENÇÃO e o gatilho por palavra (fallback) usam o texto da rajada", () => {

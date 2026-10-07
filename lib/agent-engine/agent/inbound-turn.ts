@@ -2478,18 +2478,14 @@ async function executarTurnoDoAgente(
   let validadorGravouNesteTurno = false;
   if (!preview && liveJob().kind === 'inbound_turn' && input.inboundMessageId !== undefined) {
     try {
-      // O gatilho olha a RAJADA inteira, não só a mensagem pinada. O job coalesce
-      // as mensagens do mesmo contato dentro do debounce e pina a ÚLTIMA; ler só
-      // ela perde o pedido que veio antes ("Queria dar uma moto na troca" +
-      // "E financiar o resto" → só o Financiamento era reconhecido). Ver
-      // `loadUnansweredInboundTexts`.
-      const rajada = await loadUnansweredInboundTexts(pool, {
-        tenantId,
-        conversationId: input.conversationId,
-      }).catch(() => [] as string[]);
+      // FASE 2 (Árbitro de Turno): as INTENÇÕES saem do MESMO contexto unificado
+      // do turno — a RAJADA inteira + a CITAÇÃO de cada mensagem (calculado acima
+      // em `textoDoClienteDoTurno`/`textoCitadoDoTurno`). Antes isto fazia uma
+      // SEGUNDA consulta da rajada; agora é uma fonte só, sem perder nada.
       const textoDoGatilho =
-        [currentInboundText, ...rajada]
-          .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+        [textoDoClienteDoTurno, textoCitadoDoTurno]
+          .map((t) => t.trim())
+          .filter((t) => t !== '')
           .join('\n') || null;
       // TODOS os fluxos que a mensagem aciona, na ORDEM citada, decididos por
       // INTENÇÃO (Jev/IA). O cliente pode pedir mais de um processo na mesma
