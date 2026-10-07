@@ -307,6 +307,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "sugestao_de_conhecimento",
+    rotulo: "Sugerir uma entrada da base a partir de um atendimento",
+    oQueFaz:
+      "Na tela de Análise, rascunha a entrada (pergunta + resposta) que faltava na base, a partir da conversa em que a IA não resolveu bem — o dono revisa antes de salvar.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "app/api/v1/ai/knowledge/analise/draft/route.ts",
+    sintomaDeFalha:
+      "O card de Análise abre o formulário em branco (o dono preenche do zero).",
+    registraEm: "llm_calls",
+  },
+  {
     id: "resumo_de_conhecimento",
     rotulo: "Resumir o material da base de conhecimento",
     oQueFaz:

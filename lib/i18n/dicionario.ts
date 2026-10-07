@@ -442,6 +442,29 @@ export const DICIONARIO: Traducoes = {
   "← Conhecimento": { es: "← Conocimiento" },
   "Nada para analisar agora": { es: "Nada para analizar ahora" },
   "Ver a conversa": { es: "Ver la conversación" },
+  "Criar entrada na base": { es: "Crear entrada en la base" },
+  "Nova entrada da base": { es: "Nueva entrada de la base" },
+  "A IA rascunhou a partir do atendimento. Revise os campos e escolha em qual material salvar — o formato da base é montado sozinho.":
+    {
+      es: "La IA redactó a partir de la atención. Revisa los campos y elige en qué material guardar — el formato de la base se arma solo.",
+    },
+  "O que o cliente perguntou": { es: "Lo que preguntó el cliente" },
+  "O que responder": { es: "Qué responder" },
+  "Ação (opcional)": { es: "Acción (opcional)" },
+  "Não afirmar (opcional)": { es: "No afirmar (opcional)" },
+  "Em qual material salvar": { es: "En qué material guardar" },
+  "Escolha o material": { es: "Elige el material" },
+  "Salvar na base": { es: "Guardar en la base" },
+  "A IA não conseguiu rascunhar; preencha à mão.": {
+    es: "La IA no pudo redactar; complétalo a mano.",
+  },
+  "Escolha o material e preencha pergunta e resposta.": {
+    es: "Elige el material y completa pregunta y respuesta.",
+  },
+  "Salvo! O índice do material se refaz sozinho.": {
+    es: "¡Guardado! El índice del material se rehace solo.",
+  },
+  "Não consegui salvar a entrada.": { es: "No pude guardar la entrada." },
   "Quando a IA não conseguir resolver algo (um bloqueio, uma confirmação, uma dúvida que a base não cobria), o caso aparece aqui para você virar material da base.":
     {
       es: "Cuando la IA no consiga resolver algo (un bloqueo, una confirmación, una duda que la base no cubría), el caso aparece aquí para que lo conviertas en material de la base.",
