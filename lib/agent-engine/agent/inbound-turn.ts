@@ -217,6 +217,7 @@ import {
 } from './objecao-de-valor';
 import { extrairCriterios, montarPedidoDeCriterios } from './extrair-criterios';
 import { montarConhecimentoDoTurno, renderBlocoDeConhecimento } from './conhecimento-do-turno';
+import { abrirAvisoDeLacuna } from './lacuna-de-conhecimento';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
 import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
@@ -6823,6 +6824,23 @@ async function executarTurnoDoAgente(
       );
       if (saiu === 'sent') runLog.info('modelo esgotou — mensagem de contingência enviada ao cliente');
       return;
+    }
+
+    // ─── FASE C (Análise): LACUNA DE CONHECIMENTO ────────────────────────────
+    // A base tinha material relevante (o bloco entrou), mas o modelo NÃO citou
+    // nenhum trecho. É o sinal "a base tinha a resposta e a IA não usou" → abre o
+    // AVISO na Central (o sininho conta) + vira card na tela de Análise. OFFLINE:
+    // o cliente nunca espera. Dedup por conversa (1 aberto).
+    if (!preview && trechosDeConhecimento.length > 0 && fontesCitadasNesteTurno.length === 0) {
+      const criado = await abrirAvisoDeLacuna(pool, {
+        tenantId,
+        conversationId: input.conversationId,
+        pergunta: currentInboundText ?? mensagemDoJob ?? '',
+        trechos: trechosDeConhecimento.length,
+      }).catch(() => 0);
+      if (criado > 0) {
+        runLog.info('conhecimento: lacuna aberta (base tinha material, resposta não citou)');
+      }
     }
 
     // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de

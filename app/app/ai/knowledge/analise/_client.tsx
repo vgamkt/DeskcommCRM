@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useAgentInbox } from "@/hooks/ai/useAgentInbox";
 import { useCases } from "@/hooks/ai/useCases";
 import { useKnowledgeSources } from "@/hooks/ai/useKnowledgeSources";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
@@ -38,20 +39,28 @@ interface Rascunho {
   categoria?: string;
   acao?: string;
   nao_afirmar?: string;
+  conversa?: string;
 }
 
+type Origem = { case_id: string } | { conversation_id: string };
+
 /**
- * ANÁLISE DE CONHECIMENTO (Fase A/B) — os casos em que a IA não resolveu bem,
- * como CARDS para virar material da base. 100% OFFLINE: o atendimento não espera.
+ * ANÁLISE DE CONHECIMENTO (Fase A/B/C) — os pontos em que a IA não resolveu bem,
+ * como CARDS para virar material da base. Duas fontes:
+ *  - CASOS (a IA travou num bloqueio);
+ *  - LACUNAS (a base tinha material e o modelo não citou).
+ * 100% OFFLINE: o atendimento não espera.
  */
 export function AnaliseClient() {
   const t = useT();
   const localeDaData = useLocaleDeData();
   const { data, isLoading } = useCases("open");
+  const { data: inbox } = useAgentInbox("open");
   const { data: fontes } = useKnowledgeSources();
   const faqs = (fontes ?? []).filter((f) => f.source_type === "faq" && f.is_active !== false);
+  const lacunas = (inbox?.items ?? []).filter((i) => i.ref_kind === "conhecimento_lacuna");
 
-  const [aberto, setAberto] = useState<string | null>(null);
+  const [aberto, setAberto] = useState(false);
   const [form, setForm] = useState<Rascunho & { sourceId: string }>({
     pergunta: "",
     resposta: "",
@@ -61,15 +70,15 @@ export function AnaliseClient() {
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const abrir = async (caseId: string) => {
-    setAberto(caseId);
+  const abrir = async (origem: Origem) => {
+    setAberto(true);
     setForm({ pergunta: "", resposta: "", sourceId: faqs[0]?.id ?? "" });
     setMsg(null);
     setCarregando(true);
     try {
       const r = await apiClient.post<{ data: Rascunho }>(
         "/api/v1/ai/knowledge/analise/draft",
-        { case_id: caseId },
+        origem,
       );
       setForm((f) => ({ ...f, ...r.data }));
     } catch {
@@ -94,7 +103,7 @@ export function AnaliseClient() {
         ...(form.acao ? { acao: form.acao } : {}),
         ...(form.nao_afirmar ? { nao_afirmar: form.nao_afirmar } : {}),
       });
-      setAberto(null);
+      setAberto(false);
       setMsg(t("Salvo! O índice do material se refaz sozinho."));
     } catch {
       setMsg(t("Não consegui salvar a entrada."));
@@ -112,60 +121,86 @@ export function AnaliseClient() {
     );
   }
 
-  if (!data || data.cases.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-16 text-center">
-        <p className="text-sm font-medium">{t("Nada para analisar agora")}</p>
-        <p className="max-w-md text-xs text-text-muted">
-          {t(
-            "Quando a IA não conseguir resolver algo (um bloqueio, uma confirmação, uma dúvida que a base não cobria), o caso aparece aqui para você virar material da base.",
-          )}
-        </p>
-      </div>
-    );
-  }
+  const vazio = (data?.cases.length ?? 0) === 0 && lacunas.length === 0;
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {data.cases.map((c) => {
-          const when = formatDistanceToNowStrict(new Date(c.opened_at), {
-            addSuffix: true,
-            locale: localeDaData,
-          });
-          return (
+      {vazio ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-16 text-center">
+          <p className="text-sm font-medium">{t("Nada para analisar agora")}</p>
+          <p className="max-w-md text-xs text-text-muted">
+            {t(
+              "Quando a IA não conseguir resolver algo (um bloqueio, uma confirmação, uma dúvida que a base não cobria), o caso aparece aqui para você virar material da base.",
+            )}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {lacunas.map((l) => (
             <article
-              key={c.id}
+              key={l.id}
               data-testid="analise-card"
               className="flex flex-col gap-2 rounded-lg border border-border p-4"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium">{c.title}</p>
-                <Badge variant={STATUS_BADGE_VARIANT[c.status]} className="shrink-0">
-                  {t(STATUS_LABEL[c.status])}
+                <p className="text-sm font-medium">{l.title}</p>
+                <Badge variant="secondary" className="shrink-0">
+                  {t("Lacuna")}
                 </Badge>
               </div>
-              <p className="text-xs text-text-muted">
-                {c.contact_name ?? t("Contato sem nome")} · {when}
-              </p>
-              <p className="text-sm text-text-muted">{c.blocker}</p>
+              <p className="text-xs text-text-muted">{l.body}</p>
               <div className="mt-auto flex items-center gap-4 pt-2">
-                <Button type="button" size="sm" onClick={() => void abrir(c.id)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() =>
+                    l.ref_id !== null && void abrir({ conversation_id: l.ref_id })
+                  }
+                >
                   {t("Criar entrada na base")}
                 </Button>
-                <Link
-                  href="/app/ai/cases"
-                  className="text-sm font-medium text-text-muted underline-offset-4 hover:underline"
-                >
-                  {t("Ver a conversa")}
-                </Link>
               </div>
             </article>
-          );
-        })}
-      </div>
+          ))}
+          {(data?.cases ?? []).map((c) => {
+            const when = formatDistanceToNowStrict(new Date(c.opened_at), {
+              addSuffix: true,
+              locale: localeDaData,
+            });
+            return (
+              <article
+                key={c.id}
+                data-testid="analise-card"
+                className="flex flex-col gap-2 rounded-lg border border-border p-4"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium">{c.title}</p>
+                  <Badge variant={STATUS_BADGE_VARIANT[c.status]} className="shrink-0">
+                    {t(STATUS_LABEL[c.status])}
+                  </Badge>
+                </div>
+                <p className="text-xs text-text-muted">
+                  {c.contact_name ?? t("Contato sem nome")} · {when}
+                </p>
+                <p className="text-sm text-text-muted">{c.blocker}</p>
+                <div className="mt-auto flex items-center gap-4 pt-2">
+                  <Button type="button" size="sm" onClick={() => void abrir({ case_id: c.id })}>
+                    {t("Criar entrada na base")}
+                  </Button>
+                  <Link
+                    href="/app/ai/cases"
+                    className="text-sm font-medium text-text-muted underline-offset-4 hover:underline"
+                  >
+                    {t("Ver a conversa")}
+                  </Link>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
 
-      <Dialog open={aberto !== null} onOpenChange={(o) => !o && setAberto(null)}>
+      <Dialog open={aberto} onOpenChange={(o) => !o && setAberto(false)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t("Nova entrada da base")}</DialogTitle>
@@ -177,6 +212,16 @@ export function AnaliseClient() {
           </DialogHeader>
 
           <div className="grid gap-3">
+            {form.conversa ? (
+              <details className="rounded-md border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  {t("Ver a conversa")}
+                </summary>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-xs text-text-muted">
+                  {form.conversa}
+                </pre>
+              </details>
+            ) : null}
             <div className="grid gap-1">
               <Label htmlFor="an-pergunta">{t("O que o cliente perguntou")}</Label>
               <Input
@@ -236,7 +281,7 @@ export function AnaliseClient() {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setAberto(null)}>
+            <Button type="button" variant="outline" onClick={() => setAberto(false)}>
               {t("Cancelar")}
             </Button>
             <Button type="button" onClick={() => void salvar()} disabled={salvando || carregando}>

@@ -20,7 +20,14 @@ export const dynamic = "force-dynamic";
  * por IA, a entrada que faltava na base — no formato dos campos semânticos que o
  * formulário usa. O dono SEMPRE revisa antes de salvar. Offline.
  */
-const bodySchema = z.object({ case_id: z.string().uuid() });
+const bodySchema = z
+  .object({
+    case_id: z.string().uuid().optional(),
+    conversation_id: z.string().uuid().optional(),
+  })
+  .refine((o) => o.case_id !== undefined || o.conversation_id !== undefined, {
+    message: "informe case_id ou conversation_id",
+  });
 
 interface Rascunho {
   pergunta: string;
@@ -76,23 +83,44 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
-  const { data: caso } = await admin
-    .from("agent_cases")
-    .select("id, title, summary, blocker, context_snapshot")
-    .eq("id", parsed.data.case_id)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  const c = caso as
-    | { title: string; summary: string; blocker: string; context_snapshot: unknown }
-    | null;
-  if (!c) return fail("not_found", t("Caso não encontrado."), 404, { requestId });
+  let motivo = "";
+  let conversa = "";
 
-  const snap = (c.context_snapshot ?? {}) as {
-    last_messages?: Array<{ direction?: string; body?: string }>;
-  };
-  const conversa = (snap.last_messages ?? [])
-    .map((m) => `${m.direction === "inbound" ? "Cliente" : "Loja"}: ${m.body ?? ""}`)
-    .join("\n");
+  if (parsed.data.case_id !== undefined) {
+    // A partir de um CASO (a IA travou num bloqueio).
+    const { data: caso } = await admin
+      .from("agent_cases")
+      .select("id, summary, blocker, context_snapshot")
+      .eq("id", parsed.data.case_id)
+      .eq("organization_id", activeOrg.orgId)
+      .maybeSingle();
+    const c = caso as { summary: string; blocker: string; context_snapshot: unknown } | null;
+    if (!c) return fail("not_found", t("Caso não encontrado."), 404, { requestId });
+    const snap = (c.context_snapshot ?? {}) as {
+      last_messages?: Array<{ direction?: string; body?: string }>;
+    };
+    conversa =
+      (snap.last_messages ?? [])
+        .map((m) => `${m.direction === "inbound" ? "Cliente" : "Loja"}: ${m.body ?? ""}`)
+        .join("\n") || c.summary;
+    motivo = c.blocker;
+  } else {
+    // A partir de uma CONVERSA (lacuna: a base tinha material e o modelo não citou).
+    const { data: msgs } = await admin
+      .from("messages")
+      .select("direction, body, created_at")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("conversation_id", parsed.data.conversation_id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    const lista = (msgs ?? []) as Array<{ direction: string | null; body: string | null }>;
+    if (lista.length === 0) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
+    conversa = lista
+      .reverse()
+      .map((m) => `${m.direction === "inbound" ? "Cliente" : "Loja"}: ${m.body ?? ""}`)
+      .join("\n");
+    motivo = "A base tinha material relevante, mas a resposta não citou nenhum trecho.";
+  }
 
   try {
     const pool = getRequestPool();
@@ -113,7 +141,7 @@ export async function POST(req: NextRequest): Promise<Response> {
             `na base de conhecimento — a que teria evitado o problema. Seja fiel ao que a conversa ` +
             `mostra; NÃO invente política da loja (se a conversa não diz, escreva a resposta pedindo ` +
             `para confirmar com o responsável).\n\n` +
-            `Motivo do caso: ${c.blocker}\n\nConversa:\n${conversa || c.summary}\n\n` +
+            `Motivo: ${motivo}\n\nConversa:\n${conversa}\n\n` +
             `Responda SOMENTE JSON: {"pergunta":"<o que o cliente perguntou>","resposta":"<o que responder>",` +
             `"categoria":"<palavra curta, ex.: preco>","acao":"<opcional>","nao_afirmar":"<opcional, o que NÃO prometer>"}`,
         },
@@ -125,7 +153,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         requestId,
       });
     }
-    return ok(rascunho, { requestId });
+    // Devolve o rascunho + a CONVERSA (o "importar conversa": o dono vê o contexto).
+    return ok({ ...rascunho, conversa }, { requestId });
   } catch (err) {
     console.error("[analise-draft] falha:", err instanceof Error ? err.message : String(err));
     return fail("internal_error", t("A IA não conseguiu rascunhar; preencha à mão."), 502, {

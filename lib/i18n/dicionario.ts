@@ -443,6 +443,7 @@ export const DICIONARIO: Traducoes = {
   "Nada para analisar agora": { es: "Nada para analizar ahora" },
   "Ver a conversa": { es: "Ver la conversación" },
   "Criar entrada na base": { es: "Crear entrada en la base" },
+  Lacuna: { es: "Laguna" },
   "Nova entrada da base": { es: "Nueva entrada de la base" },
   "A IA rascunhou a partir do atendimento. Revise os campos e escolha em qual material salvar — o formato da base é montado sozinho.":
     {
