@@ -105,11 +105,13 @@ export async function montarConhecimentoDoTurno(
 export function renderBlocoDeConhecimento(trechos: readonly TrechoDeConhecimento[]): string {
   if (trechos.length === 0) return '';
   return [
-    '## Base de conhecimento (fatos) — CONFIRA antes de usar',
-    '- Use SOMENTE os trechos abaixo que RESPONDEM à pergunta do cliente.',
-    '- Se nenhum servir, IGNORE e responda com o que você já sabe — NUNCA invente fato.',
-    '- OBRIGATÓRIO: ao usar QUALQUER trecho, preencha `fonte_ids` no `send_message` com o [ID] dele ' +
-      '(ex.: ["PRE-002"]). Sem a citação, a conferência se perde.',
+    '## Base de conhecimento (fatos) — USE ANTES DE RESPONDER',
+    '- ANTES de escrever, procure AQUI o trecho que responde à pergunta do cliente.',
+    '- Se houver QUALQUER trecho relacionado, responda A PARTIR DELE (não do seu conhecimento ' +
+      'geral) — é a informação oficial da loja. Cite o [ID] dele em `fonte_ids`.',
+    '- Só responda de memória se NENHUM trecho servir — e NUNCA invente fato.',
+    '- OBRIGATÓRIO: preencha `fonte_ids` no `send_message` com o(s) [ID](s) que você usou ' +
+      '(ex.: ["PRE-002"]).',
     'Trechos:',
     ...trechos.map((t) => `- (${t.fonte}) ${t.texto}`),
   ].join('\n');
