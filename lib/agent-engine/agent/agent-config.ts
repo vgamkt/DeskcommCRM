@@ -38,11 +38,6 @@ export interface PublishedAgentConfig {
   historyMessageWindow: number;
   historyTokenWindow: number;
   handoffKeywords: string[];
-  /**
-   * Telefone (só dígitos) que recebe o aviso quando o agente não consegue
-   * responder (handoff por lentidão/erro). Configurado na tela. `null` = não avisa.
-   */
-  handoffNotificationNumber: string | null;
   handoffToolEnabled: boolean;
   splitMessages: boolean;
   splitMaxChars: number;
@@ -226,11 +221,6 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     handoffKeywords: (r.handoff_keywords ?? [])
       .map((k) => k.toLowerCase().trim())
       .filter((k) => k !== ''),
-    handoffNotificationNumber:
-      typeof r.handoff_notification_number === 'string' &&
-      r.handoff_notification_number.trim() !== ''
-        ? r.handoff_notification_number.replace(/\D/g, '')
-        : null,
     handoffToolEnabled: r.handoff_tool_enabled,
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,

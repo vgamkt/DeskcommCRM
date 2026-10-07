@@ -154,7 +154,6 @@ interface FormState {
   history_message_window: number;
   history_token_window: number;
   handoff_keywords: string[];
-  handoff_notification_number: string;
   handoff_tool_enabled: boolean;
   cases_enabled: boolean;
   split_messages: boolean;
@@ -220,8 +219,6 @@ function buildState(args: {
       "atendente",
       "pessoa real",
     ],
-    // "" na tela onde o banco guarda null (vira null no payload).
-    handoff_notification_number: version?.handoff_notification_number ?? "",
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -277,10 +274,6 @@ function toVersionPayload(s: FormState) {
     history_message_window: s.history_message_window,
     history_token_window: s.history_token_window,
     handoff_keywords: s.handoff_keywords,
-    handoff_notification_number:
-      s.handoff_notification_number.trim() === ""
-        ? null
-        : s.handoff_notification_number.replace(/\D/g, ""),
     handoff_tool_enabled: s.handoff_tool_enabled,
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,

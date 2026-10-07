@@ -3,10 +3,9 @@
  * tentativas (travou). É a parte de AVISAR da trava anti-travamento: o turno
  * segue sem segurar a fila e o responsável recebe o alerta.
  *
- * Envia para o NÚMERO PRÓPRIO configurado na tela do agente
- * (`handoffNotificationNumber`, coluna `ai_agent_versions.handoff_notification_number`).
- * Deixou de usar `conversation_summary_settings.destination` (número de RESUMOS):
- * são coisas diferentes, e o dono quer poder separá-las.
+ * O número vem da regra CENTRAL de avisos (`conversation_summary_settings.failure_alerts`,
+ * por agente/canal). O campo `ai_agent_versions.handoff_notification_number` foi removido:
+ * a tela não o editava e o motor sempre passou `null` — a regra central é a fonte.
  *
  * A sessão de envio (o número que MANDA) vem do canal do agente — o mesmo que
  * atende o cliente. Best-effort: falha só loga (o turno já terminou).
