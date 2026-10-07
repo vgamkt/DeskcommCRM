@@ -759,6 +759,49 @@ export async function loadUnansweredInboundTexts(
 }
 
 /**
+ * A RAJADA com a CITAÇÃO de cada mensagem — o contexto CERTO para a decisão de
+ * ESCOLHA. O job pina a ÚLTIMA mensagem; se o cliente citou uma foto e mandou
+ * outra mensagem junto (coalesce), a citação mora numa mensagem ANTERIOR da
+ * rajada — ler só a pinada perde a escolha (medido ao vivo 2026-10-07: "Essa"
+ * citando a CB 300 R FLEX + "Sao paulo" → bot deu a moto ERRADA).
+ *
+ * Mesma janela/ordem de `loadUnansweredInboundTexts`; acrescenta a citação
+ * (`metadata.citacao.texto`, gravada na ingestão) de cada mensagem.
+ */
+export async function loadUnansweredInboundBurst(
+  db: Queryable,
+  input: { tenantId: string; conversationId: string },
+): Promise<{ textos: string[]; citacoes: string[] }> {
+  const result = await db.query<{
+    body: string | null;
+    media_derived_text: string | null;
+    citacao: string | null;
+  }>(
+    `select body, media_derived_text, metadata->'citacao'->>'texto' as citacao
+       from messages
+      where organization_id = $1
+        and conversation_id = $2
+        and direction = 'inbound'
+        and created_at > coalesce(
+          (select max(created_at) from messages
+            where organization_id = $1 and conversation_id = $2 and direction = 'outbound'),
+          '-infinity'::timestamptz
+        )
+      order by created_at desc
+      limit 20`,
+    [input.tenantId, input.conversationId],
+  );
+  const textos: string[] = [];
+  const citacoes: string[] = [];
+  for (const row of result.rows) {
+    const texto = (row.body ?? '').trim() !== '' ? (row.body ?? '').trim() : (row.media_derived_text ?? '').trim();
+    if (texto !== '') textos.push(texto);
+    if (typeof row.citacao === 'string' && row.citacao.trim() !== '') citacoes.push(row.citacao.trim());
+  }
+  return { textos: textos.reverse(), citacoes: citacoes.reverse() };
+}
+
+/**
  * O texto da mensagem CITADA (resposta "em cima") que este turno responde —
  * lido de `metadata.citacao.texto`, gravado na ingestão do WAHA. Existe porque
  * "Gostei dessa" não nomeia moto; a mensagem que o cliente respondeu (a
@@ -2393,6 +2436,28 @@ async function executarTurnoDoAgente(
           conversationId: input.conversationId,
           inboundMessageId: input.inboundMessageId,
         }).catch(() => null);
+  // ── CONTEXTO CERTO DA ESCOLHA: a RAJADA inteira + a CITAÇÃO de cada mensagem ──
+  // O job pina a ÚLTIMA mensagem; se o cliente citou uma foto ("Essa") e mandou
+  // outra mensagem junto (coalesce), a citação mora numa mensagem ANTERIOR da
+  // rajada. Ler só a pinada perde a escolha (medido ao vivo 2026-10-07: "Essa"
+  // citando a CB 300 R FLEX + "Sao paulo" → bot deu a moto ERRADA).
+  const rajadaDoTurno =
+    preview || input.inboundMessageId === undefined
+      ? { textos: [] as string[], citacoes: [] as string[] }
+      : await loadUnansweredInboundBurst(pool, {
+          tenantId,
+          conversationId: input.conversationId,
+        }).catch(() => ({ textos: [] as string[], citacoes: [] as string[] }));
+  const textoDoClienteDoTurno =
+    [currentInboundText ?? '', ...rajadaDoTurno.textos]
+      .map((t) => t.trim())
+      .filter((t, i, a) => t !== '' && a.indexOf(t) === i)
+      .join('\n');
+  const textoCitadoDoTurno =
+    [currentInboundQuote ?? '', ...rajadaDoTurno.citacoes]
+      .map((t) => t.trim())
+      .filter((t, i, a) => t !== '' && a.indexOf(t) === i)
+      .join('\n');
 
   // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
   // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
@@ -4213,10 +4278,10 @@ async function executarTurnoDoAgente(
           jaApresentou && !pediuOutraMoto
             ? await motoEscolhidaPeloClienteComJev(
                 body,
-                mensagemDoJob ?? '',
+                textoDoClienteDoTurno || (mensagemDoJob ?? ''),
                 catalogoEfetivo,
                 catalogoDaConversa.detalhadas,
-                currentInboundQuote ?? '',
+                textoCitadoDoTurno,
                 { db: pool, tenantId, log: runLog },
               )
             : undefined;
@@ -6039,10 +6104,10 @@ async function executarTurnoDoAgente(
       catalogoDaConversa.motos.length > 0
         ? await motoEscolhidaPeloClienteComJev(
             '',
-            currentInboundText ?? '',
+            textoDoClienteDoTurno,
             catalogoDaConversa.motos,
             catalogoDaConversa.detalhadas,
-            currentInboundQuote ?? '',
+            textoCitadoDoTurno,
             { db: pool, tenantId },
           )
         : undefined;
