@@ -216,6 +216,7 @@ import {
   type FaseObjecao,
 } from './objecao-de-valor';
 import { extrairCriterios, montarPedidoDeCriterios } from './extrair-criterios';
+import { montarConhecimentoDoTurno, renderBlocoDeConhecimento } from './conhecimento-do-turno';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
 import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
@@ -6445,6 +6446,30 @@ async function executarTurnoDoAgente(
           blocoEstadoCru.length + blocoFluxoCru.length + blocoObjecaoTurno.length + stageHintBlock.length,
       });
     }
+    // ─── CONHECIMENTO NO TURNO (Fase 2) — atrás da flag `KB_NO_TURNO` ───────────
+    // A Jev roteia (pelo índice) → o motor entrega o top-K acima do limiar → o
+    // modelo confere/cita. Default OFF: sem a flag, o turno é IDÊNTICO ao de hoje.
+    const trechosDeConhecimento =
+      !preview &&
+      process.env.KB_NO_TURNO === '1' &&
+      (agentConfig?.knowledgeSourceIds?.length ?? 0) > 0 &&
+      (currentInboundText ?? mensagemDoJob ?? '').trim() !== ''
+        ? await montarConhecimentoDoTurno(pool, tenantId, {
+            pergunta: currentInboundText ?? mensagemDoJob ?? '',
+            fontes: agentConfig!.knowledgeSourceIds!,
+            topK: agentConfig?.ragTopK ?? 5,
+            limiar: agentConfig?.ragSimilarityThreshold ?? 0.4,
+            log: runLog,
+          })
+        : [];
+    const blocoConhecimento = renderBlocoDeConhecimento(trechosDeConhecimento);
+    if (blocoConhecimento !== '') {
+      runLog.info('conhecimento no turno (Fase 2)', {
+        trechos: trechosDeConhecimento.length,
+        chars: blocoConhecimento.length,
+        top_sim: trechosDeConhecimento[0]?.sim ?? null,
+      });
+    }
     const openingSuffixes = [
       agoraBlock,
       saudacaoPrimeiroContato,
@@ -6452,6 +6477,7 @@ async function executarTurnoDoAgente(
         ? '## Você já falou com este cliente\nHá mensagens SUAS no histórico desta conversa — a apresentação ("Sou a <seu nome>, da <loja>") JÁ FOI FEITA. NÃO se apresente de novo, NÃO repita o nome da loja e NÃO recomece a conversa; continue o assunto de onde parou.'
         : '',
       matchedSkillsBlock,
+      blocoConhecimento,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
       // isto, o modelo chutava a moto (medido ao vivo 2026-09-30: escolheu CBX
