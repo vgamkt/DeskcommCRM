@@ -42,7 +42,9 @@ export function perguntaDeObjecaoJev(ctx: ContextoDeObjecao): PerguntasDeJev {
           : '') +
         (ctx.temMotoEmFoco ? 'Há uma moto apresentada na conversa. ' : '') +
         'A mensagem é uma OBJEÇÃO sobre o VALOR/qualidade/condição da moto — ' +
-        'reclamação de preço ("achei caro", "acima do que posso pagar", "muito rodada") ' +
+        'reclamação de preço ("achei caro", "caro demais", "muito caro", "salgado", ' +
+        '"salgada", "acima do que posso pagar", "sem condições", "fora do meu orçamento", ' +
+        '"não cabe no bolso"), de RODAGEM ("muito rodada") ou de ANO ("muito antiga") ' +
         'ou insistência nela? Responda sim SÓ quando houver questionamento do que já foi ' +
         'mostrado/negociado. ' +
         'NÃO é objeção: pedir algo DIFERENTE ("quero outra cor", "tem outra moto?"), ' +
@@ -58,7 +60,7 @@ export function perguntaDeObjecaoJev(ctx: ContextoDeObjecao): PerguntasDeJev {
         'Se NÃO for objeção, escolha "outro" (será ignorado).',
       criteria: {
         preco:
-          'preço/valor/parcela/desconto/condição de pagamento, ou NÃO CONSEGUIR PAGAR (acima do que posso pagar, sem condições, não cabe no orçamento)',
+          'preço/valor/parcela/desconto/condição de pagamento, SALGADO/caro demais/muito caro, ou NÃO CONSEGUIR PAGAR (acima do que posso pagar, sem condições, não cabe no orçamento)',
         km: 'rodagem alta, quilometragem',
         ano: 'moto antiga/velha, ano do modelo',
         outro: 'não é objeção, ou é uma objeção que não é preço/km/ano',
