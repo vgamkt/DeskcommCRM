@@ -33,11 +33,13 @@ import type { Logger } from '../obs/logger';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 import { decidir } from '../../ai/jev';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
+import type { PedidoAoArbitro } from '../../ai/jev/arbitro';
 import {
   criteriosDaRespostaDeJev,
   perguntaDeCriteriosDeJev,
 } from '../../ai/jev/pontos/catalog-criteria';
 import { registrarDecisaoJev } from '../../ai/jev/telemetria';
+import type { RespostasDeJev } from '../../ai/jev/tipos';
 import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 
 const JSON_INSTRUCTION =
@@ -340,6 +342,33 @@ export interface ExtrairCriteriosDeps {
 }
 
 /**
+ * Os INPUTS EFETIVOS do ponto `catalog_criteria` (colunas já SEM o ano quando
+ * bloqueado) + o PEDIDO pronto para o ÁRBITRO DE TURNO. `null` quando não há o
+ * que classificar (mensagem vazia ou nenhuma coluna). O Árbitro usa o MESMO
+ * pedido do caminho por ponto — assim fundir as chamadas é transparente.
+ */
+export function montarPedidoDeCriterios(input: {
+  mensagem: string;
+  colunas: readonly string[];
+  estoque: readonly MotoDoCatalogo[];
+  bloquearAno?: boolean;
+}): { pedido: PedidoAoArbitro; colunas: string[]; estoque: readonly MotoDoCatalogo[] } | null {
+  const bloquearAno = input.bloquearAno !== false;
+  const colunas = bloquearAno ? input.colunas.filter((c) => !ehColunaDeAno(c)) : [...input.colunas];
+  if (colunas.length === 0 || input.mensagem.trim() === '') return null;
+  return {
+    pedido: {
+      ponto: 'catalog_criteria',
+      contexto: { mensagem: input.mensagem, estoque: input.estoque.map((m) => m.nome) },
+      perguntas: perguntaDeCriteriosDeJev({ colunas, estoque: input.estoque }),
+      obrigatorias: ['intencao'],
+    },
+    colunas,
+    estoque: input.estoque,
+  };
+}
+
+/**
  * Pergunta à IA quais são os critérios da moto pedida e devolve o mapa
  * `coluna → valor` (+ hipóteses/faixas). Nunca lança: falha do modelo devolve o
  * formato vazio (o turno segue com o que o motor conseguiu inferir sozinho).
@@ -364,6 +393,11 @@ export async function extrairCriterios(
      * (interruptor do agente desligado), a coluna de ano volta à lista permitida.
      */
     bloquearAno?: boolean;
+    /**
+     * Veredito JÁ obtido pelo ÁRBITRO DE TURNO (Fase 4): quando presente, o ponto
+     * NÃO chama a Jev de novo — usa esta resposta. Ausente = caminho por ponto.
+     */
+    respostasDoArbitro?: RespostasDeJev;
   },
   deps: ExtrairCriteriosDeps,
 ): Promise<CriteriosExtraidos> {
@@ -375,6 +409,14 @@ export async function extrairCriterios(
     : [...input.colunas];
   if (colunas.length === 0 || input.mensagem.trim() === '') {
     return criteriosVazios();
+  }
+  // ÁRBITRO DE TURNO: o veredito veio na chamada unificada (junto da escolha) —
+  // parseia direto, sem uma segunda ida à Jev.
+  if (input.respostasDoArbitro !== undefined) {
+    return criteriosDaRespostaDeJev(input.respostasDoArbitro, {
+      colunas,
+      estoque: input.estoque ?? [],
+    });
   }
 
   // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).

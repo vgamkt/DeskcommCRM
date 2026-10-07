@@ -184,6 +184,7 @@ import {
 } from './fotos-do-catalogo';
 import {
   carregarCatalogoDaConversa,
+  montarPedidoDeEscolha,
   motoEscolhidaPeloClienteComJev,
   salvarCatalogoDaConversa,
   type CatalogoDaConversa,
@@ -193,6 +194,7 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import { perguntaDeMaisOpcoes } from './mais-opcoes';
+import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { briefDoTurnoDe, prefetchDeJevDe } from '../../ai/jev/config';
 import { alvosDeJevDaOrg, jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
@@ -210,7 +212,7 @@ import {
   type EstadoObjecao,
   type FaseObjecao,
 } from './objecao-de-valor';
-import { extrairCriterios } from './extrair-criterios';
+import { extrairCriterios, montarPedidoDeCriterios } from './extrair-criterios';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
 import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
@@ -4270,17 +4272,91 @@ async function executarTurnoDoAgente(
         // `media_urls`, e nesse caminho a escolha era PULADA: não virava trava nem
         // marcava `detalhadas`. Só age depois de já ter apresentado (`jaApresentou`),
         // para o turno do PRÓPRIO pedido ("Cb 300") não ser lido como escolha.
-        const escolhidaNesteTurno =
+        // ─── ÁRBITRO DE TURNO (Fase 4): ESCOLHA + CRITÉRIOS numa chamada só ────
+        // A escolha e os critérios decidem sobre o MESMO turno (mesmo `msgCliente`,
+        // mesmo catálogo). Antes eram DUAS idas à Jev neste turno; agora é UMA.
+        const planoEscolha =
           jaApresentou && !pediuOutraMoto
+            ? montarPedidoDeEscolha({
+                textoDoModelo: body,
+                textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),
+                catalogo: catalogoEfetivo,
+                jaDetalhadas: catalogoDaConversa.detalhadas,
+                textoCitado: textoCitadoDoTurno,
+              })
+            : null;
+        // O gate dos critérios é o MESMO do bloco do `planoAutomatico` (abaixo):
+        // computado aqui para o pedido entrar na MESMA chamada do Árbitro. Se o
+        // gate de lá divergir, o bloco de lá refaz a chamada sozinho (fallback).
+        const pedidoCritDoTurno = (() => {
+          const mapeamento = catalogoMapeamento;
+          if (mapeamento === null || mapeamento.similaridadeDeterministica !== true) return null;
+          const turnoDeCatalogo =
+            ofereceuSimilaresNesteTurno || decidirOfertaDoTurno(mensagemDoJob ?? '').pode;
+          if (!turnoDeCatalogo || ofereceuSimilaresNesteTurno || extraiuCriteriosNesteTurno) {
+            return null;
+          }
+          const msgCliente = mensagemDoJob ?? body;
+          const motoAtual = motoAtualDaConversa;
+          const ehObjecaoMsg =
+            (msgCliente === mensagemDoJob ? ehObjecaoTurno : ehObjecaoValor(msgCliente)) &&
+            motoAtual !== null;
+          if (ehObjecaoMsg) return null;
+          const semMotoDoPedido = motosCitadasNoTexto(msgCliente, catalogoDoTurno).length === 0;
+          const precisaClassificar =
+            querMoto(msgCliente) ||
+            (catalogoDoTurno.length > 0 && semMotoDoPedido) ||
+            (motoAtual !== null && querAlternativa(msgCliente));
+          if (!precisaClassificar) return null;
+          if (querMaisOpcoes(msgCliente) && (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0) {
+            return null;
+          }
+          const colunas = camposDeBusca(mapeamento, {
+            dinamico: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
+            enviarTodas: agentConfig?.catalogConfig?.enviar_todas_que_casam === true,
+          });
+          return montarPedidoDeCriterios({
+            mensagem:
+              motoAtual !== null && intencaoDoTurno === 'alternativa'
+                ? `${msgCliente}\n(moto atual da conversa: ${motoAtual.nome})`
+                : msgCliente,
+            colunas,
+            estoque: mesclarMotos(catalogoDoTurno, catalogoDaConversa.motos),
+            bloquearAno: agentConfig?.catalogConfig?.bloquear_ano_ia !== false && !clienteCitouAno,
+          });
+        })();
+        const pedidosDoArbitro: PedidoAoArbitro[] = [];
+        if (planoEscolha !== null) pedidosDoArbitro.push(planoEscolha.pedido);
+        if (pedidoCritDoTurno !== null) pedidosDoArbitro.push(pedidoCritDoTurno.pedido);
+        const vereditoArbitro =
+          pedidosDoArbitro.length > 0
+            ? await arbitrar({
+                db: pool,
+                tenantId,
+                turno: {},
+                pedidos: pedidosDoArbitro,
+                log: runLog,
+              })
+            : null;
+        const escolhidaNesteTurno =
+          planoEscolha !== null
             ? await motoEscolhidaPeloClienteComJev(
                 body,
                 textoDoClienteDoTurno || (mensagemDoJob ?? ''),
                 catalogoEfetivo,
                 catalogoDaConversa.detalhadas,
                 textoCitadoDoTurno,
-                { db: pool, tenantId, log: runLog },
+                {
+                  db: pool,
+                  tenantId,
+                  log: runLog,
+                  ...(vereditoArbitro?.porPonto.moto_escolhida !== undefined
+                    ? { respostasProntas: vereditoArbitro.porPonto.moto_escolhida }
+                    : {}),
+                },
               )
             : undefined;
+        const criteriosDoArbitro = vereditoArbitro?.porPonto.catalog_criteria;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
         runLog.info('escolha: decisão (antes/depois)', {
           antes: { ja_apresentou: jaApresentou, pediu_outra: pediuOutraMoto, msg: (mensagemDoJob ?? '').slice(0, 60), candidatas: catalogoEfetivo.length },
@@ -4497,6 +4573,11 @@ async function executarTurnoDoAgente(
                     // As motos reais do estoque vão no prompt: a IA diz quais têm
                     // configuração parecida com o que o cliente quis.
                     estoque: estoqueParaIA,
+                    // ÁRBITRO DE TURNO (Fase 4): o veredito já veio na chamada
+                    // unificada (junto da escolha) — não faz uma segunda ida à Jev.
+                    ...(criteriosDoArbitro !== undefined
+                      ? { respostasDoArbitro: criteriosDoArbitro }
+                      : {}),
                     // C-105/C-106: interruptor "Nunca usar o ANO" (default bloqueado).
                     // C-107: se o CLIENTE citou o ano, libera o ano SÓ neste turno.
                     bloquearAno:

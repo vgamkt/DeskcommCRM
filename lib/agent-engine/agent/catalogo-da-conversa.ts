@@ -38,7 +38,7 @@ import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { EstadoObjecao } from './objecao-de-valor';
 import type { Logger } from '../obs/logger';
 import { decidir } from '../../ai/jev';
-import { arbitrar } from '../../ai/jev/arbitro';
+import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { alvosDeJevDe } from '../../ai/jev/config';
 import {
   motoEscolhidaDaRespostaDeJev,
@@ -541,6 +541,63 @@ export function motoEscolhidaPeloCliente(
   return undefined;
 }
 
+/** Rótulo de uma candidata com os ATRIBUTOS (ano, cor, cilindrada, km) — a Jev
+ * casa o que o cliente disse ("a 2015", "a preta", "a 300 F") com a candidata. */
+export function rotuloDeMoto(m: MotoDoCatalogo): string {
+  const extras = [m.ano, m.cor, m.cilindrada, m.quilometragem].filter(
+    (v): v is string => typeof v === 'string' && v.trim() !== '',
+  );
+  return extras.length > 0 ? `${m.nome} (${extras.join(', ')})` : m.nome;
+}
+
+/**
+ * Prepara o PEDIDO do ponto `moto_escolhida` para o ÁRBITRO DE TURNO: aplica as
+ * travas (pergunta/objeção NÃO é escolha; sem referência a uma moto mostrada NÃO
+ * é escolha), monta as candidatas e os rótulos. `null` = não é um turno de
+ * escolha. Quem já tem o pedido pronto (o merge da Fase 4) não recomputa isto.
+ */
+export function montarPedidoDeEscolha(args: {
+  textoDoModelo: string;
+  textoDoCliente: string;
+  catalogo: readonly MotoDoCatalogo[];
+  jaDetalhadas: readonly string[];
+  textoCitado?: string;
+}): { pedido: PedidoAoArbitro; candidatas: MotoDoCatalogo[]; rotulos: string[] } | null {
+  const { textoDoModelo, textoDoCliente, catalogo, jaDetalhadas, textoCitado = '' } = args;
+  if (catalogo.length === 0) return null;
+  // Pergunta/objeção NÃO é escolha — barra ANTES (vale para a Jev e o fallback).
+  if (bloqueiaEscolha(textoDoCliente)) return null;
+  const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
+  // A moto CITADA (foto respondida) entra mesmo se já foi "detalhada": é justamente
+  // a que o cliente escolhe — excluí-la fazia o matcher casar um prefixo errado
+  // ("cito a CB 300 R FLEX, ele dá a CB 300 R"). Bug medido ao vivo 2026-10-07.
+  const citadasDaCitacao = textoCitado === '' ? [] : citadasMaximais(textoCitado, catalogo);
+  const ehCitada = (m: MotoDoCatalogo): boolean =>
+    citadasDaCitacao.some((c) => normalizarNomeDeMoto(c.nome) === normalizarNomeDeMoto(m.nome));
+  const candidatas = catalogo.filter(
+    (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m),
+  );
+  // TRAVA ESTRUTURAL: sem referência a NENHUMA moto mostrada, a mensagem NÃO é
+  // escolha ("Sao paulo", "Gostei", "ok", número solto).
+  if (!temReferenciaAMoto(textoDoCliente, textoCitado, candidatas)) return null;
+  const rotulos = candidatas.map(rotuloDeMoto);
+  return {
+    pedido: {
+      ponto: 'moto_escolhida',
+      contexto: {
+        cliente: textoDoCliente,
+        citado: textoCitado,
+        modelo: textoDoModelo,
+        candidatas: rotulos,
+      },
+      perguntas: perguntaDeMotoEscolhidaJev(rotulos),
+      obrigatorias: ['moto'],
+    },
+    candidatas,
+    rotulos,
+  };
+}
+
 /**
  * Versão ASSÍNCRONA: **a JEV DECIDE a escolha PRIMEIRO** (dono, 2026-10-06) — com
  * TODOS os atributos (nome, ano, cor, cilindrada, km). O motor NÃO decide por conta
@@ -561,104 +618,68 @@ export async function motoEscolhidaPeloClienteComJev(
     db?: pg.Pool;
     tenantId?: string;
     log?: Logger;
+    /**
+     * Veredito JÁ obtido pelo ÁRBITRO DE TURNO (junto de outros pontos — ex.:
+     * os critérios, numa chamada só): quando presente, NÃO chama a Jev de novo.
+     */
+    respostasProntas?: RespostasDeJev;
   },
 ): Promise<MotoDoCatalogo | undefined> {
-  if (catalogo.length === 0) return undefined;
-  // Pergunta/objeção NÃO é escolha — barra ANTES (vale para a Jev e o fallback).
-  if (bloqueiaEscolha(textoDoCliente)) return undefined;
-
-  const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
-  // A moto CITADA (foto respondida) entra mesmo se já foi "detalhada": é justamente
-  // a que o cliente escolhe — excluí-la fazia o matcher casar um prefixo errado
-  // ("cito a CB 300 R FLEX, ele dá a CB 300 R"). Bug medido ao vivo 2026-10-07.
-  const citadasDaCitacao = textoCitado === '' ? [] : citadasMaximais(textoCitado, catalogo);
-  const ehCitada = (m: MotoDoCatalogo): boolean =>
-    citadasDaCitacao.some((c) => normalizarNomeDeMoto(c.nome) === normalizarNomeDeMoto(m.nome));
-  const candidatas = catalogo.filter(
-    (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m),
-  );
-
-  // TRAVA ESTRUTURAL: sem referência a NENHUMA moto mostrada, a mensagem NÃO é
-  // escolha ("Sao paulo", "Gostei", "ok", número solto). NÃO consulta a Jev nem
-  // trava `escolhida` — era o defeito da "escolha inventada" (2026-10-06).
-  if (!temReferenciaAMoto(textoDoCliente, textoCitado, candidatas)) return undefined;
-
-  // RÓTULO com os ATRIBUTOS (ano, cor, cilindrada, km) — a Jev casa o que o cliente
-  // disse ("a 2015", "a preta", "a 300 F") com a candidata. "Dinâmico" = qualquer
-  // atributo cadastrado.
-  const rotulo = (m: MotoDoCatalogo): string => {
-    const extras = [m.ano, m.cor, m.cilindrada, m.quilometragem].filter(
-      (v): v is string => typeof v === 'string' && v.trim() !== '',
-    );
-    return extras.length > 0 ? `${m.nome} (${extras.join(', ')})` : m.nome;
-  };
+  const plano = montarPedidoDeEscolha({
+    textoDoModelo,
+    textoDoCliente,
+    catalogo,
+    jaDetalhadas,
+    textoCitado,
+  });
+  if (plano === null) return undefined;
+  const { candidatas, rotulos } = plano;
 
   // ── JEV PRIMEIRO (via ÁRBITRO DE TURNO — Fase 4) ──────────────────────────
-  // 1 ponto → o Árbitro faz a chamada IDÊNTICA à que o ponto faria sozinho (estado
-  // PLANO, perguntas sem prefixo). O pipeline único fica em vigor; o merge
-  // multi-ponto (escolha + critérios numa chamada só) entra quando os pontos de
-  // "significado" forem co-localizados. Sem `db` (binding), mantém o caminho
-  // legado de ambiente.
+  // O veredito pode vir PRONTO (chamada unificada do Árbitro, junto de outros
+  // pontos); sem ele, o ponto chama a Jev sozinho. Sem `db` (binding), mantém o
+  // caminho legado de ambiente.
   let respostasDaEscolha: RespostasDeJev | undefined;
-  if (candidatas.length >= 1) {
-    const rotulos = candidatas.map(rotulo);
-    if (deps?.db !== undefined && deps.tenantId !== undefined) {
-      const veredito = await arbitrar({
-        db: deps.db,
-        tenantId: deps.tenantId,
-        turno: {},
-        pedidos: [
-          {
-            ponto: 'moto_escolhida',
-            contexto: {
-              cliente: textoDoCliente,
-              citado: textoCitado,
-              modelo: textoDoModelo,
-              candidatas: rotulos,
-            },
-            perguntas: perguntaDeMotoEscolhidaJev(rotulos),
-            obrigatorias: ['moto'],
-          },
-        ],
-        ...(deps.log !== undefined ? { log: deps.log } : {}),
+  if (deps?.respostasProntas !== undefined) {
+    respostasDaEscolha = deps.respostasProntas;
+  } else if (deps?.db !== undefined && deps.tenantId !== undefined) {
+    const veredito = await arbitrar({
+      db: deps.db,
+      tenantId: deps.tenantId,
+      turno: {},
+      pedidos: [plano.pedido],
+      ...(deps.log !== undefined ? { log: deps.log } : {}),
+    });
+    respostasDaEscolha = veredito?.porPonto.moto_escolhida;
+  } else {
+    const alvos = alvosDeJevDe(process.env);
+    if (alvos.length > 0) {
+      const decisao = await decidir({
+        alvos,
+        state: plano.pedido.contexto,
+        questions: plano.pedido.perguntas,
+        perguntasObrigatorias: ['moto'],
       });
-      respostasDaEscolha = veredito?.porPonto.moto_escolhida;
-    } else {
-      const alvos = alvosDeJevDe(process.env);
-      if (alvos.length > 0) {
-        const decisao = await decidir({
-          alvos,
-          state: {
-            cliente: textoDoCliente,
-            citado: textoCitado,
-            modelo: textoDoModelo,
-            candidatas: rotulos,
-          },
-          questions: perguntaDeMotoEscolhidaJev(rotulos),
-          perguntasObrigatorias: ['moto'],
-        });
-        respostasDaEscolha = decisao?.respostas;
-      }
-    }
-    if (respostasDaEscolha !== undefined) {
-      const escolhido = motoEscolhidaDaRespostaDeJev(respostasDaEscolha);
-      const idx = escolhido !== null ? rotulos.indexOf(escolhido) : -1;
-      if (idx >= 0) {
-        deps?.log?.info('escolha: a JEV decidiu', {
-          fonte: 'jev',
-          escolhida: candidatas[idx]!.nome,
-        });
-        return candidatas[idx];
-      }
-      // A Jev disse "nenhuma" — pode ser ambiguidade REAL ou uma falha dela. Cai
-      // no determinístico como COBERTURA (logado); se ele também não achar, é
-      // "sem escolha".
-      deps?.log?.info('escolha: Jev disse "nenhuma" — checando o determinístico', {
-        fonte: 'jev_nenhuma',
-      });
+      respostasDaEscolha = decisao?.respostas;
     }
   }
-
+  if (respostasDaEscolha !== undefined) {
+    const escolhido = motoEscolhidaDaRespostaDeJev(respostasDaEscolha);
+    const idx = escolhido !== null ? rotulos.indexOf(escolhido) : -1;
+    if (idx >= 0) {
+      deps?.log?.info('escolha: a JEV decidiu', {
+        fonte: 'jev',
+        escolhida: candidatas[idx]!.nome,
+      });
+      return candidatas[idx];
+    }
+    // A Jev disse "nenhuma" — pode ser ambiguidade REAL ou uma falha dela. Cai
+    // no determinístico como COBERTURA (logado); se ele também não achar, é
+    // "sem escolha".
+    deps?.log?.info('escolha: Jev disse "nenhuma" — checando o determinístico', {
+      fonte: 'jev_nenhuma',
+    });
+  }
   // ── FALLBACK determinístico (Jev indisponível OU disse "nenhuma") ──────────
   const deterministica = motoEscolhidaPeloCliente(
     textoDoModelo,
