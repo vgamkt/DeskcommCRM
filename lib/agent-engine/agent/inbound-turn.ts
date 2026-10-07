@@ -2427,6 +2427,11 @@ async function executarTurnoDoAgente(
   // nomes de coluna de antes. Alimenta a extração de fotos e o bloco injetado no
   // sufixo (nunca no prompt fixo da persona).
   const catalogoMapeamento = await carregarCatalogoMapeamento(pool, tenantId).catch(() => null);
+  // Cache/latência (final): o MAPEAMENTO do catálogo é ESTÁVEL por agente. Com a flag,
+  // ele vai para o PREFIXO cacheável (o system) em vez do sufixo volátil — mesmos bytes
+  // entre turnos ⇒ cache hit. Default OFF: comportamento idêntico ao de hoje.
+  const blocoCatalogoResidente =
+    process.env.CATALOGO_NO_PREFIXO === '1' ? renderBlocoCatalogo(catalogoMapeamento) : '';
   const colunasCatalogo = catalogoMapeamento !== null ? colunasDoCatalogo(catalogoMapeamento) : undefined;
   // Mensagem inbound do job, lida UMA vez: alimenta o gatilho por assunto, a
   // captura determinística do fluxo e o contexto do turno (antes era lida duas
@@ -2626,6 +2631,8 @@ async function executarTurnoDoAgente(
   // tools publicadas — ver comentário de `AGENDA_SYSTEM_BLOCK`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // não depende de nenhuma feature — todo agente publicado o recebe.
   const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
+  // O mapeamento do catálogo (estável) entra no PREFIXO cacheável quando a flag liga.
+  if (blocoCatalogoResidente !== '') blocosResidentes.push(blocoCatalogoResidente);
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
@@ -6592,7 +6599,11 @@ async function executarTurnoDoAgente(
       // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
       // prefixo fixo da persona.
       // 1d: com candidatas pré-buscadas, o MAPEAMENTO do catálogo sai do prompt.
-      usaPrefetchDaJev && blocoCandidatas !== '' ? blocoCandidatas : blocoCatalogo,
+      usaPrefetchDaJev && blocoCandidatas !== ''
+        ? blocoCandidatas
+        : blocoCatalogoResidente !== ''
+          ? ''
+          : blocoCatalogo,
       // ESTADO DO ATENDIMENTO: o que JÁ sabemos (dados lidos de volta + moto
       // escolhida/trava). Determinístico, por-lead — evita reperguntar e reabrir a
       // escolha sem depender de o modelo garimpar o histórico.

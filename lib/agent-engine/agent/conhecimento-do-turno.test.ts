@@ -19,7 +19,7 @@ describe("renderBlocoDeConhecimento", () => {
 
   it("com trechos → bloco com contrato de CONFERÊNCIA + CITAÇÃO e o trecho", () => {
     const b = renderBlocoDeConhecimento([TRECHO]);
-    expect(b).toContain("CONFIRA antes de usar");
+    expect(b).toContain("USE ANTES DE RESPONDER");
     expect(b).toContain("fonte_ids");
     expect(b).toContain("PRE-002");
     expect(b).toContain("Base Valle Motos — preco");
