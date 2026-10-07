@@ -3361,10 +3361,16 @@ async function executarTurnoDoAgente(
   // (ex.: "quero uma moto barata") e não há moto atual → a ação do turno é
   // PERGUNTAR o orçamento, NÃO apresentar catálogo. Determinístico: só a instrução
   // de prompt não segurava — o motor apresentava por cima (medido ao vivo).
+  // ⚠️ NÃO quando é OBJEÇÃO: "achei caro" casa `pedePrecoSemValor` (tem "caro",
+  // sem número), mas é OBJEÇÃO — quem responde é a NEGOCIAÇÃO (persuadir), não a
+  // pergunta de orçamento. Sem este gate, o motor SOBRESCREVIA o texto do modelo
+  // por PERGUNTA_DE_ORCAMENTO em toda objeção de preço → respostas idênticas na 1ª
+  // e na 2ª (medido ao vivo 2026-10-07).
   const precoSemValorTurno =
     currentInboundText !== null &&
     currentInboundText.trim() !== '' &&
     motoAtualDaConversa === null &&
+    !ehObjecaoTurno &&
     pedePrecoSemValor(currentInboundText);
   // A Jev do `offer_motos` pode dizer que o pedido é VAGO (`perguntar`): antes de
   // despejar o catálogo, PERGUNTAR o que falta (uso/tipo/orçamento). Mesma
