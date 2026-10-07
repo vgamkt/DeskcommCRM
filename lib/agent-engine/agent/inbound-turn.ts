@@ -5819,7 +5819,12 @@ async function executarTurnoDoAgente(
   // turno carrega references no manifesto (Task 3) — sem isso oferecer a tool seria
   // ruído. Read-only (tool-breaker.ts); tenant/matched skills vêm do closure
   // (skillMatch, calculado acima), nunca do payload do modelo.
-  if (skillMatch.matched.some((s) => skillHasReferences(s))) {
+  // #3: com SKILLS_BY_REFERENCE, a tool TAMBÉM precisa entrar (é por ela que o
+  // modelo lê o CORPO/playbook da skill) — senão ele não teria como lê-lo.
+  if (
+    process.env.SKILLS_BY_REFERENCE === '1' ||
+    skillMatch.matched.some((s) => skillHasReferences(s))
+  ) {
     rawTools.read_skill_reference = tool({
       ...AGENT_TOOL_DEFS.read_skill_reference,
       execute: async ({ skill_name, ref_path }) => {
