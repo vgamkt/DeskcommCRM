@@ -6534,7 +6534,10 @@ async function executarTurnoDoAgente(
       ).catch(() => false))
     ) {
       runLog.info('turno superado por inbound mais nova — nada é enviado; a próxima rodada responde');
-      throw new JobSettledError('inbound mais nova chegou durante o turno — turno superado');
+      // Retorna NORMAL (não lança): o worker completa o job. Lançar aqui viraria
+      // `failJob`/retry (o contrato do JobSettledError exige o run ter liquidado o
+      // job antes) — e o turno superado seria re-executado sem necessidade.
+      return;
     }
 
     if (turn === null) {
