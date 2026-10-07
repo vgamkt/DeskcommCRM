@@ -29,16 +29,26 @@ export async function rotearConhecimentoComJev(
     if (alvos.length === 0) return null;
 
     // Nomes/tipos dos materiais (contexto para a Jev escolher).
-    const { rows } = await db.query<{ id: string; name: string | null; source_type: string | null }>(
-      `select id, name, source_type from ai_knowledge_sources
+    const { rows } = await db.query<{
+      id: string;
+      name: string | null;
+      source_type: string | null;
+      source_metadata: { indice?: { resumo?: string } } | null;
+    }>(
+      `select id, name, source_type, source_metadata from ai_knowledge_sources
         where organization_id = $1 and id = any($2::uuid[])`,
       [tenantId, [...args.materialIds]],
     );
-    const materiais: MaterialParaJev[] = rows.map((r) => ({
-      id: r.id,
-      name: r.name ?? r.id.slice(0, 8),
-      sourceType: r.source_type ?? undefined,
-    }));
+    const materiais: MaterialParaJev[] = rows.map((r) => {
+      const resumo = r.source_metadata?.indice?.resumo;
+      return {
+        id: r.id,
+        name: r.name ?? r.id.slice(0, 8),
+        sourceType: r.source_type ?? undefined,
+        // ÍNDICE (Fase 1): o resumo do conteúdo é o que faz a Jev escolher certo.
+        ...(typeof resumo === 'string' && resumo.trim() !== '' ? { resumo } : {}),
+      };
+    });
     if (materiais.length === 0) return null;
 
     const decisao = await decidir({
@@ -63,9 +73,9 @@ export async function rotearConhecimentoComJev(
     });
     if (decisao === null) return null;
     const rota = rotaDeConhecimentoDaJev(decisao.respostas, materiais, args.topKPadrao);
-    // Se a Jev não escolheu NENHUM material, NÃO restringe (deixa a busca ampla):
-    // restringir a vazio devolveria resposta sem base.
-    if (rota.materialIds.length === 0) return { materialIds: [...args.materialIds], topK: rota.topK };
+    // A Jev pode escolher NENHUM material (entrada vaga, ex.: "bom dia"). Devolvemos
+    // a rota CRUA (vazia = "nada") e cada chamador decide: a TOOL deixa amplo
+    // (busca tudo); o CONHECIMENTO NO TURNO NÃO injeta (o gate da opção b).
     log.info('knowledge-route: a Jev escolheu', {
       materiais: rota.materialIds.length,
       de: materiais.length,

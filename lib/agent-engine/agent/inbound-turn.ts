@@ -4190,7 +4190,9 @@ async function executarTurnoDoAgente(
           pool,
           {
             organizationId: tenantId,
-            knowledgeSourceIds: rota?.materialIds ?? fontes,
+            // A Jev vazia (entrada vaga) NÃO restringe a tool: aqui a busca fica
+            // AMPLA (diferente do conhecimento no turno, que é gate). Ver A/B 2026-10-07.
+            knowledgeSourceIds: rota !== null && rota.materialIds.length > 0 ? rota.materialIds : fontes,
             kbVersionId: agentConfig?.activeKbVersionId ?? null,
             query,
             topK: rota?.topK ?? topKPadrao,

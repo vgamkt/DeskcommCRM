@@ -19,7 +19,15 @@ export interface MaterialParaJev {
   name: string;
   /** Tipo do material (ex.: pdf, site, texto) — contexto para a Jev. */
   sourceType?: string | undefined;
+  /**
+   * RESUMO do conteúdo (índice do acervo, Fase 1) — é o que faz a Jev escolher
+   * com ACERTO em vez de adivinhar pelo nome. Cortado p/ caber no contexto dela.
+   */
+  resumo?: string | undefined;
 }
+
+/** Teto do resumo que vai ao contexto da Jev (por material). */
+const RESUMO_MAX = 280;
 
 /** Faixas de top-K (o LLM recebe um número de trechos). */
 export const OPCOES_TOP_K = [3, 5, 8, 12] as const;
@@ -36,9 +44,13 @@ export function perguntasDeConhecimentoDeJev(
   const perguntas: PerguntasDeJev = {};
   materiais.slice(0, 30).forEach((m, i) => {
     const tipo = m.sourceType ? ` (${m.sourceType})` : '';
+    const conteudo = m.resumo ? ` O que ele contém: ${m.resumo.slice(0, RESUMO_MAX)}` : '';
     perguntas[`usar_${i}`] = {
       type: 'noul',
-      instructions: `Para responder ao cliente, vale consultar o material "${m.name}"${tipo}?`,
+      instructions:
+        `Para responder ao cliente AGORA, o material "${m.name}"${tipo} RESPONDE DIRETAMENTE à ` +
+        `pergunta dele? Marque SIM só quando ele for útil para ESTA resposta; na dúvida ou em ` +
+        `saudação/assunto vago, marque NÃO.${conteudo}`,
     };
   });
   // top-K: escala ORDENADA (0 = poucos, 3 = muitos). O motor mapeia para OPCOES_TOP_K.
@@ -51,19 +63,29 @@ export function perguntasDeConhecimentoDeJev(
   return perguntas;
 }
 
+/**
+ * Teto de materiais na rota. Em entrada VAGA ("bom dia") a Jev `noul` marcava TUDO
+ * (medido 2026-10-07: 19/19) — o que polui a busca. Aqui ficamos com os mais
+ * pontuados, no máximo este teto.
+ */
+const MAX_MATERIAIS = 4;
+
 /** Converte as respostas da Jev na rota (materiais + top-K). */
 export function rotaDeConhecimentoDaJev(
   respostas: RespostasDeJev,
   materiais: readonly MaterialParaJev[],
   topKPadrao: number,
 ): RotaDeConhecimento {
-  const materialIds: string[] = [];
+  const candidatos: Array<{ id: string; score: number }> = [];
   materiais.slice(0, 30).forEach((m, i) => {
     const a = respostas[`usar_${i}`];
     if (a?.type === 'noul' && typeof a.noul === 'number' && a.noul > LIMIAR_NOUL) {
-      materialIds.push(m.id);
+      candidatos.push({ id: m.id, score: a.noul });
     }
   });
+  // CAP pelos mais pontuados: um "sim" para tudo não vira busca em tudo.
+  candidatos.sort((a, b) => b.score - a.score);
+  const materialIds = candidatos.slice(0, MAX_MATERIAIS).map((c) => c.id);
   const score = respostas.topk;
   const idx =
     score?.type === 'score' && typeof score.score === 'number'

@@ -59,7 +59,11 @@ export async function montarConhecimentoDoTurno(
       { pergunta: args.pergunta, materialIds: args.fontes, topKPadrao: args.topK },
       args.log ?? noop,
     );
+    // GATE (opção b): a Jev respondeu e não viu material relevante ("bom dia") →
+    // NÃO injeta nada. (Diferente da tool, que nesse caso fica ampla.)
+    if (rota !== null && rota.materialIds.length === 0) return [];
     const fontes = rota?.materialIds ?? [...args.fontes];
+    if (fontes.length === 0) return [];
     const k = Math.max(1, Math.min(rota?.topK ?? args.topK, TOPK_MAX));
 
     // 2) O MOTOR embeda e busca o top-K nas fontes escolhidas.
