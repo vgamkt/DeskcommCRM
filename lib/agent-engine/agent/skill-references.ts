@@ -58,6 +58,11 @@ export async function readSkillReference(
       },
     };
   }
+  // #3 (cache/latência): o CORPO da skill sob demanda. O índice (nome+descrição)
+  // fica no prefixo cacheável; o playbook só entra no contexto quando o modelo lê.
+  if (input.refPath === "body") {
+    return { ok: true, skill_name: skill.name, ref_path: "body", content: skill.body };
+  }
   const entry = referenceEntries(skill.manifest).find((e) => e.path === input.refPath);
   if (entry === undefined) {
     return {

@@ -315,6 +315,24 @@ export function renderMatchedSkillBodies(matched: readonly LoadedSkill[]): strin
   ].join('\n\n');
 }
 
+/**
+ * #3 (cache/latência): bloco do SUFIXO com o ÍNDICE das skills casadas + a instrução
+ * de LER o corpo sob demanda (`read_skill_reference(nome, "body")`). Substitui os
+ * corpos quando a flag `SKILLS_BY_REFERENCE` está ligada — o sufixo (volátil) encolhe
+ * e o prefixo cacheável passa a dominar. Vazio → ''.
+ */
+export function renderSkillBodiesReference(matched: readonly LoadedSkill[]): string {
+  if (matched.length === 0) {
+    return '';
+  }
+  return [
+    '## Skills ativas neste turno — LEIA o playbook ANTES de responder',
+    ...matched.map((s) => `- ${s.name}: ${s.description}`),
+    'Para CADA skill acima, chame `read_skill_reference` com `skill_name` (o nome da skill) e ' +
+      '`ref_path: "body"`, e siga o playbook que voltar. NÃO responda antes de ler as skills ativas.',
+  ].join('\n');
+}
+
 /** Custo em tokens de um texto — mesma heurística do resto do harness (chars/3,5). */
 export function skillBlockTokens(block: string): number {
   return block === '' ? 0 : countPayloadTokens(block);

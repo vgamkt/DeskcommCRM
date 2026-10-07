@@ -144,6 +144,7 @@ import {
   matchSkillsPorNomes,
   recordSkillMissCandidates,
   renderMatchedSkillBodies,
+  renderSkillBodiesReference,
   renderSkillIndex,
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
@@ -521,7 +522,12 @@ export const AGENT_TOOL_DEFS = {
           .string()
           .min(1)
           .describe('nome da skill ativa neste turno (como aparece no bloco de skills)'),
-        ref_path: z.string().min(1).describe('caminho da reference dentro do pacote da skill'),
+        ref_path: z
+          .string()
+          .min(1)
+          .describe(
+            'caminho da reference dentro do pacote da skill, ou "body" para ler o PLAYBOOK COMPLETO da skill',
+          ),
       })
       .passthrough(),
   },
@@ -3568,7 +3574,14 @@ async function executarTurnoDoAgente(
     .map((nome) => skills.find((s) => s.name === nome))
     .filter((s): s is (typeof skills)[number] => s !== undefined)
     .filter((s) => !skillMatch.matched.some((m) => m.name === s.name));
-  const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoFluxo]);
+  const skillsAtivasDoTurno = [...skillMatch.matched, ...skillsDoFluxo];
+  // #3 (cache/latência): com a flag, os CORPOS saem do prompt (viram leitura sob
+  // demanda via `read_skill_reference(nome, "body")`) — o sufixo volátil encolhe e o
+  // cache rende mais. Default OFF: comportamento idêntico ao de hoje.
+  const matchedSkillsBlock =
+    process.env.SKILLS_BY_REFERENCE === '1'
+      ? renderSkillBodiesReference(skillsAtivasDoTurno)
+      : renderMatchedSkillBodies(skillsAtivasDoTurno);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
