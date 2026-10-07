@@ -307,6 +307,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "resumo_de_conhecimento",
+    rotulo: "Resumir o material da base de conhecimento",
+    oQueFaz:
+      "Ao salvar/embedar um material, escreve o resumo do conteúdo dele — é o índice que a Jev lê para escolher qual material consultar no turno.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "lib/ai/rag/indice.ts",
+    sintomaDeFalha:
+      "A Jev escolhe o material a consultar só pelo nome — a seleção fica imprecisa e o material certo pode não entrar.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "catalog_criteria",
     rotulo: "Ler o que o cliente procura na moto",
     oQueFaz:
