@@ -1,47 +1,100 @@
 /**
  * O ÍNDICE DO ACERVO — o que a Jev lê para escolher QUAIS materiais consultar.
  *
- * Hoje a rota de conhecimento (`knowledge_route`) recebe só `nome` + `tipo` de cada
- * fonte — pouco para decidir com acerto. O índice dá a cada fonte um `resumo` do
- * seu conteúdo, gravado em `ai_knowledge_sources.source_metadata.indice`.
- *
- * ─── REESCRITA AUTOMÁTICA (o ponto deste arquivo) ──────────────────────────
+ * ─── REESCRITA AUTOMÁTICA ──────────────────────────────────────────────────
  * O indexador (`workers/rag-indexer.ts`) chama isto SEMPRE que (re)indexa uma
- * fonte. Então, quando o dono MUDA a base (salva/embeda na tela de conhecimento),
- * o índice se refaz sozinho — sem passo manual, sem migration, sem código de
- * runtime.
+ * fonte. Mudar a base (salvar/embedar na tela de conhecimento) reescreve o índice
+ * daquela fonte — sem passo manual.
  *
- * ─── RESUMO POR IA (Fase 1b) ───────────────────────────────────────────────
- * O resumo é escrito por IA (ponto `resumo_de_conhecimento`), a partir do conteúdo
- * da fonte. O gatilho é por FONTE alterada (não o acervo todo). Se a IA falhar,
- * cai no resumo determinístico (amostra dos próprios trechos) — nunca fica sem
- * índice.
+ * ─── FORMATO (medido 2026-10-07) ───────────────────────────────────────────
+ *  - DETERMINÍSTICO (âncoras): `escopo` + `topicos` + `itens` ([ID] título). É
+ *    exaustivo — a IA não pode "esquecer" um item.
+ *  - IA (elo): `resumo` no formato "Cobre: … Não cobre: …". O "Não cobre" é o que
+ *    impede a Jev de confundir materiais PARECIDOS (preço × financiamento).
+ *
+ * A Jev recebe só o ENXUTO (escopo + tópicos + poucos exemplos + resumo). O
+ * `itens` COMPLETO fica guardado (auditoria/insumo), NÃO vai no contexto dela —
+ * medido: o item completo deixa o roteamento mais barulhento.
  */
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const MAX_TRECHOS = 40;
-/** Teto da AMOSTRA (insumo do resumo + fallback), em caracteres. */
-const MAX_CHARS = 2400;
-/** Teto do resumo por IA (vai no contexto da Jev, por material). */
-const MAX_RESUMO_IA = 400;
+const MAX_TRECHOS = 300;
+/** Quantos exemplos vão no ENXUTO (o resto fica só no `itens`). */
+export const MAX_EXEMPLOS = 5;
+
+export interface ItemDoIndice {
+  id: string;
+  titulo: string;
+}
 
 export interface IndiceDaFonte {
+  escopo: string;
+  topicos: string[];
+  exemplos: ItemDoIndice[];
+  /** TODOS os itens (guardado; NÃO vai no contexto da Jev). */
+  itens: ItemDoIndice[];
+  /** IA: "Cobre: … Não cobre: …" (ou o determinístico, no fallback). */
   resumo: string;
   trechos: number;
   gerado_em: string;
-  /** De onde veio o resumo: 'ia' ou 'deterministico' (fallback). */
   fonte_do_resumo: "ia" | "deterministico";
 }
 
-/** Resumo por IA — `null` quando a IA não está configurada ou falhou. */
-async function resumirComIA(
-  organizationId: string,
+/** Extrai [ID] + título (+ categoria) de um trecho. Genérico → 1ª linha. */
+function itensDoTrecho(content: string): { id: string; titulo: string; categoria: string } | null {
+  const bruto = String(content ?? "");
+  const id = /\[ID\]\s*([A-Za-z]+-\d+)/.exec(bruto)?.[1];
+  if (id !== undefined) {
+    const titulo = (/\[OBJECAO\]\s*(.*?)\s*\[CATEGORIA\]/.exec(bruto)?.[1] ?? "")
+      .replace(/["“”]/g, "")
+      .trim();
+    const categoria = (/\[CATEGORIA\]\s*([^\s[\]]+)/.exec(bruto)?.[1] ?? "").trim();
+    return { id, titulo, categoria };
+  }
+  // Material SEM tag: usa a 1ª linha como "título" (id = posição textual).
+  const linha = bruto.replace(/\s+/g, " ").trim().slice(0, 80);
+  return linha === "" ? null : { id: "", titulo: linha, categoria: "" };
+}
+
+/** Prompt ASSERTIVO do resumo (cobre/não cobre). */
+function promptDoResumo(
   nome: string,
-  amostra: string,
-): Promise<string | null> {
+  tipo: string,
+  itens: readonly ItemDoIndice[],
+  topicos: readonly string[],
+  vizinhos: readonly string[],
+): string {
+  const listaItens = itens
+    .slice(0, 60)
+    .map((i) => (i.id ? `[${i.id}] "${i.titulo}"` : `"${i.titulo}"`))
+    .join("; ");
+  return (
+    `Você é o INDEXADOR do acervo de conhecimento de uma loja de motos. Escreva o RESUMO que ` +
+    `um classificador usará para decidir QUANDO consultar ESTE material. Ele precisa ser ` +
+    `ASSERTIVO e ESPECÍFICO — nada de "assuntos gerais".\n\n` +
+    `Material: "${nome}" (${tipo}), ${itens.length} itens.\n` +
+    `Tópicos: ${topicos.join(", ") || "—"}.\n` +
+    `Itens: ${listaItens}\n` +
+    `Outros materiais do acervo (para o LIMITE): ${vizinhos.join(", ") || "—"}.\n\n` +
+    `Responda EXATAMENTE neste formato, em 2 frases curtas e factuais:\n` +
+    `Cobre: <o que ESTE material responde, usando os tópicos e os itens reais>.\n` +
+    `Não cobre: <o que é de OUTRO material — cite os vizinhos que poderiam confundir>.\n\n` +
+    `Regras: NÃO invente o que não está nos itens; seja concreto (cite exemplos reais); ` +
+    `o "Não cobre" é o que evita a confusão entre materiais parecidos.`
+  );
+}
+
+async function resumirComIA(args: {
+  organizationId: string;
+  nome: string;
+  tipo: string;
+  itens: readonly ItemDoIndice[];
+  topicos: readonly string[];
+  vizinhos: readonly string[];
+}): Promise<string | null> {
   try {
     const pool = getRequestPool();
     const cfg = llmEdgeConfigFromEnv({
@@ -51,30 +104,25 @@ async function resumirComIA(
       LLM_CACHE_TTL: process.env.LLM_CACHE_TTL,
     });
     const { result } = await runModelCall(pool, cfg, {
-      tenantId: organizationId,
+      tenantId: args.organizationId,
       purpose: "resumo_de_conhecimento",
       messages: [
         {
           role: "user",
-          content:
-            `Você resume MATERIAL de uma base de conhecimento de uma loja de motos. ` +
-            `Em 2 a 3 frases, diga os TÓPICOS que este material cobre e o que ele RESPONDE — ` +
-            `o texto vai servir para um sistema escolher QUANDO consultar este material. ` +
-            `Seja específico e factual; NÃO invente o que não está no material.\n\n` +
-            `Material: "${nome}"\n\n${amostra}\n\nResumo:`,
+          content: promptDoResumo(args.nome, args.tipo, args.itens, args.topicos, args.vizinhos),
         },
       ],
     });
     const texto = String(result?.text ?? "").replace(/\s+/g, " ").trim();
-    return texto === "" ? null : texto.slice(0, MAX_RESUMO_IA);
+    return texto === "" ? null : texto;
   } catch {
     return null;
   }
 }
 
 /**
- * Gera (ou REESCREVE) o índice de UMA fonte a partir dos seus trechos ativos e o
- * grava em `source_metadata.indice`. Best-effort: nunca lança. Devolve o índice.
+ * Gera (ou REESCREVE) o índice de UMA fonte e o grava em `source_metadata.indice`.
+ * Best-effort: nunca lança. Devolve o índice.
  */
 export async function gerarIndiceDaFonte(
   organizationId: string,
@@ -84,13 +132,14 @@ export async function gerarIndiceDaFonte(
     const admin = createAdminClient();
     const { data: fonte } = await admin
       .from("ai_knowledge_sources")
-      .select("id, name, active_kb_version_id, source_metadata")
+      .select("id, name, source_type, active_kb_version_id, source_metadata")
       .eq("organization_id", organizationId)
       .eq("id", sourceId)
       .maybeSingle();
     const row = fonte as
       | {
           name?: string | null;
+          source_type?: string | null;
           active_kb_version_id?: string | null;
           source_metadata?: Record<string, unknown> | null;
         }
@@ -109,20 +158,49 @@ export async function gerarIndiceDaFonte(
     const lista = (chunks ?? []) as Array<{ content: string | null }>;
     if (lista.length === 0) return null;
 
-    // Amostra: os primeiros trechos, com espaços colapsados, cortada no teto.
-    let amostra = "";
+    // DETERMINÍSTICO: itens distintos (na ordem) + tópicos.
+    const vistos = new Set<string>();
+    const itens: ItemDoIndice[] = [];
+    const topicos: string[] = [];
     for (const c of lista) {
-      const t = String(c.content ?? "").replace(/\s+/g, " ").trim();
-      if (t === "") continue;
-      if (amostra.length + t.length > MAX_CHARS) break;
-      amostra += (amostra === "" ? "" : " ⁋ ") + t;
+      const it = itensDoTrecho(String(c.content ?? ""));
+      if (it === null) continue;
+      const chave = it.id || it.titulo;
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      itens.push({ id: it.id, titulo: it.titulo });
+      if (it.categoria !== "" && !topicos.includes(it.categoria)) topicos.push(it.categoria);
     }
-    if (amostra === "") return null;
+    if (itens.length === 0) return null;
 
-    // RESUMO POR IA (Fase 1b); fallback = a própria amostra (determinístico).
-    const resumoIA = await resumirComIA(organizationId, row.name ?? "", amostra);
+    // Nomes das outras fontes (para o "Não cobre" citar os vizinhos).
+    const { data: todas } = await admin
+      .from("ai_knowledge_sources")
+      .select("name")
+      .eq("organization_id", organizationId)
+      .neq("id", sourceId);
+    const vizinhos = ((todas ?? []) as Array<{ name: string | null }>)
+      .map((v) => v.name ?? "")
+      .filter((n) => n !== "");
+
+    // IA: o resumo assertivo (cobre/não cobre).
+    const resumoIA = await resumirComIA({
+      organizationId,
+      nome: row.name ?? "",
+      tipo: row.source_type ?? "",
+      itens,
+      topicos,
+      vizinhos,
+    });
+
     const indice: IndiceDaFonte = {
-      resumo: resumoIA ?? amostra,
+      escopo: `${row.source_type ?? "material"} · ${itens.length} itens`,
+      topicos,
+      exemplos: itens.slice(0, MAX_EXEMPLOS),
+      itens,
+      resumo:
+        resumoIA ??
+        `Cobre ${itens.length} itens${topicos.length > 0 ? ` de ${topicos.join(", ")}` : ""}.`,
       trechos: lista.length,
       gerado_em: new Date().toISOString(),
       fonte_do_resumo: resumoIA !== null ? "ia" : "deterministico",

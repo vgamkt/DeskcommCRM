@@ -33,20 +33,34 @@ export async function rotearConhecimentoComJev(
       id: string;
       name: string | null;
       source_type: string | null;
-      source_metadata: { indice?: { resumo?: string } } | null;
+      source_metadata: {
+        indice?: {
+          topicos?: unknown;
+          exemplos?: unknown;
+          itens?: unknown;
+          resumo?: unknown;
+        };
+      } | null;
     }>(
       `select id, name, source_type, source_metadata from ai_knowledge_sources
         where organization_id = $1 and id = any($2::uuid[])`,
       [tenantId, [...args.materialIds]],
     );
     const materiais: MaterialParaJev[] = rows.map((r) => {
-      const resumo = r.source_metadata?.indice?.resumo;
+      const indice = r.source_metadata?.indice ?? null;
+      // ÍNDICE (Fase 1/1b): o cartão ENXUTO — âncoras determinísticas + resumo IA.
       return {
         id: r.id,
         name: r.name ?? r.id.slice(0, 8),
         sourceType: r.source_type ?? undefined,
-        // ÍNDICE (Fase 1): o resumo do conteúdo é o que faz a Jev escolher certo.
-        ...(typeof resumo === 'string' && resumo.trim() !== '' ? { resumo } : {}),
+        ...(Array.isArray(indice?.topicos) ? { topicos: indice.topicos as string[] } : {}),
+        ...(Array.isArray(indice?.exemplos)
+          ? { exemplos: indice.exemplos as Array<{ id: string; titulo: string }> }
+          : {}),
+        ...(Array.isArray(indice?.itens) ? { nItens: (indice.itens as unknown[]).length } : {}),
+        ...(typeof indice?.resumo === "string" && indice.resumo.trim() !== ""
+          ? { resumo: indice.resumo }
+          : {}),
       };
     });
     if (materiais.length === 0) return null;

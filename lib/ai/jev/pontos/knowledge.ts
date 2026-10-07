@@ -19,15 +19,29 @@ export interface MaterialParaJev {
   name: string;
   /** Tipo do material (ex.: pdf, site, texto) — contexto para a Jev. */
   sourceType?: string | undefined;
-  /**
-   * RESUMO do conteúdo (índice do acervo, Fase 1) — é o que faz a Jev escolher
-   * com ACERTO em vez de adivinhar pelo nome. Cortado p/ caber no contexto dela.
-   */
+  /** Tópicos/categorias (determinístico, do índice). */
+  topicos?: string[] | undefined;
+  /** Poucos EXEMPLOS de itens ([ID] título) — âncoras concretas. */
+  exemplos?: Array<{ id: string; titulo: string }> | undefined;
+  /** Quantos itens a fonte tem (o total; a lista completa NÃO vai à Jev). */
+  nItens?: number | undefined;
+  /** Resumo por IA: "Cobre: … Não cobre: …". */
   resumo?: string | undefined;
 }
 
-/** Teto do resumo que vai ao contexto da Jev (por material). */
-const RESUMO_MAX = 280;
+/** Cartão ENXUTO que a Jev recebe por material (escopo + âncoras + resumo). */
+function cartaoDoMaterial(m: MaterialParaJev): string {
+  const tipo = m.sourceType ? ` (${m.sourceType})` : "";
+  const itens = m.nItens !== undefined ? `, ${m.nItens} itens` : "";
+  const topicos = m.topicos?.length ? ` · tópicos: ${m.topicos.join(", ")}` : "";
+  const exemplos = m.exemplos?.length
+    ? ` · exemplos: ${m.exemplos
+        .map((e) => (e.id ? `[${e.id}] "${e.titulo}"` : `"${e.titulo}"`))
+        .join(" · ")}`
+    : "";
+  const resumo = m.resumo ? ` · ${m.resumo}` : "";
+  return `"${m.name}"${tipo}${itens}${topicos}${exemplos}${resumo}`;
+}
 
 /** Faixas de top-K (o LLM recebe um número de trechos). */
 export const OPCOES_TOP_K = [3, 5, 8, 12] as const;
@@ -43,14 +57,12 @@ export function perguntasDeConhecimentoDeJev(
 ): PerguntasDeJev {
   const perguntas: PerguntasDeJev = {};
   materiais.slice(0, 30).forEach((m, i) => {
-    const tipo = m.sourceType ? ` (${m.sourceType})` : '';
-    const conteudo = m.resumo ? ` O que ele contém: ${m.resumo.slice(0, RESUMO_MAX)}` : '';
     perguntas[`usar_${i}`] = {
       type: 'noul',
       instructions:
-        `Para responder ao cliente AGORA, o material "${m.name}"${tipo} RESPONDE DIRETAMENTE à ` +
-        `pergunta dele? Marque SIM só quando ele for útil para ESTA resposta; na dúvida ou em ` +
-        `saudação/assunto vago, marque NÃO.${conteudo}`,
+        `Para responder ao cliente AGORA, vale consultar o material ${cartaoDoMaterial(m)}? ` +
+        `Marque SIM só quando ele RESPONDE DIRETAMENTE à pergunta (olhe o "Não cobre"); ` +
+        `na dúvida ou em saudação/assunto vago, marque NÃO.`,
     };
   });
   // top-K: escala ORDENADA (0 = poucos, 3 = muitos). O motor mapeia para OPCOES_TOP_K.
