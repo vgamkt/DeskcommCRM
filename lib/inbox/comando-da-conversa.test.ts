@@ -262,7 +262,9 @@ describe("o espelho entre a tela e o motor", () => {
       "utf8",
     );
     const corpo = fonte.slice(fonte.indexOf("export async function isLeadInHandoff"));
-    const sql = corpo.slice(corpo.indexOf("`"), corpo.indexOf("[tenantId, leadId]"));
+    // O parâmetro `[tenantId, leadId, ...]` ganha chaves com o tempo (ex.:
+    // `AI_CANAL_ISOLADO_KEY`); recortar só até `[tenantId, leadId` cobre os dois.
+    const sql = corpo.slice(corpo.indexOf("`"), corpo.indexOf("[tenantId, leadId"));
     const colunas = ["force_human", "bot_silenced_until"];
     for (const c of colunas) expect(sql).toContain(c);
     // O controle: nenhuma OUTRA coluna de conversa entrou no gate sem que este
