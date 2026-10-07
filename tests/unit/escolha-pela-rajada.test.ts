@@ -61,4 +61,19 @@ describe("escolha pela CITAÇÃO que veio na rajada (a correção)", () => {
     const escolhida = motoEscolhidaPeloCliente("", textoDoCliente, CATALOGO, [], CITACAO);
     expect(escolhida?.nome).not.toBe("HONDA CBX 250 Twister");
   });
+
+  it("a moto CITADA já 'detalhada' NÃO é excluída — não casa o prefixo errado", () => {
+    // Medido ao vivo (2026-10-07): a CB 300 R FLEX já tinha a descrição carregada
+    // (entrara em `detalhadas`), era EXCLUÍDA das candidatas e o matcher casava
+    // "HONDA CB 300 R" (o prefixo). A moto citada tem que continuar elegível.
+    const textoDoCliente = ["Essa", "Sao paulo"].join("\n");
+    const escolhida = motoEscolhidaPeloCliente(
+      "",
+      textoDoCliente,
+      CATALOGO,
+      ["HONDA CB 300 R FLEX"],
+      CITACAO,
+    );
+    expect(escolhida?.nome).toBe("HONDA CB 300 R FLEX");
+  });
 });

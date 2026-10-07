@@ -497,7 +497,14 @@ export function motoEscolhidaPeloCliente(
 
   // (2) A mensagem do CLIENTE (só entre as ainda não detalhadas): nome maximal,
   // senão ano único, senão cor única.
-  const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
+  // A moto CITADA entra mesmo se já "detalhada" (é a que o cliente escolhe); excluí-la
+  // fazia o matcher casar um prefixo errado. Simétrico ao caminho assíncrono.
+  const citadasDaCitacao = textoCitado === '' ? [] : citadasMaximais(textoCitado, catalogo);
+  const ehCitada = (m: MotoDoCatalogo): boolean =>
+    citadasDaCitacao.some((c) => normalizarNomeDeMoto(c.nome) === normalizarNomeDeMoto(m.nome));
+  const candidatas = catalogo.filter(
+    (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m),
+  );
   if (candidatas.length === 0) return undefined;
   const textoParaNome = textoCitado === '' ? textoDoCliente : `${textoDoCliente} ${textoCitado}`;
   const citadasCliente = citadasMaximais(textoParaNome, candidatas);
@@ -560,7 +567,15 @@ export async function motoEscolhidaPeloClienteComJev(
   if (bloqueiaEscolha(textoDoCliente)) return undefined;
 
   const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
-  const candidatas = catalogo.filter((m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)));
+  // A moto CITADA (foto respondida) entra mesmo se já foi "detalhada": é justamente
+  // a que o cliente escolhe — excluí-la fazia o matcher casar um prefixo errado
+  // ("cito a CB 300 R FLEX, ele dá a CB 300 R"). Bug medido ao vivo 2026-10-07.
+  const citadasDaCitacao = textoCitado === '' ? [] : citadasMaximais(textoCitado, catalogo);
+  const ehCitada = (m: MotoDoCatalogo): boolean =>
+    citadasDaCitacao.some((c) => normalizarNomeDeMoto(c.nome) === normalizarNomeDeMoto(m.nome));
+  const candidatas = catalogo.filter(
+    (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m),
+  );
 
   // TRAVA ESTRUTURAL: sem referência a NENHUMA moto mostrada, a mensagem NÃO é
   // escolha ("Sao paulo", "Gostei", "ok", número solto). NÃO consulta a Jev nem
