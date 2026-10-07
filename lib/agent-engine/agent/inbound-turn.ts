@@ -6107,6 +6107,31 @@ async function executarTurnoDoAgente(
             { db: pool, tenantId },
           )
         : undefined;
+    // Persiste a escolha detectada de forma DETERMINÍSTICA (pré-escolha) — mesmo que o
+    // modelo responda por TEXTO LIVRE, sem chamar send_message. Sem isto, a trava da
+    // escolha se perde (escolhida volta a null) e o próximo turno re-oferece motos.
+    // Atualiza também o snapshot em memória para o caminho do send_message preservá-la.
+    if (
+      preview === undefined &&
+      preEscolhaDescricao !== undefined &&
+      normalizarNomeDeMoto(preEscolhaDescricao.valores?.nome ?? preEscolhaDescricao.nome) !==
+        (catalogoDaConversa.escolhida
+          ? normalizarNomeDeMoto(
+              catalogoDaConversa.escolhida.valores?.nome ?? catalogoDaConversa.escolhida.nome,
+            )
+          : null)
+    ) {
+      catalogoDaConversa.escolhida = preEscolhaDescricao;
+      void salvarCatalogoDaConversa(
+        pool,
+        tenantId,
+        input.conversationId,
+        catalogoDaConversa,
+        [],
+        null,
+        preEscolhaDescricao,
+      );
+    }
     const motoEmFoco = preEscolhaDescricao ?? motoAtualDaConversa;
     const turnoFalaDaMoto =
       preEscolhaDescricao !== undefined ||
