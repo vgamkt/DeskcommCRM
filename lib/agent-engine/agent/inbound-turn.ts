@@ -4228,6 +4228,21 @@ async function executarTurnoDoAgente(
             fonte_ids,
             job_id: liveJob().id,
           });
+          // PERSISTE a citação (Fase A1 da Análise) — best-effort, FIRE-AND-FORGET:
+          // NUNCA bloqueia o turno. Alimenta a tela "Análise" (offline).
+          void pool
+            .query(
+              `update conversations
+                  set metadata = jsonb_set(
+                        coalesce(metadata, '{}'::jsonb), '{conhecimento_citado}', $3::jsonb, true)
+                where organization_id = $1 and id = $2`,
+              [
+                tenantId,
+                input.conversationId,
+                JSON.stringify({ em: new Date().toISOString(), ids: fontesCitadasNesteTurno }),
+              ],
+            )
+            .catch(() => {});
         }
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o

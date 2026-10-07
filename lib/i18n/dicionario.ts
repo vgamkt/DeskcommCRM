@@ -439,6 +439,17 @@ export const DICIONARIO: Traducoes = {
   "Ver tudo em IA": { es: "Ver todo en IA" },
   "Ver tudo em CRM": { es: "Ver todo en CRM" },
   "Ver tudo em Análise": { es: "Ver todo en Análisis" },
+  "← Conhecimento": { es: "← Conocimiento" },
+  "Nada para analisar agora": { es: "Nada para analizar ahora" },
+  "Ver a conversa": { es: "Ver la conversación" },
+  "Quando a IA não conseguir resolver algo (um bloqueio, uma confirmação, uma dúvida que a base não cobria), o caso aparece aqui para você virar material da base.":
+    {
+      es: "Cuando la IA no consiga resolver algo (un bloqueo, una confirmación, una duda que la base no cubría), el caso aparece aquí para que lo conviertas en material de la base.",
+    },
+  "Onde a IA não resolveu bem. Transforme em material da base — o próximo cliente já recebe melhor. O atendimento nunca para por causa disto.":
+    {
+      es: "Donde la IA no resolvió bien. Conviértelo en material de la base — el próximo cliente ya recibe mejor. La atención nunca se detiene por esto.",
+    },
   Conexões: { es: "Conexiones" },
   Webhooks: { es: "Webhooks" },
   Desempenho: { es: "Rendimiento" },
