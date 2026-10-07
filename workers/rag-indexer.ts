@@ -41,6 +41,7 @@ import {
   type ChaveDeEmbedding,
 } from "@/lib/ai/embeddings/chave";
 import { acquireDebounce } from "@/lib/ai/rag/debounce";
+import { gerarIndiceDaFonte } from "@/lib/ai/rag/indice";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
 import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
 import { extrairTextoDoArquivo, ErroDeExtracao } from "@/lib/ai/rag/ingest/documento";
@@ -598,6 +599,11 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
         chunks_count: resultado.chunks,
         content_hash: resultado.contentHash,
       });
+      // ÍNDICE DO ACERVO: reescreve o resumo da fonte a partir dos trechos recém-
+      // indexados. Assim, quando o dono MUDA a base, o índice que a Jev lê para
+      // escolher o material se refaz SOZINHO — sem passo manual. Best-effort: não
+      // falha a indexação por causa do índice.
+      await gerarIndiceDaFonte(row.organization_id, fonte.id);
       return {
         consumer_key: consumerKey,
         status: "ok",

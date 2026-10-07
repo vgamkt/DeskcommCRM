@@ -24,6 +24,7 @@ import { aguardarVezDeEmbedding } from "@/lib/ai/embeddings/throttle";
 import { resolverChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
 import { anonymize, detectResidualPii } from "@/lib/ai/anonymize";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
+import { gerarIndiceDaFonte } from "@/lib/ai/rag/indice";
 import {
   activateVersion,
   createKnowledgeVersion,
@@ -384,6 +385,9 @@ export async function ingestConversationsBatch(
     if (totalChunkInserts > 0) {
       await markVersionReady(versionId, organizationId, totalChunkInserts);
       await activateVersion({ organizationId, knowledgeSourceId: sourceId, versionId });
+      // ÍNDICE DO ACERVO: reescreve o resumo da fonte de conversas — a MESMA
+      // reescrita automática do indexador principal (`workers/rag-indexer.ts`).
+      await gerarIndiceDaFonte(organizationId, sourceId);
     } else {
       await markVersionFailed(versionId, organizationId, "no_chunks_ingested");
     }
