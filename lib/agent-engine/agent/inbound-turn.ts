@@ -384,6 +384,15 @@ export const AGENT_TOOL_DEFS = {
             'está oferecendo nesta mensagem. O sistema envia a FOTO de cada uma com a legenda dela ' +
             '(nome/ano, cor, km, preço) DEPOIS do seu texto. NÃO cite nem liste as motos no `body`.',
         ),
+      fonte_ids: z
+        .array(z.string().min(1))
+        .max(12)
+        .optional()
+        .describe(
+          'USO INTERNO (não aparece ao cliente): os [ID]s dos trechos da "Base de conhecimento (fatos)" ' +
+            'que você REALMENTE usou nesta resposta (ex.: ["PRE-002"]). Registro da conferência. ' +
+            'Se não usou nenhum trecho, deixe vazio.',
+        ),
     }),
   },
   update_lead_state: {
@@ -3388,6 +3397,9 @@ async function executarTurnoDoAgente(
   // TRAVA DE DECISÃO: a moto escolhida NESTE turno (detectada no send_message) —
   // gravada junto do catálogo da conversa para valer nos turnos seguintes.
   let escolhaDetectadaNesteTurno: MotoDoCatalogo | null = null;
+  // Fase 2.2: os [ID]s da base que o modelo declarou ter usado neste turno (a
+  // "conferência" registrada). Vazio = não usou nenhum trecho.
+  let fontesCitadasNesteTurno: string[] = [];
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -4202,7 +4214,18 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body, media_url, media_urls, motos }) => {
+      execute: async ({ body, media_url, media_urls, motos, fonte_ids }) => {
+        // CONFERÊNCIA (Fase 2.2): o modelo registra QUAIS trechos da base usou. É o
+        // elo auditável — a decisão de buscar é da Jev; aqui fica o que ele USOU.
+        if ((fonte_ids ?? []).length > 0) {
+          fontesCitadasNesteTurno = [
+            ...new Set([...fontesCitadasNesteTurno, ...(fonte_ids ?? [])]),
+          ];
+          runLog.info('conhecimento: fontes citadas pelo modelo', {
+            fonte_ids,
+            job_id: liveJob().id,
+          });
+        }
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
