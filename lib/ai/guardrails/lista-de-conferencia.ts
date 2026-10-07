@@ -84,10 +84,20 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     oQueProtege:
       "Contato anonimizado a pedido não recebe mensagem, e prospecção sem base legal não sai.",
     escolha: null,
-    porQueNaoSeDesliga: "É obrigação legal. Apagar dados é irreversível por desenho, e escrever para quem foi apagado desfaria isso.",
+     porQueNaoSeDesliga: "É obrigação legal. Apagar dados é irreversível por desenho, e escrever para quem foi apagado desfaria isso.",
      camada: null,
-  },
-  {
+   },
+   {
+     nome: "inbound_superada",
+     rotulo: "Responder sempre a mensagem mais recente",
+     oQueProtege:
+       "Se o cliente mandou outra mensagem enquanto a resposta era preparada, nada velho é enviado — a resposta sai com o contexto atualizado.",
+     escolha: null,
+     porQueNaoSeDesliga:
+       "Enviar resposta velha (pergunta já respondida) confunde o cliente; a mensagem mais nova traz o contexto certo.",
+     camada: null,
+   },
+   {
     nome: "pacing",
     rotulo: "Segurar o ritmo de envio",
     oQueProtege:

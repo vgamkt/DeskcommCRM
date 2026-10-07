@@ -74,6 +74,7 @@ import { detectarNotaInterna, renderVetoDeNotaInterna } from './nota-interna';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
 import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
+import { jobInboundFoiSuperado } from './inbound-superado';
 import { isWindowOpen } from './messaging-window';
 import type { ChannelProvider } from '@/lib/channels/capabilities';
 
@@ -82,6 +83,12 @@ export interface GateContext {
   now: Date;
   /** corpo candidato (para o gate de spinning). */
   body: string;
+  /**
+   * O turno foi SUPERADO por uma inbound mais nova? Calculado pelo runner a partir
+   * do próprio JOB (`conversation_id` + `inbound_message_id`). Ausente/false =
+   * sem checagem (comportamento de sempre) — o gate `inbound_superada` é no-op.
+   */
+  inboundSuperada?: boolean;
   /**
    * STOP irrevogável: `contacts.is_blocked` OR `contacts.force_human`, lidos DIRETO da
    * fonte (mesmo banco pós-fusão — não existe mais cache) SOB o lock desta tentativa,
@@ -297,6 +304,27 @@ const stopGate: Gate = {
           reason:
             'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
             'possível enviar nada a ele; encerre o turno sem tentar de novo.',
+        }
+      : { pass: true },
+};
+
+/**
+ * Gate INBOUND SUPERADA — o turno foi superado por uma mensagem mais nova do
+ * cliente enquanto preparava a resposta. VETA o envio: a resposta certa é a do
+ * PRÓXIMO turno, que já vê o contexto atualizado (a "última mensagem junto com o
+ * contexto"). Determinístico (compara ids). No-op quando o ctx não traz o sinal
+ * (jobs que não são inbound_turn, testes). Ver `inbound-superado.ts`.
+ */
+const inboundSuperadaGate: Gate = {
+  name: 'inbound_superada',
+  evaluate: (ctx) =>
+    ctx.inboundSuperada === true
+      ? {
+          pass: false,
+          code: 'inbound_mais_recente',
+          reason:
+            'o cliente mandou uma mensagem MAIS NOVA enquanto este turno preparava a resposta — ' +
+            'não envie nada agora: a próxima rodada responde com o contexto atualizado.',
         }
       : { pass: true },
 };
@@ -729,7 +757,7 @@ const antiMecanicoGate: Gate = {
  * (`GateContext.antiMecanicoEnforced`). Nasce DESARMADO por default; só o caminho do agente
  * com fluxo o arma, então a v8 também não muda o destino de envio nenhum fora desse caso.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 8;
+export const BEFORE_SEND_CHAIN_VERSION = 9;
 
 /**
  * Ordem FINAL da cadeia (F4-08/F4-09; edge-contract §before_send / blueprint órgão 5) — DADO
@@ -752,6 +780,7 @@ export const BEFORE_SEND_CHAIN_VERSION = 8;
 export const BEFORE_SEND_GATES: readonly Gate[] = [
   stopGate,
   lgpdGate,
+  inboundSuperadaGate,
   pacingGate,
   messagingWindowGate,
   spinningGate,
@@ -1043,9 +1072,14 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       args.channelSessionId,
     );
 
+    // O turno foi superado por uma inbound mais nova? Lê do PRÓPRIO job (não de
+    // parâmetro): a checagem é integral ao envio, não amarrada a turno/fluxo.
+    const inboundSuperada = await jobInboundFoiSuperado(client, args.tenantId, args.jobId);
+
     const ctx: GateContext = {
       now: args.now,
       body: args.body,
+      inboundSuperada,
       optedOut,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },

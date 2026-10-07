@@ -164,6 +164,7 @@ import {
 } from '@/lib/negotiation/estado';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
+import { haInboundMaisNova } from '../guardrails/inbound-superado';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
@@ -6516,6 +6517,26 @@ async function executarTurnoDoAgente(
         },
       },
     );
+    // ── TURNO SUPERADO POR INBOUND MAIS NOVA ──────────────────────────────────
+    // Se o cliente mandou outra mensagem enquanto este turno preparava a resposta,
+    // NÃO envia o resto (contingência, trava da pergunta, checkpoint, operador):
+    // a mensagem mais nova já tem job próprio e a PRÓXIMA rodada responde com o
+    // contexto atualizado (a "última mensagem junto com o contexto"). Determinístico.
+    if (
+      !preview &&
+      liveJob().kind === 'inbound_turn' &&
+      input.inboundMessageId !== undefined &&
+      (await haInboundMaisNova(
+        pool,
+        tenantId,
+        input.conversationId,
+        input.inboundMessageId,
+      ).catch(() => false))
+    ) {
+      runLog.info('turno superado por inbound mais nova — nada é enviado; a próxima rodada responde');
+      throw new JobSettledError('inbound mais nova chegou durante o turno — turno superado');
+    }
+
     if (turn === null) {
       // O modelo esgotou: `aoEsgotar` já avisou o responsável (handoff por lentidão).
       // Ainda assim o CLIENTE não pode ficar mudo — manda a mensagem de contingência.
