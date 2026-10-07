@@ -360,7 +360,8 @@ export const AGENT_TOOL_DEFS = {
       'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
       'NÃO envie fotos e NÃO MENCIONE fotos ("seguem as fotos", "veja a foto", "olha a imagem"): quem envia as fotos das motos é o SISTEMA, automaticamente. Escreva só o TEXTO (abertura + pergunta), sem falar de foto. ' +
       'APRESENTAR MOTOS DO CATÁLOGO: escreva em `body` a abertura SEM citar/listar as motos + a pergunta final, e preencha `motos` com os nomes exatos. ' +
-      'O sistema envia a foto de CADA moto com a legenda dela (nome/ano, cor, km, preço) entre o seu texto de abertura e a sua pergunta final.',
+      'O sistema envia a foto de CADA moto com a legenda dela (nome/ano, cor, km, preço) entre o seu texto de abertura e a sua pergunta final. ' +
+      'BASE DE CONHECIMENTO: se o prompt tiver um bloco "Base de conhecimento (fatos)", OBRIGATÓRIO preencher `fonte_ids` com os [ID]s dos trechos que você USOU (ex.: ["PRE-002"]); se não usou nenhum, deixe `fonte_ids` vazio.',
     inputSchema: z.object({
       body: z
         .string()

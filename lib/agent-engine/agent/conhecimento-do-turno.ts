@@ -104,7 +104,8 @@ export function renderBlocoDeConhecimento(trechos: readonly TrechoDeConhecimento
     '## Base de conhecimento (fatos) — CONFIRA antes de usar',
     '- Use SOMENTE os trechos abaixo que RESPONDEM à pergunta do cliente.',
     '- Se nenhum servir, IGNORE e responda com o que você já sabe — NUNCA invente fato.',
-    '- Ao usar um trecho, CITE o [ID] dele no campo `fonte_ids` (ex.: ["PRE-002"]).',
+    '- OBRIGATÓRIO: ao usar QUALQUER trecho, preencha `fonte_ids` no `send_message` com o [ID] dele ' +
+      '(ex.: ["PRE-002"]). Sem a citação, a conferência se perde.',
     'Trechos:',
     ...trechos.map((t) => `- (${t.fonte}) ${t.texto}`),
   ].join('\n');
