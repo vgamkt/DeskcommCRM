@@ -14,6 +14,7 @@ import {
   type VereditoDeOferta,
 } from '../../ai/jev/pontos/oferta';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
+import type { RespostasDeJev } from '../../ai/jev/tipos';
 import type { Logger } from '../obs/logger';
 
 export async function decidirOfertaComJev(
@@ -21,8 +22,15 @@ export async function decidirOfertaComJev(
   tenantId: string,
   ctx: ContextoDeOferta,
   log: Logger,
+  /** Veredito JÁ obtido pelo ÁRBITRO DE TURNO — usa direto, sem ir à Jev de novo. */
+  respostasProntas?: RespostasDeJev,
 ): Promise<VereditoDeOferta | null> {
   try {
+    if (respostasProntas !== undefined) {
+      const v = vereditoDeOfertaDaJev(respostasProntas);
+      log.info('offer-motos: a Jev decidiu (árbitro)', { oferecer: v.oferecer, criterio: v.criterio });
+      return v;
+    }
     const alvos = await alvosDeJevDaOrg(db, tenantId, 'offer_motos');
     if (alvos.length === 0) return null;
     const decisao = await decidir({

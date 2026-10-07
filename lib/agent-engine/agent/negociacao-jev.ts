@@ -8,12 +8,13 @@ import type pg from 'pg';
 import { decidir } from '../../ai/jev';
 import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 import {
-  acaoDaNegociacaoJev,
   perguntaDeNegociacaoJev,
-  type AcaoNegociacao,
+  acaoDaNegociacaoJev,
   type ContextoDeNegociacao,
+  type AcaoNegociacao,
 } from '../../ai/jev/pontos/negociacao';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
+import type { RespostasDeJev } from '../../ai/jev/tipos';
 import type { Logger } from '../obs/logger';
 
 export async function decidirNegociacaoComJev(
@@ -21,8 +22,15 @@ export async function decidirNegociacaoComJev(
   tenantId: string,
   ctx: ContextoDeNegociacao,
   log: Logger,
+  /** Veredito JÁ obtido pelo ÁRBITRO DE TURNO — usa direto, sem ir à Jev de novo. */
+  respostasProntas?: RespostasDeJev,
 ): Promise<{ acao: AcaoNegociacao; pedirValor: boolean } | null> {
   try {
+    if (respostasProntas !== undefined) {
+      const { acao, pedirValor } = acaoDaNegociacaoJev(respostasProntas);
+      log.info('negociacao: a Jev decidiu (árbitro)', { acao, pedirValor });
+      return { acao, pedirValor };
+    }
     const alvos = await alvosDeJevDaOrg(db, tenantId, 'negociacao');
     if (alvos.length === 0) return null;
     const decisao = await decidir({

@@ -14,6 +14,7 @@ import {
   type VereditoDeObjecao,
 } from '../../ai/jev/pontos/objecao';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
+import type { RespostasDeJev } from '../../ai/jev/tipos';
 import type { Logger } from '../obs/logger';
 
 export async function decidirObjecaoComJev(
@@ -21,8 +22,15 @@ export async function decidirObjecaoComJev(
   tenantId: string,
   ctx: ContextoDeObjecao,
   log: Logger,
+  /** Veredito JÁ obtido pelo ÁRBITRO DE TURNO — usa direto, sem ir à Jev de novo. */
+  respostasProntas?: RespostasDeJev,
 ): Promise<VereditoDeObjecao | null> {
   try {
+    if (respostasProntas !== undefined) {
+      const v = vereditoDeObjecaoDaJev(respostasProntas);
+      log.info('objecao: a Jev decidiu (árbitro)', { ehObjecao: v.ehObjecao, motivo: v.motivo });
+      return v;
+    }
     const alvos = await alvosDeJevDaOrg(db, tenantId, 'objecao');
     if (alvos.length === 0) return null;
     const decisao = await decidir({

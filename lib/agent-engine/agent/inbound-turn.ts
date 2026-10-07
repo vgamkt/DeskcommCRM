@@ -195,6 +195,9 @@ import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import { perguntaDeMaisOpcoes } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
+import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
+import { perguntaDeObjecaoJev, vereditoDeObjecaoDaJev } from '../../ai/jev/pontos/objecao';
+import { perguntaDeOfertaJev, vereditoDeOfertaDaJev } from '../../ai/jev/pontos/oferta';
 import { briefDoTurnoDe, prefetchDeJevDe } from '../../ai/jev/config';
 import { alvosDeJevDaOrg, jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
@@ -3136,49 +3139,98 @@ async function executarTurnoDoAgente(
   // desligada/indisponível (veredito nulo) a régua determinística decide — doutrina
   // "a Jev decide sempre". O conserto de um veredito ruim é o PROMPT dela
   // (`perguntaDeObjecaoJev`), nunca um bypass de regex aqui.
-  const vereditoObjecaoJev =
-    preview || mensagemDoJob.trim() === ''
-      ? null
-      : await decidirObjecaoComJev(
-          pool,
-          tenantId,
-          {
-            mensagem: mensagemDoJob,
-            motivoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
-            temMotoEmFoco:
-              catalogoDaConversa.motos.length > 0 ||
-              catalogoDaConversa.escolhida !== null ||
-              catalogoDaConversa.referencia !== null,
-          },
-          runLog,
-        );
-  const ehObjecaoTurno =
-    vereditoObjecaoJev !== null
-      ? vereditoObjecaoJev.ehObjecao
-      : mensagemDoJob.trim() !== '' && ehObjecaoValor(mensagemDoJob);
+  // ─── ÁRBITRO DE TURNO (Fase 4): OBJEÇÃO + NEGOCIAÇÃO + OFERTA numa chamada ────
+  // Os três decidem sobre a MESMA mensagem do turno; antes eram TRÊS idas à Jev.
+  // A negociação usa a pergunta AUTO-CONTIDA (o tipo é o que a Jev decidiu em
+  // `objecao`, na MESMA chamada) — medido ao vivo 2026-10-07. A objeção e a oferta
+  // usam as perguntas de sempre. Se o Árbitro não unificar, cada ponto cai no
+  // caminho de sempre (fallback).
+  const negociacaoAnterior: NegotiationState | null =
+    preview || !leadId ? null : await carregarNegociacao(pool, tenantId, leadId);
+  const negociacaoEmAberto =
+    negociacaoAnterior !== null && negociacaoAnterior.awaitingConfirmation;
   // Pedido DIRETO de desconto/condição melhor: persuade na 1ª vez; se insistir,
   // encaminha ao consultor (não oferece outras motos).
   const descontoTurno =
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
+  const motivoAnteriorPersistido = negociacaoAnterior?.motivo ?? null;
+  const confirmouVerAberto = negociacaoEmAberto && clienteConfirmouVer(mensagemDoJob);
+  const negouVerAberto = negociacaoEmAberto && clienteNegouVer(mensagemDoJob);
+  const temMotoEmFocoConversa =
+    catalogoDaConversa.motos.length > 0 ||
+    catalogoDaConversa.escolhida !== null ||
+    catalogoDaConversa.referencia !== null;
+  // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
+  // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
+  // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
+  const motoAtualDaConversa: MotoDoCatalogo | null =
+    catalogoDaConversa.escolhida ??
+    catalogoDaConversa.referencia ??
+    (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
+
+  const objecaoCtx = {
+    mensagem: mensagemDoJob,
+    motivoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
+    temMotoEmFoco: temMotoEmFocoConversa,
+  };
+  const negociacaoAutoCtx = {
+    tentativasAnterior: negociacaoAnterior?.attempts ?? 0,
+    motivoAnterior: motivoAnteriorPersistido,
+    confirmou: confirmouVerAberto,
+    negou: negouVerAberto,
+    desconto: descontoTurno,
+  };
+  const ofertaCtx = {
+    mensagem: mensagemDoJob ?? '',
+    pediuMaisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
+    temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+    temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
+    pedidoSemCorrespondencia:
+      catalogoDoTurno.length > 0 &&
+      motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno).length === 0,
+    // Estimativa determinística: a Jev refina isto na ação da negociação (mesma chamada).
+    clienteConfirmouOpcoes: (negociacaoAnterior?.attempts ?? 0) >= 3 && confirmouVerAberto,
+    motivoObjecaoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
+  };
+  const decidirTrio = !preview && mensagemDoJob.trim() !== '';
+  const vereditoTrio = decidirTrio
+    ? await arbitrar({
+        db: pool,
+        tenantId,
+        turno: { mensagem: mensagemDoJob },
+        pedidos: [
+          { ponto: 'objecao', contexto: objecaoCtx, perguntas: perguntaDeObjecaoJev(objecaoCtx) },
+          {
+            ponto: 'negociacao',
+            contexto: negociacaoAutoCtx,
+            perguntas: perguntaDeNegociacaoAutoContida(negociacaoAutoCtx),
+            obrigatorias: ['acao'],
+          },
+          { ponto: 'offer_motos', contexto: ofertaCtx, perguntas: perguntaDeOfertaJev(ofertaCtx) },
+        ],
+        log: runLog,
+      })
+    : null;
+  // OBJEÇÃO — a JEV É A AUTORIDADE (existência + tipo). Só quando ela está
+  // desligada/indisponível (veredito nulo) a régua determinística decide.
+  const vereditoObjecaoJev = decidirTrio
+    ? vereditoTrio !== null
+      ? vereditoDeObjecaoDaJev(vereditoTrio.porPonto.objecao ?? {})
+      : await decidirObjecaoComJev(pool, tenantId, objecaoCtx, runLog)
+    : null;
+  const ehObjecaoTurno =
+    vereditoObjecaoJev !== null
+      ? vereditoObjecaoJev.ehObjecao
+      : mensagemDoJob.trim() !== '' && ehObjecaoValor(mensagemDoJob);
   // Tipo da objeção: da Jev; quando ela devolve o catch-all `outro`, o regex
   // refina (fallback) — e o regex decide sozinho se a Jev estiver desligada.
   const motivoObjecaoTurno = ehObjecaoTurno
     ? motivoObjecaoFinal(vereditoObjecaoJev?.motivo ?? null, mensagemDoJob)
     : null;
-  // ── ESTADO ESTRUTURADO DA NEGOCIAÇÃO (banco) ─────────────────────────────
-  // Fonte do CONTROLE DE NÚMEROS: sobrevive à conversa/dias. A Jev informa a
-  // ação; o motor registra e analisa a próxima.
-  const negociacaoAnterior: NegotiationState | null =
-    preview || !leadId ? null : await carregarNegociacao(pool, tenantId, leadId);
   // TEMA DA NEGOCIAÇÃO deste turno: a objeção de AGORA ou o motivo que ficou em
   // ABERTO aguardando a resposta à pergunta da 3ª ("quer só ela ou posso mostrar
   // outras?"). Sem isto, a RESPOSTA do cliente (aceite/negação) não entrava na
-  // negociação e caía no fluxo de oferta — em QUALQUER tipo de objeção. A Jev
-  // decide a ação; o regex é só fallback.
-  const negociacaoEmAberto =
-    negociacaoAnterior !== null && negociacaoAnterior.awaitingConfirmation;
-  // É resposta à pergunta da 3ª? Nova objeção, aceite explícito ou negação — não
-  // um assunto alheio ("bom dia", "e o financiamento?").
+  // negociação e caía no fluxo de oferta — em QUALQUER tipo de objeção.
   const respondeAConfirmacao =
     negociacaoEmAberto &&
     (motivoObjecaoTurno !== null ||
@@ -3190,7 +3242,7 @@ async function executarTurnoDoAgente(
   const mesmoTopico = negociacaoAnterior !== null && negociacaoAnterior.topic === topicNegociacao;
   // Aguardando a resposta à pergunta da 3ª? (senão, é uma objeção nova/tentativa)
   const aguardavaConfirmacao = mesmoTopico && negociacaoEmAberto;
-  // A Jev decide a AÇÃO quando há negociação em curso. `attempts` = já feitas.
+  // NEGOCIAÇÃO — do Árbitro (mesma chamada); sem unificação, o ponto decide sozinho.
   const decisaoNegociacao =
     motivoNegociacao !== null && !preview
       ? await decidirNegociacaoComJev(
@@ -3204,6 +3256,7 @@ async function executarTurnoDoAgente(
             desconto: descontoTurno,
           },
           runLog,
+          vereditoTrio !== null ? vereditoTrio.porPonto.negociacao : undefined,
         )
       : null;
   // A AÇÃO da Jev (ou a fase por regex como fallback).
@@ -3253,36 +3306,17 @@ async function executarTurnoDoAgente(
       : confirmouOpcoes
         ? renderBlocoObjecao('mostrar')
         : '';
-  // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
-  // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
-  // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
-  const motoAtualDaConversa: MotoDoCatalogo | null =
-    catalogoDaConversa.escolhida ??
-    catalogoDaConversa.referencia ??
-    (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
   // ─── A OFERTA DE MOTOS: A JEV É A AUTORIDADE (quando ligada) ─────────────
   // Regra do dono (2026-10-03): só mostrar motos quando o cliente PEDE ou quando
   // a moto pedida NÃO existe. A Jev decide isso melhor que a régua de regex; a
   // régua continua como fallback quando a Jev não está ligada/indisponível.
-  const pedidoSemCorrespondencia =
-    catalogoDoTurno.length > 0 &&
-    motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno).length === 0;
+  // Vem do ÁRBITRO (mesma chamada da objeção/negociação); sem unificação, o ponto
+  // decide sozinho.
   const vereditoOfertaJev = preview
     ? null
-    : await decidirOfertaComJev(
-        pool,
-        tenantId,
-        {
-          mensagem: mensagemDoJob ?? '',
-          pediuMaisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
-          temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-          temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
-          pedidoSemCorrespondencia,
-          clienteConfirmouOpcoes: (catalogoDaConversa.objecao?.tentativas ?? 0) >= 3 && confirmouOpcoes,
-          motivoObjecaoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
-        },
-        runLog,
-      );
+    : vereditoTrio !== null
+      ? vereditoDeOfertaDaJev(vereditoTrio.porPonto.offer_motos ?? {})
+      : await decidirOfertaComJev(pool, tenantId, ofertaCtx, runLog);
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
   // ORDEM (doutrina "a Jev decide sempre"): (1) negociação em curso (objeção OU
   // resposta à pergunta da 3ª) → a JEV manda (só `mostrar_opcoes` oferece); (2) o

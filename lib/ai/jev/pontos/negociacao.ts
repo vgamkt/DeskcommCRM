@@ -79,6 +79,69 @@ export function perguntaDeNegociacaoJev(ctx: ContextoDeNegociacao): PerguntasDeJ
   return perguntas;
 }
 
+/**
+ * Versão AUTO-CONTIDA (Fase 4 — Árbitro): a pergunta NÃO embute o `motivo`; o TIPO é
+ * o que a própria Jev decidiu na pergunta `motivo` do ponto `objecao`, NA MESMA
+ * chamada. A contagem de tentativas vem da PERSISTÊNCIA (`tentativasAnterior`) e a
+ * REGRA DE REINÍCIO por troca de tipo vai nas instruções — medido ao vivo
+ * (2026-10-07): com o motivo persistido embutido, a Jev degradava a ação
+ * (`persuadir_1` no lugar de `persuadir_2`); sem embutir, reproduz o individual.
+ */
+export interface ContextoDeNegociacaoAutoContida {
+  /** Tentativas já feitas para a objeção do tipo `motivoAnterior`. */
+  tentativasAnterior: number;
+  /** Tipo da objeção ANTERIOR (persistida) — base da regra de reinício. */
+  motivoAnterior: 'preco' | 'km' | 'ano' | 'outro' | null;
+  /** O cliente CONFIRMOU ver outras opções (resposta à pergunta da 3ª)? */
+  confirmou: boolean;
+  /** O cliente NEGOU ver outras opções? */
+  negou: boolean;
+  /** Insistiu em DESCONTO (regra proibida)? */
+  desconto: boolean;
+}
+
+export function perguntaDeNegociacaoAutoContida(
+  ctx: ContextoDeNegociacaoAutoContida,
+): PerguntasDeJev {
+  const anterior = ctx.motivoAnterior ?? 'nenhum';
+  return {
+    acao: {
+      type: 'choice',
+      instructions:
+        `Decida a AÇÃO da negociação para a objeção DESTA mensagem — o TIPO dela é o que você ` +
+        `decidiu na pergunta "motivo" do ponto "objecao" (mesma chamada). Já foram feitas ` +
+        `${ctx.tentativasAnterior} tentativa(s) para a objeção do tipo "${anterior}". Se o tipo ` +
+        `desta objeção for IGUAL a "${anterior}", esta é a tentativa Nº ${ctx.tentativasAnterior + 1}; ` +
+        `se for um tipo NOVO, RECOMECE na tentativa Nº 1. ` +
+        (ctx.negou
+          ? 'O cliente NEGOU a oferta de ver outras opções — escolha "encaminhar_e_encerrar". '
+          : ctx.confirmou
+            ? 'O cliente CONFIRMOU que quer ver outras opções — escolha "mostrar_opcoes". '
+            : ctx.desconto
+              ? 'O cliente pediu DESCONTO (regra proibida) — escolha "handoff". '
+              : '') +
+        'Regras: tentativa 1 → persuadir_1; tentativa 2 → persuadir_2; tentativa 3 → ' +
+        'persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
+      criteria: {
+        persuadir_1: '1ª tentativa de convencer: justificar com dados reais; NÃO oferecer motos',
+        persuadir_2: '2ª tentativa de convencer: ângulo diferente; NÃO oferecer motos',
+        persuadir_3_e_perguntar:
+          '3ª tentativa: convencer E, na MESMA mensagem, avisar o responsável + perguntar se pode mostrar opções',
+        mostrar_opcoes: 'o cliente confirmou: mostrar opções que atacam o motivo',
+        encaminhar_e_encerrar:
+          'o cliente negou: enviar mensagem de encaminhamento e encerrar a objeção (seguir atendendo)',
+        handoff: 'insistiu em desconto/regra proibida: encaminhar sem prometer',
+      },
+    },
+    pedir_valor: {
+      type: 'noul',
+      instructions:
+        'SOMENTE se a objeção identificada (o tipo decidido em "objecao") for de PREÇO: este turno ' +
+        'deve PEDIR ao cliente o valor que ele tem em mente? Fora de preço, responda 0.',
+    },
+  };
+}
+
 export function acaoDaNegociacaoJev(
   respostas: RespostasDeJev,
 ): { acao: AcaoNegociacao; pedirValor: boolean } {
