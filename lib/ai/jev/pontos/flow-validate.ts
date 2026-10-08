@@ -151,8 +151,11 @@ export function perguntasDeFluxoDeJev(
         `Intenção genérica ("quero trocar", "tenho interesse") SEM o dado NÃO conta. ` +
         `MAS RESPOSTA DEFERIDA CONTA: se o cliente disser que NÃO SABE, ou que é "o máximo", ` +
         `"tanto faz", "indiferente", "qualquer", "o que você achar", "pode ser", "o que der", ` +
-        `"sei lá" — isso RESPONDEU (ele deferiu a escolha). O valor exato quem escreve é o ` +
-        `extrator; aqui só se decide SE respondeu. ` +
+        `"sei lá" — isso RESPONDEU (ele deferiu a escolha). ` +
+        `TAMBÉM CONTA NEGAÇÃO quando a pergunta espera um VALOR/QUANTIA/DADO que admite "nenhum" ` +
+        `(ex.: "algum valor para dar de entrada?", "quanto de entrada?"): se o cliente responder ` +
+        `"não", "não tenho", "sem", "nenhum", "não quero", "nenhuma" — isso RESPONDEU (a resposta ` +
+        `é a negação). O valor exato quem escreve é o extrator; aqui só se decide SE respondeu. ` +
         `Considere TODAS as mensagens do cliente, inclusive as enviadas em sequência.`,
     };
     if (c.type === 'boolean') {

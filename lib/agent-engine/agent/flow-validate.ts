@@ -109,6 +109,9 @@ const INSTRUCAO =
   '"tanto faz", "indiferente", "qualquer", "o que você achar", "pode ser", "o que der", "sei lá", ' +
   'isso RESPONDEU o campo (ele deferiu a escolha). Devolva o campo com o valor que ele deu; para ' +
   'campo de número ou data, devolva exatamente "nao_informado". ' +
+  'TAMBÉM CONTA NEGAÇÃO quando a pergunta espera um VALOR/QUANTIA que admite "nenhum" (ex.: ' +
+  '"algum valor para dar de entrada?", "quanto de entrada?"): se o cliente responder "não", ' +
+  '"não tenho", "sem", "nenhum", "não quero", devolva o valor como "nao_informado". ' +
   'NÃO invente, NÃO complete e NÃO responda por conta própria.';
 
 /** Monta a mensagem do modelo. Puro — coberto por teste. */
