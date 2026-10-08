@@ -555,12 +555,22 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     0,
   );
   if (purpose === 'agent_turn') {
+    // QUAIS ferramentas cada passo chamou — é o que explica a LATÊNCIA (cada passo
+    // é uma ida ao modelo + execução). Sem isso, "5 passos" não diz o que o modelo
+    // foi BUSCAR (dado que o motor poderia ter entregue pronto). Só nomes, sem conteúdo.
+    const ferramentasPorPasso = (result.steps ?? []).map((s, i) => ({
+      passo: i + 1,
+      tools: ((s as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (t) => t.toolName ?? '?',
+      ),
+    }));
     deps.log?.info('agent_turn: raciocínio e passos', {
       organization_id: input.tenantId,
       model,
       steps: stepsCount,
       reasoning_chars: reasoningChars,
       output_tokens: usage.outputTokens,
+      ferramentas_por_passo: ferramentasPorPasso,
     });
   }
 

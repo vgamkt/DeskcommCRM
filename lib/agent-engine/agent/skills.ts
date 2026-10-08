@@ -333,6 +333,46 @@ export function renderSkillBodiesReference(matched: readonly LoadedSkill[]): str
   ].join('\n');
 }
 
+/**
+ * HÍBRIDO por ORÇAMENTO (Fase N2 — "teto de skills"). Em turno com MUITAS skills,
+ * injetar TODOS os corpos faz o modelo se perder e exagerar (medido 2026-10-08: 4
+ * skills → 8 passos + 7 mensagens). Aqui: injeta o CORPO inteiro só até um
+ * orçamento de chars (sempre pelo menos 1), e o resto vira ESCOPO (nome+descrição)
+ * + a instrução de ler sob demanda. `budget <= 0` = sem limite (= comportamento
+ * anterior, todos os corpos).
+ */
+export function renderSkillsHibrido(
+  matched: readonly LoadedSkill[],
+  budgetChars: number,
+): string {
+  if (matched.length === 0) return '';
+  if (budgetChars <= 0) return renderMatchedSkillBodies(matched);
+  const dentro: LoadedSkill[] = [];
+  const fora: LoadedSkill[] = [];
+  let usado = 0;
+  for (const s of matched) {
+    // Sempre pelo menos 1 skill carrega inteira (mesmo se estourar o orçamento sozinha).
+    if (dentro.length === 0 || usado + s.body.length <= budgetChars) {
+      dentro.push(s);
+      usado += s.body.length;
+    } else {
+      fora.push(s);
+    }
+  }
+  const partes: string[] = [];
+  partes.push('## Skills ativas neste turno (siga o playbook abaixo)');
+  for (const s of dentro) partes.push(`### ${s.name}\n${s.body}`);
+  if (fora.length > 0) {
+    partes.push(
+      '## Outras skills relevantes neste turno\n' +
+        fora.map((s) => `- ${s.name}: ${s.description}`).join('\n') +
+        '\nSe a conversa tocar uma delas, chame `read_skill_reference` com `skill_name` e ' +
+        '`ref_path: "body"` e siga o playbook que voltar.',
+    );
+  }
+  return partes.join('\n\n');
+}
+
 /** Custo em tokens de um texto — mesma heurística do resto do harness (chars/3,5). */
 export function skillBlockTokens(block: string): number {
   return block === '' ? 0 : countPayloadTokens(block);

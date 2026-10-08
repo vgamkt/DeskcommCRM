@@ -146,6 +146,7 @@ import {
   renderMatchedSkillBodies,
   renderSkillBodiesReference,
   renderSkillIndex,
+  renderSkillsHibrido,
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { selecionarSkillsComJev } from './skill-select-jev';
@@ -3585,10 +3586,14 @@ async function executarTurnoDoAgente(
   // #3 (cache/latência): com a flag, os CORPOS saem do prompt (viram leitura sob
   // demanda via `read_skill_reference(nome, "body")`) — o sufixo volátil encolhe e o
   // cache rende mais. Default OFF: comportamento idêntico ao de hoje.
+  // Fase N2 (teto de skills): orçamento de chars para os CORPOS das skills. 0 =
+  // sem limite (todos os corpos). Acima disso, o resto vira escopo + leitura sob
+  // demanda — evita o modelo se perder com muitas skills (medido: 4 skills → 8 passos).
+  const skillBodyBudget = Number.parseInt(process.env.SKILLS_BODY_BUDGET ?? '0', 10) || 0;
   const matchedSkillsBlock =
     process.env.SKILLS_BY_REFERENCE === '1'
       ? renderSkillBodiesReference(skillsAtivasDoTurno)
-      : renderMatchedSkillBodies(skillsAtivasDoTurno);
+      : renderSkillsHibrido(skillsAtivasDoTurno, skillBodyBudget);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
@@ -6544,6 +6549,16 @@ async function executarTurnoDoAgente(
         ? '## Você já falou com este cliente\nHá mensagens SUAS no histórico desta conversa — a apresentação ("Sou a <seu nome>, da <loja>") JÁ FOI FEITA. NÃO se apresente de novo, NÃO repita o nome da loja e NÃO recomece a conversa; continue o assunto de onde parou.'
         : '',
       matchedSkillsBlock,
+      // TESTE (multi-assunto): instrui a responder TODAS as perguntas do cliente,
+      // agrupadas. Atrás de flag para o A/B — default OFF = comportamento de hoje.
+      process.env.MULTI_PERGUNTA === '1'
+        ? '## Antes de responder — RELEIA E COMPLETE\n' +
+          '1. Releia TUDO o que o cliente perguntou nesta conversa (a mensagem atual e as anteriores).\n' +
+          '2. Responda o que AINDA NÃO foi respondido — inclusive cada item de uma mensagem com ' +
+          'vários assuntos. NÃO deixe nenhuma pergunta sem resposta.\n' +
+          '3. NÃO repita o que você já respondeu antes; foque no que falta.\n' +
+          '4. Agrupe tudo em no máximo 2 mensagens.'
+        : '',
       blocoConhecimento,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
