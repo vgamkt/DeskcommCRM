@@ -19,7 +19,7 @@ import {
   type ContextoDeNegociacao,
 } from '@/lib/ai/jev/pontos/negociacao';
 import { faseDaAcao } from '@/lib/agent-engine/agent/negociacao-jev';
-import { renderDiretrizDoTurno } from '@/lib/agent-engine/agent/brief-do-turno';
+import { renderDiretrizDoTurno, type AcaoNegociacaoBrief } from '@/lib/agent-engine/agent/brief-do-turno';
 import type { RespostasDeJev } from '@/lib/ai/jev/tipos';
 
 function resp(choice: string, extra: Partial<RespostasDeJev> = {}): RespostasDeJev {
@@ -38,7 +38,7 @@ function turno(ctx: ContextoDeNegociacao, respostas: RespostasDeJev) {
     ofereceMotos: ofereceMotosPorAcao(acao),
     // A diretriz usa a mesma nomenclatura das respostas; aqui mapeamos direto.
     diretriz: renderDiretrizDoTurno({
-      acao,
+      acao: acao as AcaoNegociacaoBrief,
       motivo: ctx.motivo,
       attempts: ctx.attempts + 1,
       pedirValor,
@@ -49,7 +49,7 @@ function turno(ctx: ContextoDeNegociacao, respostas: RespostasDeJev) {
 describe('sequência de negociação 1→2→3→confirma/nega', () => {
   it('1ª objeção → persuadir_1, NÃO oferece motos, diretriz manda não listar', () => {
     const t = turno(
-      { motivo: 'preco', attempts: 0, confirmou: false, negou: false, desconto: false },
+      { motivo: 'preco', attempts: 0, aguardandoConfirmacao: false, mensagem: '', desconto: false },
       resp('persuadir_1'),
     );
     expect(t.acao).toBe('persuadir_1');
@@ -60,7 +60,7 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
 
   it('2ª objeção → persuadir_2 (ângulo diferente), NÃO oferece', () => {
     const t = turno(
-      { motivo: 'preco', attempts: 1, confirmou: false, negou: false, desconto: false },
+      { motivo: 'preco', attempts: 1, aguardandoConfirmacao: false, mensagem: '', desconto: false },
       resp('persuadir_2'),
     );
     expect(t.acao).toBe('persuadir_2');
@@ -71,7 +71,7 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
 
   it('3ª objeção → persuadir_3_e_perguntar: pergunta e pede valor (preço)', () => {
     const t = turno(
-      { motivo: 'preco', attempts: 2, confirmou: false, negou: false, desconto: false },
+      { motivo: 'preco', attempts: 2, aguardandoConfirmacao: false, mensagem: '', desconto: false },
       resp('persuadir_3_e_perguntar', {
         pedir_valor: { type: 'noul', noul: 0.9 },
       }),
@@ -84,7 +84,7 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
 
   it('confirma → mostrar_opcoes: SÓ aqui oferece motos', () => {
     const t = turno(
-      { motivo: 'preco', attempts: 3, confirmou: true, negou: false, desconto: false },
+      { motivo: 'preco', attempts: 3, aguardandoConfirmacao: true, mensagem: '', desconto: false },
       resp('mostrar_opcoes'),
     );
     expect(t.acao).toBe('mostrar_opcoes');
@@ -95,7 +95,7 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
 
   it('nega → encaminhar_e_encerrar: fase encaminhar, NÃO oferece e NÃO chama o handoff duro', () => {
     const t = turno(
-      { motivo: 'preco', attempts: 3, confirmou: false, negou: true, desconto: false },
+      { motivo: 'preco', attempts: 3, aguardandoConfirmacao: true, mensagem: '', desconto: false },
       resp('encaminhar_e_encerrar'),
     );
     expect(t.acao).toBe('encaminhar_e_encerrar');
@@ -108,7 +108,7 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
 
   it('desconto (regra proibida) → handoff, sem prometer', () => {
     const t = turno(
-      { motivo: 'preco', attempts: 1, confirmou: false, negou: false, desconto: true },
+      { motivo: 'preco', attempts: 1, aguardandoConfirmacao: false, mensagem: '', desconto: true },
       resp('handoff'),
     );
     expect(t.acao).toBe('handoff');
@@ -121,7 +121,7 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
     // A contagem é POR tópico (`objecao:<motivo>`); mudar de preço → km é um novo
     // tópico, então o motor passa `attempts: 0` e a próxima ação é persuadir_1.
     const t = turno(
-      { motivo: 'km', attempts: 0, confirmou: false, negou: false, desconto: false },
+      { motivo: 'km', attempts: 0, aguardandoConfirmacao: false, mensagem: '', desconto: false },
       resp('persuadir_1'),
     );
     expect(t.acao).toBe('persuadir_1');

@@ -43,6 +43,13 @@ export function perguntasDeFluxosDeJev(fluxos: readonly FluxoParaJev[]): Pergunt
         'Catálogo/informação (ver/saber preço, fotos, detalhes), saudação ou dúvida → "none". ' +
         'Escolha da moto (gostou/quer essa) → Qualificação. Financiamento/parcelar → Financiamento. ' +
         'Dar a moto na troca → Troca. Vender/consignar → Venda ou Consignação. ' +
+        // ⚠️ INTENÇÃO, não palavra: o cliente precisa QUERER o processo. Perguntar
+        // COMO funciona ou SE aceita NÃO inicia o fluxo (medido 2026-10-08: "vocês
+        // aceitam minha moto na troca?" abriu o fluxo de Troca sem o cliente pedir).
+        'IMPORTANTE — só inicie um fluxo quando o cliente QUER/PEDE fazer aquele processo ' +
+        '("quero dar minha moto na troca", "quero financiar", "quero vender minha moto"). ' +
+        'Uma PERGUNTA sobre o processo ("vocês aceitam troca?", "como funciona o financiamento?", ' +
+        '"dá pra financiar?") é DÚVIDA — responda "none". ' +
         'ATENÇÃO: uma OBJEÇÃO ou comentário sobre PREÇO ("achei caro", "tá caro", "acima do que ' +
         'posso pagar", "não tenho condições") NÃO é pedido de financiamento — responda "none". ' +
         'Só escolha Financiamento quando o cliente PERGUNTAR ou PEDIR financiamento/parcelas/entrada. ' +

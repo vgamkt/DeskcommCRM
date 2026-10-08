@@ -9,7 +9,7 @@ import {
 import type { RespostasDeJev } from '../tipos';
 
 const base: ContextoDeNegociacao = {
-  motivo: 'preco', attempts: 0, confirmou: false, negou: false, desconto: false,
+  motivo: 'preco', attempts: 0, aguardandoConfirmacao: false, mensagem: '', desconto: false,
 };
 
 describe('negociacao Jev', () => {
@@ -17,6 +17,19 @@ describe('negociacao Jev', () => {
     expect(perguntaDeNegociacaoJev(base).acao?.type).toBe('choice');
     expect(perguntaDeNegociacaoJev(base).pedir_valor?.type).toBe('noul');
     expect(perguntaDeNegociacaoJev({ ...base, motivo: 'km' }).pedir_valor).toBeUndefined();
+  });
+
+  it('com pergunta PENDENTE: a Jev decide pela MENSAGEM e existe a opção "nenhuma"', () => {
+    const q = perguntaDeNegociacaoJev({ ...base, aguardandoConfirmacao: true, mensagem: 'tenho CNH sim' });
+    const instr = (q.acao as { instructions: string }).instructions;
+    expect(instr).toMatch(/pergunta PENDENTE|PENDENTE/);
+    expect(instr).toMatch(/nenhuma/);
+    // Não pede valor enquanto há pergunta pendente.
+    expect(q.pedir_valor).toBeUndefined();
+    // "nenhuma" é uma ação válida (o cliente não respondeu à pergunta).
+    expect(
+      acaoDaNegociacaoJev({ acao: { type: 'choice', choice: 'nenhuma', confidence: 1, probabilities: {} } }).acao,
+    ).toBe('nenhuma');
   });
 
   it('lê a ação e o pedirValor', () => {

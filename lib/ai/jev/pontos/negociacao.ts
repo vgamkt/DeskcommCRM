@@ -17,7 +17,9 @@ export type AcaoNegociacao =
   | 'persuadir_3_e_perguntar'
   | 'mostrar_opcoes'
   | 'encaminhar_e_encerrar'
-  | 'handoff';
+  | 'handoff'
+  /** O cliente NÃO respondeu à pergunta pendente (falou de outro assunto): nada a fazer. */
+  | 'nenhuma';
 
 const ACOES: readonly AcaoNegociacao[] = [
   'persuadir_1',
@@ -26,6 +28,7 @@ const ACOES: readonly AcaoNegociacao[] = [
   'mostrar_opcoes',
   'encaminhar_e_encerrar',
   'handoff',
+  'nenhuma',
 ];
 
 export interface ContextoDeNegociacao {
@@ -33,12 +36,42 @@ export interface ContextoDeNegociacao {
   motivo: 'preco' | 'km' | 'ano' | 'outro';
   /** Quantas tentativas de convencer JÁ foram feitas (do banco). */
   attempts: number;
-  /** Estávamos aguardando a resposta à pergunta da 3ª e o cliente CONFIRMOU? */
-  confirmou: boolean;
-  /** Estávamos aguardando e o cliente NEGOU? */
-  negou: boolean;
+  /**
+   * A pergunta da 3ª ("é só essa ou posso mostrar outras?") está PENDENTE — o
+   * bot já a fez e ainda não recebeu resposta.
+   */
+  aguardandoConfirmacao: boolean;
+  /**
+   * A MENSAGEM do cliente. A Jev decide a partir dela se o cliente RESPONDEU à
+   * pergunta pendente (sim/não) ou falou de OUTRO assunto — sem regex adivinhando
+   * "sim" no meio de outra frase (decisão do dono, 2026-10-08).
+   */
+  mensagem: string;
   /** Insistiu em DESCONTO (regra proibida)? */
   desconto: boolean;
+}
+
+/** Bloco de instrução comum às duas variantes (individual e auto-contida). */
+function instrucoesDaAcao(ctx: {
+  attempts: number;
+  aguardandoConfirmacao: boolean;
+  desconto: boolean;
+}): string {
+  if (ctx.aguardandoConfirmacao) {
+    return (
+      'Havia uma PERGUNTA PENDENTE feita ao cliente: "é só essa moto ou posso mostrar outras ' +
+      'parecidas?". Analise a MENSAGEM DO CLIENTE (no state) e escolha: ' +
+      '(a) ele RESPONDEU que QUER ver outras opções → "mostrar_opcoes"; ' +
+      '(b) ele RESPONDEU que é SÓ essa / não quer outras → "encaminhar_e_encerrar"; ' +
+      '(c) ele falou de OUTRO assunto (não respondeu à pergunta) → "nenhuma". ' +
+      'ATENÇÃO: um "sim"/"ok" que pertence a OUTRA frase (ex.: "tenho CNH sim", "moro em X, sim") ' +
+      'NÃO é resposta à pergunta — nesse caso escolha "nenhuma".'
+    );
+  }
+  if (ctx.desconto) {
+    return 'O cliente pediu DESCONTO (regra proibida) — escolha "handoff".';
+  }
+  return 'Escolha a ação certa para ESTA tentativa.';
 }
 
 /** Monta as perguntas da Jev: `acao` (choice) + `pedir_valor` (noul, se preço). */
@@ -49,15 +82,9 @@ export function perguntaDeNegociacaoJev(ctx: ContextoDeNegociacao): PerguntasDeJ
       instructions:
         `Objeção de ${ctx.motivo}. Esta é a tentativa Nº ${ctx.attempts + 1} de CONVENCER ` +
         `(já foram feitas ${ctx.attempts}). ` +
-        (ctx.negou
-          ? 'O cliente NEGOU a oferta de ver outras opções — escolha "encaminhar_e_encerrar".'
-          : ctx.confirmou
-            ? 'O cliente CONFIRMOU que quer ver outras opções — escolha "mostrar_opcoes".'
-            : ctx.desconto
-              ? 'O cliente pediu DESCONTO (regra proibida) — escolha "handoff".'
-              : 'Escolha a ação certa para ESTA tentativa:') +
-        ' Regras: tentativa 1 → persuadir_1; tentativa 2 → persuadir_2; tentativa 3 → ' +
-        'persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
+        instrucoesDaAcao(ctx) +
+        ' Regras (só quando NÃO há pergunta pendente): tentativa 1 → persuadir_1; tentativa 2 → ' +
+        'persuadir_2; tentativa 3 → persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
       criteria: {
         persuadir_1: '1ª tentativa de convencer: justificar com dados reais; NÃO oferecer motos',
         persuadir_2: '2ª tentativa de convencer: ângulo diferente; NÃO oferecer motos',
@@ -67,10 +94,12 @@ export function perguntaDeNegociacaoJev(ctx: ContextoDeNegociacao): PerguntasDeJ
         encaminhar_e_encerrar:
           'o cliente negou: enviar mensagem de encaminhamento e encerrar a objeção (seguir atendendo)',
         handoff: 'insistiu em desconto/regra proibida: encaminhar sem prometer',
+        nenhuma:
+          'o cliente NÃO respondeu à pergunta pendente (falou de outro assunto): não fazer nada agora',
       },
     },
   };
-  if (ctx.motivo === 'preco' && !ctx.confirmou && !ctx.negou) {
+  if (ctx.motivo === 'preco' && !ctx.aguardandoConfirmacao) {
     perguntas.pedir_valor = {
       type: 'noul',
       instructions: 'Este turno deve PEDIR ao cliente o valor que ele tem em mente?',
@@ -92,10 +121,10 @@ export interface ContextoDeNegociacaoAutoContida {
   tentativasAnterior: number;
   /** Tipo da objeção ANTERIOR (persistida) — base da regra de reinício. */
   motivoAnterior: 'preco' | 'km' | 'ano' | 'outro' | null;
-  /** O cliente CONFIRMOU ver outras opções (resposta à pergunta da 3ª)? */
-  confirmou: boolean;
-  /** O cliente NEGOU ver outras opções? */
-  negou: boolean;
+  /** A pergunta da 3ª ("é só essa ou posso mostrar outras?") está PENDENTE? */
+  aguardandoConfirmacao: boolean;
+  /** A MENSAGEM do cliente — a Jev decide a partir dela (sem regex). */
+  mensagem: string;
   /** Insistiu em DESCONTO (regra proibida)? */
   desconto: boolean;
 }
@@ -113,15 +142,13 @@ export function perguntaDeNegociacaoAutoContida(
         `${ctx.tentativasAnterior} tentativa(s) para a objeção do tipo "${anterior}". Se o tipo ` +
         `desta objeção for IGUAL a "${anterior}", esta é a tentativa Nº ${ctx.tentativasAnterior + 1}; ` +
         `se for um tipo NOVO, RECOMECE na tentativa Nº 1. ` +
-        (ctx.negou
-          ? 'O cliente NEGOU a oferta de ver outras opções — escolha "encaminhar_e_encerrar". '
-          : ctx.confirmou
-            ? 'O cliente CONFIRMOU que quer ver outras opções — escolha "mostrar_opcoes". '
-            : ctx.desconto
-              ? 'O cliente pediu DESCONTO (regra proibida) — escolha "handoff". '
-              : '') +
-        'Regras: tentativa 1 → persuadir_1; tentativa 2 → persuadir_2; tentativa 3 → ' +
-        'persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
+        instrucoesDaAcao({
+          attempts: ctx.tentativasAnterior,
+          aguardandoConfirmacao: ctx.aguardandoConfirmacao,
+          desconto: ctx.desconto,
+        }) +
+        ' Regras (só quando NÃO há pergunta pendente): tentativa 1 → persuadir_1; tentativa 2 → ' +
+        'persuadir_2; tentativa 3 → persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
       criteria: {
         persuadir_1: '1ª tentativa de convencer: justificar com dados reais; NÃO oferecer motos',
         persuadir_2: '2ª tentativa de convencer: ângulo diferente; NÃO oferecer motos',
@@ -131,13 +158,16 @@ export function perguntaDeNegociacaoAutoContida(
         encaminhar_e_encerrar:
           'o cliente negou: enviar mensagem de encaminhamento e encerrar a objeção (seguir atendendo)',
         handoff: 'insistiu em desconto/regra proibida: encaminhar sem prometer',
+        nenhuma:
+          'o cliente NÃO respondeu à pergunta pendente (falou de outro assunto): não fazer nada agora',
       },
     },
     pedir_valor: {
       type: 'noul',
       instructions:
-        'SOMENTE se a objeção identificada (o tipo decidido em "objecao") for de PREÇO: este turno ' +
-        'deve PEDIR ao cliente o valor que ele tem em mente? Fora de preço, responda 0.',
+        'SOMENTE se a objeção identificada (o tipo decidido em "objecao") for de PREÇO E não houver ' +
+        'pergunta pendente: este turno deve PEDIR ao cliente o valor que ele tem em mente? Fora disso, ' +
+        'responda 0.',
     },
   };
 }

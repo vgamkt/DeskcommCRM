@@ -205,7 +205,6 @@ import { alvosDeJevDaOrg, jevLigadaParaBrief } from '../../ai/jev/resolver';
 import {
   avancarObjecao,
   clienteConfirmouVer,
-  clienteNegouVer,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
@@ -3187,7 +3186,6 @@ async function executarTurnoDoAgente(
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
   const motivoAnteriorPersistido = negociacaoAnterior?.motivo ?? null;
   const confirmouVerAberto = negociacaoEmAberto && clienteConfirmouVer(mensagemDoJob);
-  const negouVerAberto = negociacaoEmAberto && clienteNegouVer(mensagemDoJob);
   const temMotoEmFocoConversa =
     catalogoDaConversa.motos.length > 0 ||
     catalogoDaConversa.escolhida !== null ||
@@ -3208,8 +3206,10 @@ async function executarTurnoDoAgente(
   const negociacaoAutoCtx = {
     tentativasAnterior: negociacaoAnterior?.attempts ?? 0,
     motivoAnterior: motivoAnteriorPersistido,
-    confirmou: confirmouVerAberto,
-    negou: negouVerAberto,
+    // A Jev decide a CONFIRMAÇÃO a partir da MENSAGEM (sem regex): ela vê se o
+    // cliente respondeu à pergunta pendente ou falou de outro assunto.
+    mensagem: mensagemDoJob ?? '',
+    aguardandoConfirmacao: negociacaoEmAberto,
     desconto: descontoTurno,
   };
   const ofertaCtx = {
@@ -3261,15 +3261,12 @@ async function executarTurnoDoAgente(
     : null;
   // TEMA DA NEGOCIAÇÃO deste turno: a objeção de AGORA ou o motivo que ficou em
   // ABERTO aguardando a resposta à pergunta da 3ª ("quer só ela ou posso mostrar
-  // outras?"). Sem isto, a RESPOSTA do cliente (aceite/negação) não entrava na
-  // negociação e caía no fluxo de oferta — em QUALQUER tipo de objeção.
-  const respondeAConfirmacao =
-    negociacaoEmAberto &&
-    (motivoObjecaoTurno !== null ||
-      clienteConfirmouVer(mensagemDoJob) ||
-      clienteNegouVer(mensagemDoJob));
+  // outras?"). A CONFIRMAÇÃO NÃO é mais decidida por regex: sempre que há pergunta
+  // pendente, a negociação roda e a JEV decide (mostrar/encaminhar/nenhuma) a
+  // partir da MENSAGEM — um "sim" de outra frase ("CNH A sim") deixa de ser lido
+  // como confirmação (defeito medido 2026-10-08).
   const motivoNegociacao =
-    motivoObjecaoTurno ?? (respondeAConfirmacao ? negociacaoAnterior!.motivo : null);
+    motivoObjecaoTurno ?? (negociacaoEmAberto ? negociacaoAnterior!.motivo : null);
   const topicNegociacao = motivoNegociacao !== null ? topicDeObjecao(motivoNegociacao) : null;
   const mesmoTopico = negociacaoAnterior !== null && negociacaoAnterior.topic === topicNegociacao;
   // Aguardando a resposta à pergunta da 3ª? (senão, é uma objeção nova/tentativa)
@@ -3283,8 +3280,8 @@ async function executarTurnoDoAgente(
           {
             motivo: motivoNegociacao,
             attempts: mesmoTopico ? negociacaoAnterior!.attempts : 0,
-            confirmou: aguardavaConfirmacao && clienteConfirmouVer(mensagemDoJob),
-            negou: aguardavaConfirmacao && clienteNegouVer(mensagemDoJob),
+            mensagem: mensagemDoJob ?? '',
+            aguardandoConfirmacao: aguardavaConfirmacao,
             desconto: descontoTurno,
           },
           runLog,
@@ -6484,7 +6481,7 @@ async function executarTurnoDoAgente(
     // DIRETRIZ DO TURNO (da ação da Jev) — a instrução acionável ao GLM. Existe
     // mesmo sem o brief completo: entra no sufixo independentemente.
     const diretrizDoTurno =
-      acaoNegociacao !== null && motivoNegociacao !== null
+      acaoNegociacao !== null && acaoNegociacao !== 'nenhuma' && motivoNegociacao !== null
         ? renderDiretrizDoTurno({
             acao: acaoNegociacao,
             motivo: motivoNegociacao,
@@ -6501,7 +6498,7 @@ async function executarTurnoDoAgente(
     }
     // PRIORIDADE DA OBJEÇÃO SOBRE O FLUXO (declarado aqui para o brief e os blocos).
     const objecaoTemPrioridade =
-      acaoNegociacao !== null && acaoNegociacao !== 'mostrar_opcoes';
+      acaoNegociacao !== null && acaoNegociacao !== 'mostrar_opcoes' && acaoNegociacao !== 'nenhuma';
     const blocoBriefDaJev = usaBriefDaJev
       ? renderBriefDoTurno({
           estagioHint: stageHintBlock,

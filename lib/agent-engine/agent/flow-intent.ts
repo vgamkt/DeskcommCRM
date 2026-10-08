@@ -53,6 +53,7 @@ export function buildFlowIntentPrompt(fluxos: readonly FluxoParaIA[], mensagem: 
     '- CATÁLOGO / INFORMAÇÃO (o cliente quer VER ou SABER MAIS: modelo, preço, faixa, fotos, detalhes — ex.: "quero uma moto até 20 mil", "tem uma CB 300?", "me fala mais da CB 300"): responda lista VAZIA [].',
     '- ESCOLHA da moto (o cliente DECIDE/GOSTA de uma moto específica — ex.: "gostei dessa", "quero essa", "vou levar essa"): inicie QUALIFICAÇÃO.',
     '- Outros processos: financiamento/parcelar → Financiamento; dar a moto na troca → Troca; vender/consignar → Venda ou Consignação.',
+    '- SÓ INICIE quando o cliente QUER/PEDE o processo ("quero financiar", "quero dar minha moto na troca"). PERGUNTA sobre o processo ("vocês aceitam troca?", "como funciona o financiamento?", "dá pra parcelar?") é DÚVIDA → lista VAZIA [].',
     '- OBJEÇÃO/comentário de preço ("achei caro", "não tenho condições") NÃO é financiamento: lista VAZIA [].',
     '- Se a mensagem pede MAIS de um processo, liste TODOS na ordem citada. Ex.: "quero dar minha moto na troca e financiar o resto" → ["Troca","Financiamento"].',
     '- Em dúvida ou saudação, lista VAZIA [].',

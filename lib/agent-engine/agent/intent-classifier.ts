@@ -48,9 +48,10 @@ export function buildClassifierPrompt(members: RouterMember[], signal: string): 
     list,
     '- none: nenhuma das intenções acima se aplica.',
     '',
-    'Mensagem do lead a classificar:',
+    'Contexto do lead (pode haver VÁRIAS mensagens em sequência/rajada e mais de uma dúvida ou pedido juntos):',
     signal,
     '',
+    'Escolha a intenção PRINCIPAL — a que melhor resume o que o lead quer AGORA.',
     JSON_INSTRUCTION,
   ].join('\n');
 }

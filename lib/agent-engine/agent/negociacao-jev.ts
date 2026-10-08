@@ -65,7 +65,8 @@ export function faseDaAcao(acao: AcaoNegociacao):
   | 'oferecer'
   | 'mostrar'
   | 'handoff'
-  | 'encaminhar' {
+  | 'encaminhar'
+  | null {
   switch (acao) {
     case 'persuadir_1':
       return 'persuadir';
@@ -80,5 +81,8 @@ export function faseDaAcao(acao: AcaoNegociacao):
       return 'encaminhar';
     case 'handoff':
       return 'handoff';
+    // O cliente NÃO respondeu à pergunta pendente: nenhuma ação de negociação.
+    case 'nenhuma':
+      return null;
   }
 }

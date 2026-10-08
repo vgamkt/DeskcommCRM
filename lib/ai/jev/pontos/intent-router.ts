@@ -30,7 +30,10 @@ export function perguntaDeIntencaoDeJev(members: readonly MembroParaJev[]): Perg
   return {
     intencao: {
       type: 'choice',
-      instructions: 'Qual é a intenção do lead nesta mensagem?',
+      instructions:
+        'Qual é a intenção PRINCIPAL do lead? Analise TODO o contexto abaixo — pode haver VÁRIAS ' +
+        'mensagens em sequência (rajada) e mais de uma dúvida/pedido juntos; escolha a intenção ' +
+        'que melhor resume o que ele quer AGORA. Se nenhuma se aplica, escolha "none".',
       criteria,
     },
   };

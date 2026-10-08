@@ -275,22 +275,31 @@ export async function resolveConversationTurn(
     'select active_ai_agent_id,active_intent from conversations where organization_id=$1 and id=$2',
     [input.tenantId, input.conversationId],
   );
-  // ÁUDIO == TEXTO: para o Intent Router, o "sinal" é o `body` OU a transcrição
-  // (`media_derived_text`). Antes, um áudio (body vazio) virava signal=null e não
-  // era classificado por intenção — divergia do texto. Mesma regra de
-  // `loadInboundBodyForJob` (`inbound-turn.ts`).
+  // CONTEXTO: a RAJADA inteira (todas as inbound desde a última outbound), NÃO só
+  // a última mensagem. O cliente manda várias em sequência e pode trazer mais de
+  // uma dúvida/pedido; o classificador de intenção precisa do contexto completo
+  // para decidir (decisão do dono, 2026-10-08). Antes, só a última entrava e o
+  // roteador podia errar o agente quando o pedido estava numa mensagem anterior.
+  // ÁUDIO == TEXTO: usa o `body` OU a transcrição (`media_derived_text`).
   let signal: string | null = null;
   if (input.inbound) {
-    const ultima = await db.query<{ body: string | null; media_derived_text: string | null }>(
-      "select body, media_derived_text from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
+    const rajada = await db.query<{ body: string | null; media_derived_text: string | null }>(
+      `select body, media_derived_text from messages
+        where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+          and created_at > coalesce(
+            (select max(created_at) from messages
+              where organization_id = $1 and conversation_id = $2 and direction = 'outbound'),
+            '-infinity'::timestamptz)
+        order by created_at asc
+        limit 20`,
       [input.tenantId, input.conversationId],
     );
-    const row = ultima.rows[0];
-    if (row !== undefined) {
-      const body = (row.body ?? '').trim();
-      signal = body !== '' ? body : (row.media_derived_text ?? '').trim();
-      if (signal === '') signal = null;
-    }
+    const textos = rajada.rows
+      .map((r) =>
+        (r.body ?? '').trim() !== '' ? (r.body ?? '').trim() : (r.media_derived_text ?? '').trim(),
+      )
+      .filter((t) => t !== '');
+    if (textos.length > 0) signal = textos.join('\n');
   }
   return resolveTurnAgent(db, llmCfg, {
     ...input,
