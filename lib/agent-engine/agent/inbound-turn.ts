@@ -536,18 +536,12 @@ export const AGENT_TOOL_DEFS = {
   open_human_case: {
     description:
       'Abra um caso para um humano de retaguarda quando você NÃO conseguir resolver o pedido do lead ' +
-      'sozinho (liberar acesso, corrigir algo num sistema, uma decisão que exige uma pessoa). Você CONTINUA ' +
-      'conversando com o lead normalmente — não silencia. Use SEMPRE que for prometer ao lead que alguém vai ' +
-      'verificar/resolver: prometer sem abrir o caso é proibido. Isso vale mesmo quando você nomeia a ' +
-      'pessoa ("vou confirmar com o Fulano", "já registrei com a equipe") — nomear alguém não abre o caso; ' +
-      'só esta ferramenta abre. Chame-a NO MESMO turno em que fizer a promessa, nunca depois. ' +
-      // ⚠️ NÃO abrir caso para dúvida simples (medido 2026-10-08: o modelo abriu caso numa
-      // pergunta de ENTREGA + GARANTIA e silenciou o bot). Dúvida que você responde na
-      // conversa NÃO é caso humano.
-      'NÃO abra caso para DÚVIDAS que você mesmo responde na conversa — entrega/endereço, ' +
-      'garantia, preço, formas de pagamento, troca, financiamento, estoque. Resolva ali. Só abra ' +
-      'quando o lead PEDIR para falar com uma pessoa, ou quando de fato exigir uma pessoa ' +
-      '(liberar acesso, corrigir num sistema, aprovar algo fora do seu alcance).',
+      'sozinho (liberar acesso, corrigir algo num sistema, uma decisão que exige uma pessoa) — inclusive ' +
+      'quando NÃO tiver certeza de algo (entrega na cidade dele, condição específica). Você CONTINUA ' +
+      'conversando com o lead normalmente — abrir caso NÃO silencia o bot. Use SEMPRE que for prometer ao ' +
+      'lead que alguém vai verificar/resolver: prometer sem abrir o caso é proibido. Isso vale mesmo quando ' +
+      'você nomeia a pessoa ("vou confirmar com o Fulano", "já registrei com a equipe") — nomear alguém não ' +
+      'abre o caso; só esta ferramenta abre. Chame-a NO MESMO turno em que fizer a promessa, nunca depois.',
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() openHumanCaseInputSchema (human-cases.ts) — campo extra/forjado vira
     // erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -2751,25 +2745,24 @@ async function executarTurnoDoAgente(
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {
-    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
-      ...avisoDaEscalacao().base,
-      motivo: 'pediu_humano',
-    });
-    await performHumanHandoff(
+    // PEDIDO DE HUMANO → abre um CASO. NÃO silencia o bot: ele SEGUE respondendo
+    // e um humano entra quando puder. Antes, isto chamava `performHumanHandoff` +
+    // `return` — SILENCIAVA o bot e deixava o cliente sem resposta para sempre
+    // (medido 2026-10-08: "prefiro conversar com uma pessoa" → bot mudo).
+    await openCase(
       pool,
-      { tenantId, leadId, conversationId: input.conversationId },
+      { tenantId, conversationId: input.conversationId, agentId: agentConfig?.agentId ?? null },
       {
-        reason: 'requested_human',
-        conversationSummary: buildHandoffSummary(previous),
-        avisoAoLead: aviso,
-        log: runLog,
+        title: 'Cliente pediu atendimento humano',
+        summary: 'O cliente pediu explicitamente para falar com uma pessoa (atendente/consultor).',
+        blocker: 'Pedido explícito de atendimento humano.',
+        source: 'guardrail_autofallback',
       },
-    );
-    runLog.info('handoff humano acionado por pedido explícito do lead (detecção determinística)', {
+    ).catch(() => {});
+    runLog.info('caso humano aberto por pedido explícito do lead — o bot SEGUE respondendo', {
       kind: liveJob().kind,
-      lead_avisado: aviso.avisado,
     });
-    return; // bot silencia: o aviso já saiu, e nada mais sai neste turno
+    // NÃO retorna: o turno segue e o modelo responde normalmente.
   }
 
   // F4-07: STOP AMBÍGUO ("para de me mandar isso", "não quero mais receber", "me tira da

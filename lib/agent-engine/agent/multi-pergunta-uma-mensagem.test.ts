@@ -28,3 +28,24 @@ describe("bloco de tarefas do turno (uma mensagem)", () => {
     expect(src).toMatch(/pergunta pendente do fluxo[\s\S]*nessa mesma mensagem/);
   });
 });
+
+/**
+ * PEDIDO DE HUMANO → ABRE CASO, NÃO SILENCIA (decisão do dono, 2026-10-08).
+ *
+ * O bot deve SEMPRE responder. Antes, o pedido explícito de humano (detecção
+ * determinística) chamava `performHumanHandoff` + `return`, SILENCIANDO o bot e
+ * deixando o cliente mudo para sempre. Agora abre um caso e o turno segue.
+ */
+describe("pedido de humano abre caso e o bot segue respondendo", () => {
+  const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+
+  it("o ramo do pedido de humano abre CASO e NÃO silencia", () => {
+    const i = src.indexOf("detectHumanHandoffRequest(texto)");
+    const bloco = src.slice(i, i + 1600);
+    expect(bloco).toMatch(/openCase\(/);
+    expect(bloco).toMatch(/o bot SEGUE respondendo/);
+    // Não pode mais CHAMAR o handoff que silencia neste ramo.
+    expect(bloco).not.toMatch(/await performHumanHandoff\(/);
+    expect(bloco).not.toMatch(/return; \/\/ bot silencia/);
+  });
+});
