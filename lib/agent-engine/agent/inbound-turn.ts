@@ -6565,16 +6565,22 @@ async function executarTurnoDoAgente(
         ? '## Você já falou com este cliente\nHá mensagens SUAS no histórico desta conversa — a apresentação ("Sou a <seu nome>, da <loja>") JÁ FOI FEITA. NÃO se apresente de novo, NÃO repita o nome da loja e NÃO recomece a conversa; continue o assunto de onde parou.'
         : '',
       matchedSkillsBlock,
-      // TESTE (multi-assunto): instrui a responder TODAS as perguntas do cliente,
-      // agrupadas. Atrás de flag para o A/B — default OFF = comportamento de hoje.
-      process.env.MULTI_PERGUNTA === '1'
-        ? '## Antes de responder — RELEIA E COMPLETE\n' +
-          '1. Releia TUDO o que o cliente perguntou nesta conversa (a mensagem atual e as anteriores).\n' +
-          '2. Responda o que AINDA NÃO foi respondido — inclusive cada item de uma mensagem com ' +
-          'vários assuntos. NÃO deixe nenhuma pergunta sem resposta.\n' +
-          '3. NÃO repita o que você já respondeu antes; foque no que falta.\n' +
-          '4. Agrupe tudo em no máximo 2 mensagens.'
-        : '',
+      // ── ACUMULA ANTES → UMA MENSAGEM (decisão do dono, 2026-10-08) ──────────
+      // O cliente fala de qualquer jeito e pode trazer VÁRIAS dúvidas/pedidos no
+      // mesmo turno (mensagem ou rajada). O motor JÁ acumulou o contexto (~20
+      // mensagens), as skills casadas, o material consultado e a pergunta
+      // pendente do fluxo. Aqui o modelo é instruído a resolver TUDO isso em UMA
+      // única mensagem — natural, bem elaborada, sem duplicidade, como um humano.
+      // (Antes era a flag MULTI_PERGUNTA, off por default; agora vale sempre.)
+      '## Tarefas deste turno — RESOLVA TUDO EM UMA ÚNICA MENSAGEM\n' +
+        '1. Releia TUDO o que o cliente perguntou/disse nesta conversa (a mensagem atual e as anteriores).\n' +
+        '2. Responda o que AINDA NÃO foi respondido — inclusive cada item de uma mensagem com ' +
+        'vários assuntos. NÃO deixe nenhuma pergunta sem resposta.\n' +
+        '3. NÃO repita o que você já respondeu antes; foque no que falta.\n' +
+        '4. Junte TUDO em UMA única mensagem, natural e bem elaborada, como um humano ' +
+        'escrevendo — sem ideias repetidas e sem virar um bloco robótico de tópicos.\n' +
+        '5. Se houver uma pergunta pendente do fluxo (bloco "Fluxo de atendimento"), inclua-a ' +
+        'naturalmente nessa mesma mensagem, encaixada na conversa.',
       blocoConhecimento,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
