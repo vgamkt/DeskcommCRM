@@ -41,6 +41,8 @@ export interface IndiceDaFonte {
   trechos: number;
   gerado_em: string;
   fonte_do_resumo: "ia" | "deterministico";
+  /** P3: true quando o resumo foi ATUALIZADO (resumo anterior + itens novos). */
+  incremental?: boolean;
 }
 
 /** Extrai [ID] + título (+ categoria) de um trecho. Genérico → 1ª linha. */
@@ -59,6 +61,15 @@ function itensDoTrecho(content: string): { id: string; titulo: string; categoria
   return linha === "" ? null : { id: "", titulo: linha, categoria: "" };
 }
 
+const fmtItem = (i: ItemDoIndice): string => (i.id ? `[${i.id}] "${i.titulo}"` : `"${i.titulo}"`);
+
+const REGRAS_DO_RESUMO =
+  `Responda EXATAMENTE neste formato, em 2 frases curtas e factuais:\n` +
+  `Cobre: <o que ESTE material responde, usando os tópicos e os itens reais>.\n` +
+  `Não cobre: <o que é de OUTRO material — cite os vizinhos que poderiam confundir>.\n\n` +
+  `Regras: NÃO invente o que não está nos itens; seja concreto (cite exemplos reais); ` +
+  `o "Não cobre" é o que evita a confusão entre materiais parecidos.`;
+
 /** Prompt ASSERTIVO do resumo (cobre/não cobre). */
 function promptDoResumo(
   nome: string,
@@ -66,11 +77,29 @@ function promptDoResumo(
   itens: readonly ItemDoIndice[],
   topicos: readonly string[],
   vizinhos: readonly string[],
+  resumoAnterior?: string,
+  itensNovos?: readonly ItemDoIndice[],
 ): string {
-  const listaItens = itens
-    .slice(0, 60)
-    .map((i) => (i.id ? `[${i.id}] "${i.titulo}"` : `"${i.titulo}"`))
-    .join("; ");
+  // P3 — INCREMENTAL: com um resumo ANTERIOR e só os itens NOVOS/alterados, a IA
+  // ATUALIZA (mantém o que continua valendo) em vez de reler a fonte inteira.
+  if (
+    resumoAnterior !== undefined &&
+    resumoAnterior.trim() !== "" &&
+    itensNovos !== undefined &&
+    itensNovos.length > 0
+  ) {
+    return (
+      `Você é o INDEXADOR do acervo de conhecimento de uma loja de motos. O material ` +
+      `"${nome}" (${tipo}) MUDOU — atualize o resumo dele SEM reescrever do zero.\n\n` +
+      `Resumo ATUAL:\n${resumoAnterior}\n\n` +
+      `Itens NOVOS/alterados desde então: ${itensNovos.map(fmtItem).join("; ")}\n` +
+      `Total agora: ${itens.length} itens. Tópicos: ${topicos.join(", ") || "—"}.\n` +
+      `Outros materiais do acervo (para o LIMITE): ${vizinhos.join(", ") || "—"}.\n\n` +
+      `Mantenha o que continua valendo e ACRESCENTE/SUBSTITUA só o que mudou.\n` +
+      REGRAS_DO_RESUMO
+    );
+  }
+  const listaItens = itens.slice(0, 60).map(fmtItem).join("; ");
   return (
     `Você é o INDEXADOR do acervo de conhecimento de uma loja de motos. Escreva o RESUMO que ` +
     `um classificador usará para decidir QUANDO consultar ESTE material. Ele precisa ser ` +
@@ -79,11 +108,7 @@ function promptDoResumo(
     `Tópicos: ${topicos.join(", ") || "—"}.\n` +
     `Itens: ${listaItens}\n` +
     `Outros materiais do acervo (para o LIMITE): ${vizinhos.join(", ") || "—"}.\n\n` +
-    `Responda EXATAMENTE neste formato, em 2 frases curtas e factuais:\n` +
-    `Cobre: <o que ESTE material responde, usando os tópicos e os itens reais>.\n` +
-    `Não cobre: <o que é de OUTRO material — cite os vizinhos que poderiam confundir>.\n\n` +
-    `Regras: NÃO invente o que não está nos itens; seja concreto (cite exemplos reais); ` +
-    `o "Não cobre" é o que evita a confusão entre materiais parecidos.`
+    REGRAS_DO_RESUMO
   );
 }
 
@@ -94,6 +119,9 @@ async function resumirComIA(args: {
   itens: readonly ItemDoIndice[];
   topicos: readonly string[];
   vizinhos: readonly string[];
+  /** P3: resumo anterior + itens novos → atualização incremental. */
+  resumoAnterior?: string;
+  itensNovos?: readonly ItemDoIndice[];
 }): Promise<string | null> {
   try {
     const pool = getRequestPool();
@@ -109,7 +137,15 @@ async function resumirComIA(args: {
       messages: [
         {
           role: "user",
-          content: promptDoResumo(args.nome, args.tipo, args.itens, args.topicos, args.vizinhos),
+          content: promptDoResumo(
+            args.nome,
+            args.tipo,
+            args.itens,
+            args.topicos,
+            args.vizinhos,
+            args.resumoAnterior,
+            args.itensNovos,
+          ),
         },
       ],
     });
@@ -183,7 +219,26 @@ export async function gerarIndiceDaFonte(
       .map((v) => v.name ?? "")
       .filter((n) => n !== "");
 
-    // IA: o resumo assertivo (cobre/não cobre).
+    // P3 — INCREMENTAL: o resumo ANTERIOR + só os itens NOVOS/alterados → a IA ATUALIZA
+    // (mantém o que continua valendo) em vez de reler a fonte inteira. Sem resumo
+    // anterior (ou sem itens novos), cai no resumo completo (de sempre).
+    const indiceAnterior = (row.source_metadata?.indice ?? null) as
+      | { resumo?: unknown; itens?: Array<{ id?: unknown }> }
+      | null;
+    const resumoAnterior =
+      typeof indiceAnterior?.resumo === "string" ? indiceAnterior.resumo : undefined;
+    const idsAnteriores = new Set(
+      (Array.isArray(indiceAnterior?.itens) ? indiceAnterior.itens : [])
+        .map((i) => (typeof i?.id === "string" ? i.id : ""))
+        .filter((x) => x !== ""),
+    );
+    const itensNovos =
+      idsAnteriores.size === 0
+        ? []
+        : itens.filter((i) => i.id !== "" && !idsAnteriores.has(i.id));
+    const incremental = resumoAnterior !== undefined && itensNovos.length > 0;
+
+    // IA: o resumo assertivo (cobre/não cobre) — completo OU incremental.
     const resumoIA = await resumirComIA({
       organizationId,
       nome: row.name ?? "",
@@ -191,6 +246,7 @@ export async function gerarIndiceDaFonte(
       itens,
       topicos,
       vizinhos,
+      ...(incremental ? { resumoAnterior, itensNovos } : {}),
     });
 
     const indice: IndiceDaFonte = {
@@ -204,6 +260,7 @@ export async function gerarIndiceDaFonte(
       trechos: lista.length,
       gerado_em: new Date().toISOString(),
       fonte_do_resumo: resumoIA !== null ? "ia" : "deterministico",
+      ...(incremental ? { incremental: true } : {}),
     };
     await admin
       .from("ai_knowledge_sources")
