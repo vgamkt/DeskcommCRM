@@ -124,7 +124,10 @@ export function montarMensagemDoValidador(
     return `${p.question?.trim() || p.label} (chave: ${p.key}, tipo: ${p.type}${opcoes})`;
   };
   const conversa = mensagens
-    .slice(-6)
+    // Mesma janela da Jev (~20): o extrator precisa VER a resposta mesmo quando ela
+    // veio algumas mensagens antes (áudio transcrito, rajada). Com só 6, respostas
+    // mais antigas ficavam invisíveis para o chat e o dado se perdia (medido 2026-10-08).
+    .slice(-20)
     .map((m) => `- ${m.de === 'cliente' ? 'CLIENTE' : 'LOJA'}: ${m.texto}`)
     .join('\n');
   return [

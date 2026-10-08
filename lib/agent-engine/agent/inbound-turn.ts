@@ -2939,13 +2939,11 @@ async function executarTurnoDoAgente(
         // respondidas) entram garantidamente — o validador precisa ler a rajada
         // inteira ("Sou Vander" + "Sao paulo"), não só a última. O histórico
         // recente continua no fim, para dar contexto.
-        // CONTEXTO INTEIRO para a Jev: ela julga se a resposta do cliente SATISFAZ a
-        // pergunta com base na CONVERSA toda — inclusive áudio já transcrito e falas
-        // longas —, não só nas últimas 6 mensagens. `effectiveContext.messages` já é
-        // limitado pelo construtor de contexto (janela de histórico/tokens), então não
-        // estoura o prompt da Jev. Decisão do dono (2026-10-08): a Jev decide por
-        // CONTEXTO, textualmente, sem regex adivinhando formato.
-        const historico = effectiveContext.messages.map((m) => ({
+        // CONTEXTO para a Jev: as ÚLTIMAS ~20 mensagens da conversa (enviadas +
+        // recebidas), incluindo áudio já transcrito — o suficiente para ela julgar,
+        // por contexto, se a resposta SATISFAZ a pergunta, sem mandar a conversa
+        // inteira (que é muita coisa). Decisão do dono (2026-10-08).
+        const historico = effectiveContext.messages.slice(-20).map((m) => ({
           de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
           texto: m.body,
         }));

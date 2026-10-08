@@ -375,13 +375,14 @@ describe("com a Jev ligada, o motor NÃO usa regex (decisão do dono 2026-10-08)
     expect(idxGate).toBeLessThan(idxClass);
   });
 
-  it("a Jev recebe o CONTEXTO inteiro, não só as últimas 6 mensagens", () => {
+  it("a Jev recebe ~20 mensagens de contexto (não só as últimas 6, nem a conversa toda)", () => {
     const src = readFileSync(
       join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
       "utf8",
     );
-    expect(src).toMatch(/const historico = effectiveContext\.messages\.map/);
+    expect(src).toMatch(/const historico = effectiveContext\.messages\.slice\(-20\)\.map/);
     expect(src).not.toMatch(/effectiveContext\.messages\.slice\(-6\)/);
+    expect(src).not.toMatch(/const historico = effectiveContext\.messages\.map/);
   });
 });
 
