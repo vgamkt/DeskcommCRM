@@ -224,6 +224,7 @@ import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
 import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
+  fluxoBloqueiaOferta,
   pedidoExplicitoDeMaisOpcoes,
   podeOferecerMotos,
   preferenciaDoCriterio,
@@ -3351,6 +3352,18 @@ async function executarTurnoDoAgente(
   // (`vereditoOfertaJev === null`). A Jev NUNCA é corrigida por regex: se ela nega
   // um pedido legítimo, o conserto é o PROMPT dela, não um bypass aqui.
   const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
+    // ─── FLUXO DE ATENDIMENTO ATIVO TEM PRIORIDADE SOBRE A OFERTA ────────────
+    // Enquanto o fluxo tiver PERGUNTA PENDENTE, a oferta de motos ESPERA: o
+    // roteiro do fluxo termina antes de a apresentação começar (encadeamento).
+    // Mesmo espírito de duas decisões que já existem: o bloco de "dados
+    // essenciais" CEDE ao fluxo (`fluxoAtivo`), e a negociação tem prioridade
+    // logo abaixo. Sem isto, o motor oferecia motos DURANTE o fluxo e a conversa
+    // ficava confusa (medido ao vivo 2026-10-08). Genérico: vale para TODOS os
+    // fluxos, presentes e futuros. Quando o fluxo conclui (sem pendentes), a
+    // oferta volta a valer — inclusive no mesmo turno.
+    if (fluxoAtendimento !== null && fluxoBloqueiaOferta(fluxoAtendimento.situacao.pendentes.length)) {
+      return { pode: false, motivo: 'fluxo_de_atendimento_em_andamento', criterio: null };
+    }
     // Há NEGOCIAÇÃO em curso (objeção nova OU resposta à pergunta da 3ª). A
     // negociação manda — com a Jev (ação dela) OU sem ela (fallback determinístico
     // pelo estado): `encaminhar_e_encerrar`/persuadir NÃO oferecem; só `mostrar`

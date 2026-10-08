@@ -4,6 +4,7 @@ import type { EstadoObjecao } from './objecao-de-valor';
 import {
   clienteRejeitouMoto,
   criterioDaObjecao,
+  fluxoBloqueiaOferta,
   pedidoExplicitoDeMaisOpcoes,
   podeOferecerMotos,
   preferenciaDoCriterio,
@@ -21,6 +22,17 @@ function s(over: Partial<SinaisDeOferta> = {}): SinaisDeOferta {
     ...over,
   };
 }
+
+describe('fluxoBloqueiaOferta — o fluxo ativo faz a oferta ESPERAR', () => {
+  it('bloqueia enquanto houver pergunta pendente no fluxo', () => {
+    expect(fluxoBloqueiaOferta(1)).toBe(true);
+    expect(fluxoBloqueiaOferta(3)).toBe(true);
+  });
+
+  it('libera quando o fluxo concluiu (zero pendentes) — inclusive no mesmo turno', () => {
+    expect(fluxoBloqueiaOferta(0)).toBe(false);
+  });
+});
 
 describe('criterioDaObjecao', () => {
   it('caro/cara/desconto → preço (menor)', () => {

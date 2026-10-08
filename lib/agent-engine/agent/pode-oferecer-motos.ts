@@ -38,6 +38,20 @@ import {
   type EstadoObjecao,
 } from './objecao-de-valor';
 import { normalizarNomeDeMoto } from './fotos-do-catalogo';
+
+/**
+ * O FLUXO DE ATENDIMENTO ATIVO bloqueia a oferta de motos enquanto tiver PERGUNTA
+ * PENDENTE: o roteiro do fluxo termina antes de a apresentação começar
+ * (encadeamento). Tem PRIORIDADE sobre o veredito da Jev — mesmo lugar da
+ * negociação: enquanto o fluxo corre, o catálogo ESPERA. Quando o fluxo conclui
+ * (zero pendentes), a oferta volta a valer, inclusive no mesmo turno.
+ *
+ * Vale para TODOS os fluxos, presentes e futuros (guard genérico). Puro e
+ * testável de propósito — a regra não pode depender de o motor lembrar dela.
+ */
+export function fluxoBloqueiaOferta(pendentesDoFluxo: number): boolean {
+  return pendentesDoFluxo > 0;
+}
 import { pedeMotoExplicito, querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
 
 /** O que a objeção pede para atacar — vira o critério da busca. */
