@@ -3547,10 +3547,11 @@ async function executarTurnoDoAgente(
   // montar rawTools (Fase 2): o gate de read_skill_reference precisa do resultado do match
   // para decidir se a tool entra no turno (mesmo padrão de gate de search_knowledge/
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
-  // Sinal do matcher com o CONTEXTO recente (não só a última mensagem): a
-  // conversa sobre motos continua e a skill não pode "cair" quando o cliente
+  // Sinal do matcher com o CONTEXTO (~20 inbounds, alinhado ao resto do sistema):
+  // a conversa sobre motos continua e a skill não pode "cair" quando o cliente
   // responde a escolha ("A 2025"), senão as fotos da moto escolhida não saem.
-  const skillSignal = recentInboundSignal(effectiveContext.messages);
+  // Decisão do dono (2026-10-08): janela ~20 em todo o sistema (menos resumo).
+  const skillSignal = recentInboundSignal(effectiveContext.messages, 20);
   // `currentInboundText` é a MENSAGEM ATUAL: usada só para a EXCLUSÃO
   // (`unless_keywords`) — uma objeção do turno não deixa a skill de catálogo
   // entrar junto da de objeção (conflito medido ao vivo 2026-09-30).
