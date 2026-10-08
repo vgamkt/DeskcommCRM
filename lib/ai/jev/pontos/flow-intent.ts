@@ -80,10 +80,18 @@ export function fluxosDaRespostaDeJev(
   const saida: string[] = [];
 
   const principal = respostas.fluxo_principal;
+  let principalNome: string | null = null;
   if (principal && principal.type === 'choice' && typeof principal.choice === 'string') {
     const p = principal.choice.trim();
-    if (p !== '' && p.toLowerCase() !== OPCAO_NENHUM) saida.push(p);
+    if (p !== '' && p.toLowerCase() !== OPCAO_NENHUM) principalNome = p;
   }
+
+  // ⚠️ SEM FLUXO PRINCIPAL, NÃO HÁ FLUXO. Os `fluxo_adicional_<i>` só valem quando
+  // existe um principal. Sem esta guarda, o noul adicional vinha ALTO mesmo para
+  // uma PERGUNTA ou saudação — medido 2026-10-08: "vocês aceitam troca?" → principal
+  // "none" mas `Troca=0.84`; e "oi bom dia" disparava o fluxo de Troca à toa.
+  if (principalNome === null) return [];
+  saida.push(principalNome);
 
   fluxos.forEach((f, i) => {
     const a = respostas[`fluxo_adicional_${i}`];

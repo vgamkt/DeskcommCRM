@@ -60,6 +60,13 @@ describe("fluxosDaRespostaDeJev", () => {
     expect(fluxosDaRespostaDeJev(respostas("none", {}) as never, fluxos)).toEqual([]);
   });
 
+  it("principal 'none' MAS adicional alto → vazio (o adicional só vale COM principal)", () => {
+    // Medido ao vivo (2026-10-08): "vocês aceitam troca?" (pergunta) e "oi bom dia"
+    // vinham com principal "none" mas adicional Troca ~0.84 → disparava o fluxo à toa.
+    const r = respostas("none", { 2: 0.84 });
+    expect(fluxosDaRespostaDeJev(r as never, fluxos)).toEqual([]);
+  });
+
   it("adicional igual ao principal não duplica", () => {
     const r = respostas("Troca", { 2: 0.9 }); // principal Troca, adicional idx2=Troca
     expect(fluxosDaRespostaDeJev(r as never, fluxos)).toEqual(["Troca"]);
