@@ -761,16 +761,6 @@ export async function processarInboundDoFluxo(
      * o cliente costuma responder a mais de uma pergunta na mesma mensagem.
      */
     validacoes?: ReadonlyArray<{ campo: string; valor: string }> | undefined;
-    /**
-     * A JEV (ou o chat) JÁ DECIDIU este turno — `respondeu` OU `nao_respondeu`.
-     *
-     * Quando `true`, o motor NÃO roda o classificador determinístico (regex): se a
-     * Jev disse que nada respondeu, conta a tentativa e segue. O regex fica só como
-     * RESERVA, para quando a Jev/chat não conseguiram decidir (`indefinido`).
-     * Decisão do dono (2026-10-08): em fluxo, quem julga é a Jev, por contexto —
-     * não um regex adivinhando formato.
-     */
-    validadoPelaJev?: boolean | undefined;
   },
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
@@ -871,17 +861,6 @@ export async function processarInboundDoFluxo(
       concluiu: true,
       ...(finalizacao !== undefined ? { finalizacao } : {}),
     };
-  }
-
-  // A JEV DECIDIU ESTE TURNO E NADA FOI RESPONDIDO → o motor NÃO usa regex: conta a
-  // tentativa (a pergunta foi feita e o cliente não a respondeu) e segue. O
-  // `classificarInbound` (regex) fica SÓ como reserva para quando a Jev/chat não
-  // conseguiram decidir (`indefinido`). Em fluxo, quem julga é a Jev, por contexto.
-  if (args.validadoPelaJev === true) {
-    const r = await registrarTentativaDoTurno(db, { organizationId: args.organizationId, estado });
-    return r.concluiu
-      ? { estado: r.estado, concluiu: true, finalizacao: r.estado.checklist.fim.config.ao_finalizar }
-      : { estado: r.estado, concluiu: false };
   }
 
   const primeiro = estado.situacao.pendentes[0];

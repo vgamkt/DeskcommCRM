@@ -3017,8 +3017,6 @@ async function executarTurnoDoAgente(
           estado: atendimento,
           texto: currentInboundText,
           messageId: input.inboundMessageId,
-          // A Jev decidiu este turno (respondeu OU não) → o motor não usa regex.
-          validadoPelaJev: validadorDecidiuNesteTurno,
           ...(validacoes !== undefined ? { validacoes } : {}),
         });
         atendimento = r.estado;

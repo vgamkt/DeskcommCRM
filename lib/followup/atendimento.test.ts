@@ -365,16 +365,7 @@ describe("desvio (off-flow) conta a pergunta feita (decisão do dono 2026-10-08)
   });
 });
 
-describe("com a Jev ligada, o motor NÃO usa regex (decisão do dono 2026-10-08)", () => {
-  it("`validadoPelaJev` curto-circuita ANTES do classificador determinístico", () => {
-    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
-    expect(src).toMatch(/if \(args\.validadoPelaJev === true\)[\s\S]*registrarTentativaDoTurno/);
-    const idxGate = src.indexOf("if (args.validadoPelaJev === true)");
-    const idxClass = src.indexOf("classificarInbound(comoCampoParaCaptura(primeiro)");
-    expect(idxGate).toBeGreaterThan(0);
-    expect(idxGate).toBeLessThan(idxClass);
-  });
-
+describe("contexto da Jev no fluxo (decisão do dono 2026-10-08)", () => {
   it("a Jev recebe ~20 mensagens de contexto (não só as últimas 6, nem a conversa toda)", () => {
     const src = readFileSync(
       join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
@@ -383,6 +374,15 @@ describe("com a Jev ligada, o motor NÃO usa regex (decisão do dono 2026-10-08)
     expect(src).toMatch(/const historico = effectiveContext\.messages\.slice\(-20\)\.map/);
     expect(src).not.toMatch(/effectiveContext\.messages\.slice\(-6\)/);
     expect(src).not.toMatch(/const historico = effectiveContext\.messages\.map/);
+  });
+
+  it("quando a Jev diz `nao_respondeu`, o classificador determinístico (regex) AINDA roda como reserva", () => {
+    // O desenho do dono: a Jev decide primeiro; se ela diz que NADA respondeu, o
+    // regex é a REDE (captura sim/não, número, data, escolha que a Jev deixou passar).
+    // Por isso NÃO existe um curto-circuito `validadoPelaJev` pulando o classificador.
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    expect(src).not.toMatch(/args\.validadoPelaJev/);
+    expect(src).toMatch(/classificarInbound\(comoCampoParaCaptura\(primeiro\), args\.texto\)/);
   });
 });
 
