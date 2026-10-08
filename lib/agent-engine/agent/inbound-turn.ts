@@ -540,7 +540,14 @@ export const AGENT_TOOL_DEFS = {
       'conversando com o lead normalmente — não silencia. Use SEMPRE que for prometer ao lead que alguém vai ' +
       'verificar/resolver: prometer sem abrir o caso é proibido. Isso vale mesmo quando você nomeia a ' +
       'pessoa ("vou confirmar com o Fulano", "já registrei com a equipe") — nomear alguém não abre o caso; ' +
-      'só esta ferramenta abre. Chame-a NO MESMO turno em que fizer a promessa, nunca depois.',
+      'só esta ferramenta abre. Chame-a NO MESMO turno em que fizer a promessa, nunca depois. ' +
+      // ⚠️ NÃO abrir caso para dúvida simples (medido 2026-10-08: o modelo abriu caso numa
+      // pergunta de ENTREGA + GARANTIA e silenciou o bot). Dúvida que você responde na
+      // conversa NÃO é caso humano.
+      'NÃO abra caso para DÚVIDAS que você mesmo responde na conversa — entrega/endereço, ' +
+      'garantia, preço, formas de pagamento, troca, financiamento, estoque. Resolva ali. Só abra ' +
+      'quando o lead PEDIR para falar com uma pessoa, ou quando de fato exigir uma pessoa ' +
+      '(liberar acesso, corrigir num sistema, aprovar algo fora do seu alcance).',
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() openHumanCaseInputSchema (human-cases.ts) — campo extra/forjado vira
     // erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
