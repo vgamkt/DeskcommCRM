@@ -283,6 +283,7 @@ import {
   ehAcenoOuSilencio,
   perguntaSaiuNosTextos,
   textoDaPergunta,
+  textosDoTurnoParaTrava,
   valorBateComTipo,
 } from '@/lib/followup/captura-do-fluxo';
 import { validarRespostaDoFluxo } from './flow-validate';
@@ -7059,9 +7060,18 @@ async function executarTurnoDoAgente(
         // não via a pergunta em `corposEnviados`, mandava a dela — e o texto do
         // modelo, enviado logo depois, repetia a MESMA pergunta. Medido ao vivo
         // (2026-10-06): "De qual cidade você fala?" saiu duas vezes no mesmo turno.
-        const textoLivreDoModelo = (turn.result.text ?? '').trim();
-        const textosDoTurno =
-          textoLivreDoModelo !== '' ? [...corposEnviados, textoLivreDoModelo] : corposEnviados;
+        //
+        // ⚠️ MAS SÓ QUANDO ELE VAI SAIR. O motor só envia o texto livre quando
+        // NADA saiu pela ferramenta (bloco "NUNCA TERMINAR SEM RESPOSTA", abaixo:
+        // `outcomes.length === 0`). Contá-lo sempre fazia a trava achar que a
+        // pergunta saiu e descartar o texto — o cliente ficava sem a pergunta
+        // (medido ao vivo 2026-10-08: o fluxo parou depois do "Anotado").
+        // `textosDoTurnoParaTrava` espelha a condição real de envio.
+        const textosDoTurno = textosDoTurnoParaTrava(
+          corposEnviados,
+          turn.result.text ?? '',
+          outcomes.length > 0,
+        );
         if (perguntaSaiuNosTextos(pergunta, textosDoTurno)) {
           eventoPergunta('modelo');
         } else {

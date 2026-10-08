@@ -349,3 +349,31 @@ export function perguntaSaiuNosTextos(
   }
   return false;
 }
+
+/**
+ * Os textos que contam como "fala do turno" para a trava da pergunta do fluxo.
+ *
+ * ⚠️ O TEXTO LIVRE SÓ CONTA SE ELE VAI SAIR.
+ *
+ * O modelo às vezes responde pela ferramenta (`send_message`) E escreve a
+ * PRÓXIMA pergunta como texto livre. O motor só envia o texto livre quando NADA
+ * saiu pela ferramenta (`inbound-turn.ts`, bloco "NUNCA TERMINAR SEM RESPOSTA":
+ * `outcomes.length === 0`). Quando ele enviou algo, o texto livre é DESCARTADO.
+ *
+ * A versão anterior contava o texto livre SEMPRE — então, no turno em que o
+ * modelo mandava um "ack" pela ferramenta e a pergunta só como texto, a trava
+ * concluía "a pergunta já saiu", gravava `pergunta_feita` e NÃO enviava nada: o
+ * texto era descartado e o cliente ficava sem a pergunta. Medido ao vivo
+ * (2026-10-08): o fluxo de Financiamento parou depois do "Anotado, Vander.".
+ *
+ * Aqui a condição espelha a do envio: o texto livre entra na conta apenas quando
+ * ele de fato será enviado (nada saiu pela ferramenta).
+ */
+export function textosDoTurnoParaTrava(
+  corposEnviados: readonly string[],
+  textoLivreDoModelo: string,
+  enviouPelaFerramenta: boolean,
+): string[] {
+  const livre = textoLivreDoModelo.trim();
+  return livre !== "" && !enviouPelaFerramenta ? [...corposEnviados, livre] : [...corposEnviados];
+}

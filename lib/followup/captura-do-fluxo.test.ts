@@ -8,6 +8,7 @@ import {
   ehAcenoOuSilencio,
   normalizarValorDoCampo,
   perguntaSaiuNosTextos,
+  textosDoTurnoParaTrava,
   valorBateComTipo,
   type CampoPendenteParaCaptura,
 } from "./captura-do-fluxo";
@@ -134,6 +135,32 @@ describe("perguntaSaiuNosTextos", () => {
 
   it("não reconhece quando a pergunta não foi feita", () => {
     expect(perguntaSaiuNosTextos("Qual é o ano da moto?", ["Ótimo, temos várias opções!"])).toBe(false);
+  });
+});
+
+describe("textosDoTurnoParaTrava — o texto livre só conta se ele vai SAIR", () => {
+  const pergunta = "E a data de nascimento?";
+
+  it("conta o texto livre quando NADA saiu pela ferramenta (ele será enviado)", () => {
+    const textos = textosDoTurnoParaTrava([], pergunta, false);
+    expect(perguntaSaiuNosTextos(pergunta, textos)).toBe(true);
+  });
+
+  it("NÃO conta o texto livre quando algo já saiu pela ferramenta (ele será descartado)", () => {
+    // Reproduz o defeito de 2026-10-08: o modelo mandou "Anotado" pela ferramenta
+    // e escreveu a próxima pergunta como TEXTO LIVRE. O motor descarta esse texto
+    // (só envia texto livre quando nada saiu pela ferramenta) — então a pergunta
+    // NÃO pode contar como feita, senão o fluxo para sem enviá-la.
+    const textos = textosDoTurnoParaTrava(["Anotado, Vander."], pergunta, true);
+    expect(perguntaSaiuNosTextos(pergunta, textos)).toBe(false);
+  });
+
+  it("texto livre vazio não entra na conta", () => {
+    expect(textosDoTurnoParaTrava(["Anotado, Vander."], "   ", false)).toEqual(["Anotado, Vander."]);
+  });
+
+  it("sem envio pela ferramenta e sem texto livre, a conta fica vazia", () => {
+    expect(textosDoTurnoParaTrava([], "", false)).toEqual([]);
   });
 });
 
