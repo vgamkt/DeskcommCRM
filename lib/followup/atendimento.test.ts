@@ -365,6 +365,26 @@ describe("desvio (off-flow) conta a pergunta feita (decisão do dono 2026-10-08)
   });
 });
 
+describe("com a Jev ligada, o motor NÃO usa regex (decisão do dono 2026-10-08)", () => {
+  it("`validadoPelaJev` curto-circuita ANTES do classificador determinístico", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    expect(src).toMatch(/if \(args\.validadoPelaJev === true\)[\s\S]*registrarTentativaDoTurno/);
+    const idxGate = src.indexOf("if (args.validadoPelaJev === true)");
+    const idxClass = src.indexOf("classificarInbound(comoCampoParaCaptura(primeiro)");
+    expect(idxGate).toBeGreaterThan(0);
+    expect(idxGate).toBeLessThan(idxClass);
+  });
+
+  it("a Jev recebe o CONTEXTO inteiro, não só as últimas 6 mensagens", () => {
+    const src = readFileSync(
+      join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
+      "utf8",
+    );
+    expect(src).toMatch(/const historico = effectiveContext\.messages\.map/);
+    expect(src).not.toMatch(/effectiveContext\.messages\.slice\(-6\)/);
+  });
+});
+
 describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)", () => {
   it("lê cada chave de custom_fields como texto", () => {
     expect(
