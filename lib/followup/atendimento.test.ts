@@ -356,6 +356,15 @@ describe("auditoria 2026-09-19 — o nao_respondeu do validador cai no classific
   });
 });
 
+describe("desvio (off-flow) conta a pergunta feita (decisão do dono 2026-10-08)", () => {
+  it("o ramo `desviou` incrementa a tentativa — o teto de 3 passa a disparar", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    // Antes o desvio não contava: o cliente falava de outro assunto e o CNH era
+    // reperguntado para sempre. Agora o ramo `fora_do_fluxo` também incrementa.
+    expect(src).toMatch(/kind: "fora_do_fluxo"[\s\S]*registrarTentativaDoTurno/);
+  });
+});
+
 describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)", () => {
   it("lê cada chave de custom_fields como texto", () => {
     expect(

@@ -896,7 +896,17 @@ export async function processarInboundDoFluxo(
       messageId: args.messageId ?? null,
       fieldKey: primeiro.config.key,
     }).catch(() => {});
-    return { estado, concluiu: false };
+    // DECISÃO DO DONO (2026-10-08): a pergunta FOI feita (o motor a garantiu no
+    // turno anterior) e o cliente falou de OUTRA COISA — isso CONTA tentativa.
+    // Antes o desvio não contava e o teto de `max_tentativas_pergunta` (3) nunca
+    // disparava: o CNH era reperguntado para sempre (medido ao vivo). A resposta
+    // capturada em qualquer formato — sozinha ou junto de outra frase, texto ou
+    // áudio — já foi tratada no bloco `validacoes` acima; aqui só contamos a
+    // pergunta feita. Ao teto, a pergunta esgota e o fluxo para de perguntá-la.
+    const r = await registrarTentativaDoTurno(db, { organizationId: args.organizationId, estado });
+    return r.concluiu
+      ? { estado: r.estado, concluiu: true, finalizacao: r.estado.checklist.fim.config.ao_finalizar }
+      : { estado: r.estado, concluiu: false };
   }
 
   if (leitura.resultado === "respondeu") {
