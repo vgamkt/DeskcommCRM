@@ -43,6 +43,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
 
+import { CadeiaDeTranscricao } from "./CadeiaDeTranscricao";
+
 interface Ponto {
   id: string;
   rotulo: string;
@@ -226,31 +228,56 @@ export function PainelDeProvedores() {
               <p className="text-sm text-muted-foreground">{t(info.explicacao)}</p>
             </div>
 
-            <ResumoDoGrupo pontos={pontos} />
-
-            <div className="mt-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid={`avancado-${papel}`}
-                onClick={() => setAvancado((a) => ({ ...a, [papel]: !a[papel] }))}
-              >
-                {avancado[papel] ? t("Ocultar") : t("Configuração avançada")} ({pontos.length}{" "}
-                {pontos.length === 1 ? t("ponto") : t("pontos")})
-              </Button>
-            </div>
-
-            {avancado[papel] && (
-              <div className="mt-3 space-y-3">
-                {pontos.map((ponto) => (
-                  <CartaoDoPonto
-                    key={ponto.id}
-                    ponto={ponto}
-                    dados={dados}
-                    aoSalvar={carregar}
-                  />
-                ))}
+            {papel === "perceber" ? (
+              // "Ver e ouvir" são DUAS capacidades distintas e a tela precisa
+              // deixar isso óbvio: OUVIR o áudio (cadeia de transcrição —
+              // principal + reservas) e VER a imagem (o modelo de visão). Antes
+              // as duas ficavam atrás de "Configuração avançada" e o resumo do
+              // grupo só mostrava o modelo de imagem — parecia que "Ver e
+              // ouvir" era uma coisa só. Aqui os dois cards ficam SEMPRE
+              // visíveis, cada um com o seu título.
+              <div className="space-y-3" data-testid="ver-e-ouvir">
+                <CadeiaDeTranscricao />
+                {pontos
+                  .filter((ponto) => ponto.id === "visao_de_imagem")
+                  .map((ponto) => (
+                    <CartaoDoPonto
+                      key={ponto.id}
+                      ponto={ponto}
+                      dados={dados}
+                      aoSalvar={carregar}
+                    />
+                  ))}
               </div>
+            ) : (
+              <>
+                <ResumoDoGrupo pontos={pontos} />
+
+                <div className="mt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid={`avancado-${papel}`}
+                    onClick={() => setAvancado((a) => ({ ...a, [papel]: !a[papel] }))}
+                  >
+                    {avancado[papel] ? t("Ocultar") : t("Configuração avançada")} ({pontos.length}{" "}
+                    {pontos.length === 1 ? t("ponto") : t("pontos")})
+                  </Button>
+                </div>
+
+                {avancado[papel] && (
+                  <div className="mt-3 space-y-3">
+                    {pontos.map((ponto) => (
+                      <CartaoDoPonto
+                        key={ponto.id}
+                        ponto={ponto}
+                        dados={dados}
+                        aoSalvar={carregar}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </section>
         ))}

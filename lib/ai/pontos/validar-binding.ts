@@ -24,6 +24,7 @@
  * fabricante, não por heurística sobre o nome do modelo.
  */
 import { PONTO_POR_ID } from "./registro";
+import { ehProvedorDeTranscricao } from "./provedores";
 
 /** O que o catálogo sabe sobre o modelo escolhido. */
 export interface CapacidadeDoModelo {
@@ -50,6 +51,8 @@ export type ResultadoDaValidacao =
 export function validarBinding(entrada: {
   pontoId: string;
   modelo: CapacidadeDoModelo;
+  /** O provedor escolhido — necessário para validar pontos sensíveis ao provedor (transcrição). */
+  provider?: string;
 }): ResultadoDaValidacao {
   const ponto = PONTO_POR_ID.get(entrada.pontoId);
   if (ponto === undefined) {
@@ -60,7 +63,12 @@ export function validarBinding(entrada: {
     };
   }
 
-  if (ponto.fixo !== undefined) {
+  // Ponto SEM padrão definido (`fixo` sem `usa`) é travado por arquitetura:
+  // trocar o modelo quebraria algo em silêncio (ex.: embedding tem que casar
+  // entre indexar e buscar). Ponto `fixo` COM `usa` é só o PADRÃO do produto —
+  // a UI pode sobrescrever (o resolvedor já honra o binding), com a razão do
+  // produto virando AVISO.
+  if (ponto.fixo !== undefined && ponto.fixo.usa === undefined) {
     return {
       ok: false,
       codigo: "ponto_fixo",
@@ -68,10 +76,29 @@ export function validarBinding(entrada: {
     };
   }
 
+  const avisos: string[] = [];
+  if (ponto.fixo !== undefined) {
+    avisos.push(ponto.fixo.razao);
+  }
+
+  // Transcrição só aceita provedor que SABE transcrever. Escolher, por exemplo,
+  // a Anthropic para "Ouvir o áudio do cliente" gravaria uma configuração que o
+  // worker descarta em silêncio (o cliente ficaria sem resposta).
+  if (ponto.exige.audio === true && entrada.provider !== undefined && !ehProvedorDeTranscricao(entrada.provider)) {
+    return {
+      ok: false,
+      codigo: "provedor_sem_transcricao",
+      mensagem:
+        `"${entrada.provider}" não transcreve áudio. Em "${ponto.rotulo}", escolha um provedor de ` +
+        `transcrição (Groq, OpenAI, OpenRouter ou Deepgram).`,
+    };
+  }
+
   if (!entrada.modelo.conhecido) {
     return {
       ok: true,
       avisos: [
+        ...avisos,
         `Não conseguimos verificar o que "${entrada.modelo.model_id}" sabe fazer — ele não está no catálogo. ` +
           `Se for um modelo seu ou de um endpoint próprio, isso é esperado. Vale testar a conexão antes de confiar nele.`,
       ],
@@ -92,7 +119,6 @@ export function validarBinding(entrada: {
     };
   }
 
-  const avisos: string[] = [];
   if (ponto.exige.imagem === true && !entrada.modelo.supports_vision) {
     // AVISO, não recusa: `agent_turn` exige imagem para ler o print que o
     // cliente manda, mas um agente que só lê texto ainda atende — mal, e o

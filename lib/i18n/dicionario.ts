@@ -8856,6 +8856,33 @@ export const DICIONARIO: Traducoes = {
     },
   "Conversa apagada.": { es: "Conversación borrada." },
   "Apagar tudo": { es: "Borrar todo" },
+
+  // ── Cadeia de transcrição do áudio do cliente (0270) ──────────────────────
+  "Transcrição do áudio do cliente": { es: "Transcripción del audio del cliente" },
+  "É esta inteligência que OUVE os áudios que o cliente manda e transforma em texto. A ordem importa: o primeiro é o principal; se ele falhar, o sistema tenta o próximo. Recomendado: Groq (rápido e barato) e Deepgram (preciso) como reserva.":
+    {
+      es: "Es esta inteligencia la que ESCUCHA los audios que envía el cliente y los convierte en texto. El orden importa: el primero es el principal; si falla, el sistema prueba el siguiente. Recomendado: Groq (rápido y barato) y Deepgram (preciso) como reserva.",
+    },
+  "Nenhuma cadeia configurada. O sistema usa um padrão automático (Groq → OpenRouter → OpenAI). Adicione um provedor para assumir o controle.":
+    {
+      es: "Ninguna cadena configurada. El sistema usa un patrón automático (Groq → OpenRouter → OpenAI). Agrega un proveedor para tomar el control.",
+    },
+  "Principal": { es: "Principal" },
+  "Reserva": { es: "Reserva" },
+  "Adicionar provedor": { es: "Agregar proveedor" },
+  "Salvar cadeia": { es: "Guardar cadena" },
+  "Cadeia de transcrição salva.": { es: "Cadena de transcripción guardada." },
+  "Escolha um modelo em cada provedor da cadeia.":
+    { es: "Elige un modelo en cada proveedor de la cadena." },
+  "Principal hoje:": { es: "Principal hoy:" },
+  "Transcrição atualizada.": { es: "Transcripción actualizada." },
+  "Escolha um modelo.": { es: "Elige un modelo." },
+  "ex.: nova-3": { es: "ej.: nova-3" },
+  "Configurar a cadeia completa (principal e reservas) em Provedores":
+    { es: "Configurar la cadena completa (principal y reservas) en Proveedores" },
+  "Hoje:": { es: "Hoy:" },
+  "Este ponto é fixo e não pode ser trocado aqui.":
+    { es: "Este punto es fijo y no se puede cambiar aquí." },
 };
 
 /**

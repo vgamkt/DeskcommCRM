@@ -489,6 +489,11 @@ export const AUDIT_ACTIONS = [
   // pedem investigações diferentes. O metadata NUNCA leva telefone nem nome.
   "contact.erased_by_customer",
   "contact.erased_by_agent",
+  // A CADEIA de transcrição de áudio do cliente (Agente de IA → Provedores):
+  // principal, reservas e a ordem em que cada provedor é tentado. Audita porque
+  // muda por onde o áudio do cliente passa e quanto custa — a mesma classe de
+  // mutação de `ai.purpose_binding_updated`, mas com lista ordenada própria.
+  "ai.transcription_chain_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

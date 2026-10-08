@@ -50,6 +50,13 @@ export interface LlmEdgeConfig {
    */
   openrouterApiKey?: string;
   /**
+   * Deepgram (transcrição de áudio). Mesma ideia das irmãs: a org que não tem
+   * credencial Deepgram cadastrada usa a chave da instalação. Sem isto, a cadeia
+   * de transcrição com Deepgram como principal/reserva cairia no provedor
+   * seguinte mesmo com `DEEPGRAM_API_KEY` preenchida no `.env`.
+   */
+  deepgramApiKey?: string;
+  /**
    * TTL do prefixo estável de cache (knob LLM_CACHE_TTL). Opcional para quem
    * monta a config na mão (testes) — o seam aplica a doutrina '1h' quando ausente.
    */
@@ -83,6 +90,7 @@ export function llmEdgeConfigFromEnv(env: {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  DEEPGRAM_API_KEY?: string;
   LLM_CACHE_TTL?: string;
   AI_BUDGET_ENFORCEMENT?: string;
 }): LlmEdgeConfig {
@@ -94,6 +102,7 @@ export function llmEdgeConfigFromEnv(env: {
     ...(env.ANTHROPIC_API_KEY ? { anthropicApiKey: env.ANTHROPIC_API_KEY } : {}),
     ...(env.OPENAI_API_KEY ? { openaiApiKey: env.OPENAI_API_KEY } : {}),
     ...(env.OPENROUTER_API_KEY ? { openrouterApiKey: env.OPENROUTER_API_KEY } : {}),
+    ...(env.DEEPGRAM_API_KEY ? { deepgramApiKey: env.DEEPGRAM_API_KEY } : {}),
     cacheTtl: ttl,
     // Sem `if` de valor vazio, ao contrário das chaves acima: aqui o ausente
     // TEM um significado ('on'), e o normalizador é quem o dá. Um campo
@@ -335,6 +344,8 @@ export async function resolveOrgLlmConfig(
     apiKey = cfg.openaiApiKey;
   } else if (provider === 'openrouter' && cfg.openrouterApiKey) {
     apiKey = cfg.openrouterApiKey;
+  } else if (provider === 'deepgram' && cfg.deepgramApiKey) {
+    apiKey = cfg.deepgramApiKey;
   } else {
     throw new LlmNotConfiguredError();
   }

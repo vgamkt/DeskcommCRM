@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { apiTranscriptionProvider, transcricaoEmCadeia } from "@/lib/messaging/media/transcription";
+import {
+  apiTranscriptionProvider,
+  deepgramTranscriptionProvider,
+  transcricaoEmCadeia,
+} from "@/lib/messaging/media/transcription";
 
 describe("apiTranscriptionProvider", () => {
   it("POSTa multipart pro endpoint de transcrição e devolve o texto", async () => {
@@ -61,8 +65,8 @@ describe("transcricaoEmCadeia — fallback quando um provedor falha", () => {
     });
     const provider = transcricaoEmCadeia(
       [
-        { apiKey: "gsk", baseUrl: "https://api.groq.com/openai" },
-        { apiKey: "sk-or", baseUrl: "https://openrouter.ai/api" },
+        { kind: "openai_compat", apiKey: "gsk", baseUrl: "https://api.groq.com/openai" },
+        { kind: "openai_compat", apiKey: "sk-or", baseUrl: "https://openrouter.ai/api" },
       ],
       fetchMock as unknown as typeof fetch,
     );
@@ -74,7 +78,10 @@ describe("transcricaoEmCadeia — fallback quando um provedor falha", () => {
   it("propaga o erro do ÚLTIMO provedor quando todos falham", async () => {
     const fetchMock = vi.fn(async () => new Response("x", { status: 429 }));
     const provider = transcricaoEmCadeia(
-      [{ apiKey: "a" }, { apiKey: "b" }],
+      [
+        { kind: "openai_compat", apiKey: "a" },
+        { kind: "openai_compat", apiKey: "b" },
+      ],
       fetchMock as unknown as typeof fetch,
     );
     await expect(provider.transcribe(Buffer.from([1]), "audio/ogg")).rejects.toThrow(
@@ -87,5 +94,61 @@ describe("transcricaoEmCadeia — fallback quando um provedor falha", () => {
     await expect(provider.transcribe(Buffer.from([1]), "audio/ogg")).rejects.toThrow(
       /transcription_sem_provedor/,
     );
+  });
+});
+
+describe("deepgramTranscriptionProvider", () => {
+  it("POSTa binário em /v1/listen com Token e lê o transcript aninhado", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: { channels: [{ alternatives: [{ transcript: "quero comprar" }] }] },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const provider = deepgramTranscriptionProvider({ apiKey: "dg-key", model: "nova-3" }, fetchMock);
+    const text = await provider.transcribe(Buffer.from([1, 2, 3]), "audio/ogg; codecs=opus");
+    expect(text).toBe("quero comprar");
+    const [url, init] = fetchMock.mock.calls[0]!;
+    const u = String(url);
+    expect(u).toContain("https://api.deepgram.com/v1/listen");
+    expect(u).toContain("model=nova-3");
+    expect(u).toContain("smart_format=true");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Token dg-key");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("audio/ogg");
+  });
+
+  it("propaga erro HTTP do Deepgram", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("nope", { status: 401 }));
+    const provider = deepgramTranscriptionProvider({ apiKey: "bad" }, fetchMock);
+    await expect(provider.transcribe(Buffer.from([1]), "audio/ogg")).rejects.toThrow(
+      /transcription_401/,
+    );
+  });
+});
+
+describe("transcricaoEmCadeia — fallback entre provedores de tipos diferentes", () => {
+  it("Deepgram falha (401) e o próximo OpenAI-compatível devolve o texto", async () => {
+    const chamadas: string[] = [];
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      chamadas.push(u);
+      if (u.includes("deepgram")) return new Response("no", { status: 401 });
+      return new Response(JSON.stringify({ text: "ok no segundo" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const provider = transcricaoEmCadeia(
+      [
+        { kind: "deepgram", apiKey: "dg", model: "nova-3" },
+        { kind: "openai_compat", apiKey: "sk-groq", baseUrl: "https://api.groq.com/openai" },
+      ],
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(await provider.transcribe(Buffer.from([1]), "audio/ogg")).toBe("ok no segundo");
+    expect(chamadas[0]).toContain("deepgram");
+    expect(chamadas[1]).toContain("groq");
   });
 });

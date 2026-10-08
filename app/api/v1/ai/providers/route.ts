@@ -314,6 +314,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (!ehJev) {
     const validacao = validarBinding({
       pontoId,
+      provider: corpo.provider,
       modelo: {
         model_id: corpo.model_id,
         supports_tools: modelo?.supports_tools ?? false,

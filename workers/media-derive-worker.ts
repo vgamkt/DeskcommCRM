@@ -16,7 +16,12 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
-import { transcricaoEmCadeia } from "@/lib/messaging/media/transcription";
+import {
+  DEEPGRAM_DEFAULT_LANGUAGE,
+  DEEPGRAM_DEFAULT_MODEL,
+  transcricaoEmCadeia,
+  type DestinoDaTranscricao,
+} from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -162,6 +167,20 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // → OpenAI. Assim o plano gratuito do Groq atende o volume normal e, quando
     // ele estoura (429), a OpenRouter assume sem o cliente ficar sem resposta.
     // `TRANSCRIPTION_API_KEY` explícito continua na frente de tudo.
+    // ─── CADEIA DE TRANSCRIÇÃO, na ORDEM que a UI mandar ─────────────────────
+    //
+    // A ordem, do mais forte ao mais fraco:
+    //   1. TRANSCRIPTION_* explícito no .env (override da INSTALAÇÃO).
+    //   2. `ai_transcription_targets` — a CADEIA ordenada configurada na tela
+    //      (Agente de IA → Provedores), com Principal, Reserva e quantos mais o
+    //      operador quiser. Deepgram pode ocupar qualquer posição.
+    //   3. Sem cadeia configurada (tabela vazia): comportamento histórico —
+    //      binding legado `transcricao_de_audio` na frente da cadeia automática
+    //      Groq → OpenRouter → OpenAI.
+    //
+    // A transcrição continua sendo o PRIMEIRO passo do fluxo de mídia (o turno
+    // do agente só segue depois que o derivado sai) — a cadeia muda QUEM ouve,
+    // nunca QUANDO.
     const modeloTranscricao = process.env.TRANSCRIPTION_MODEL;
     const destinos: DestinoDaTranscricao[] = [];
     const explicito = destinoExplicitoDaTranscricao({
@@ -170,45 +189,71 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       model: modeloTranscricao,
     });
     if (explicito !== null) destinos.push(explicito);
-    for (const provedor of ["groq", "openrouter", "openai"] as const) {
-      try {
-        const cred = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
-          provider: provedor,
-        });
-        const d = destinoDaTranscricao({ provedor, chave: cred.apiKey, model: modeloTranscricao });
-        if (d !== null) destinos.push(d);
-      } catch {
-        // sem credencial desse provedor: tenta o próximo
-      }
-    }
 
-    // O painel de provedores manda AQUI também: se a organização apontou o ponto
-    // `transcricao_de_audio` (card "Para transcrever o áudio do cliente" na tela
-    // do agente), essa escolha vem PRIMEIRO — provedor, modelo e chave escolhidos
-    // na tela. A cadeia padrão (Groq → OpenRouter → OpenAI) vira FALLBACK, para o
-    // cliente nunca ficar sem resposta quando o provedor escolhido falha.
-    const bindingAudio = await lerBindingDoPonto(
-      admin,
-      row.organization_id,
-      "transcricao_de_audio",
-    );
-    if (bindingAudio) {
-      try {
-        const credAudio = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
-          provider: bindingAudio.provider,
-        });
-        const d = destinoDaTranscricao({
-          provedor: bindingAudio.provider,
-          chave: credAudio.apiKey,
-          model: bindingAudio.model_id,
-        });
-        if (d !== null) destinos.unshift(d);
-      } catch (err) {
-        logger.warn("[media-derive] ponto transcricao_de_audio sem credencial utilizável; usando a cadeia padrão", {
-          organization_id: row.organization_id,
-          provider: bindingAudio.provider,
-          detail: err instanceof Error ? err.message : String(err),
-        });
+    const alvos = await lerCadeiaDeTranscricao(admin, row.organization_id);
+    if (alvos.length > 0) {
+      for (const alvo of alvos) {
+        try {
+          const cred = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+            provider: alvo.provider,
+            credentialId: alvo.credential_id,
+          });
+          const d = destinoDaTranscricao({
+            provedor: alvo.provider,
+            chave: cred.apiKey,
+            model: alvo.model_id,
+          });
+          if (d !== null) destinos.push(d);
+        } catch (err) {
+          // Um item da cadeia sem credencial utilizável é PULADO, nunca derruba
+          // a transcrição inteira: a razão de a cadeia existir é justamente
+          // sobreviver à queda de um elo.
+          logger.warn("[media-derive] alvo da cadeia de transcrição sem credencial; pulando", {
+            organization_id: row.organization_id,
+            provider: alvo.provider,
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    } else {
+      // Comportamento histórico (tabela vazia): cadeia automática + binding
+      // legado na frente. Mantido para as instalações que nunca abriram a tela
+      // nova — nada muda para elas.
+      for (const provedor of ["groq", "openrouter", "openai"] as const) {
+        try {
+          const cred = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+            provider: provedor,
+          });
+          const d = destinoDaTranscricao({ provedor, chave: cred.apiKey, model: modeloTranscricao });
+          if (d !== null) destinos.push(d);
+        } catch {
+          // sem credencial desse provedor: tenta o próximo
+        }
+      }
+
+      const bindingAudio = await lerBindingDoPonto(
+        admin,
+        row.organization_id,
+        "transcricao_de_audio",
+      );
+      if (bindingAudio) {
+        try {
+          const credAudio = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+            provider: bindingAudio.provider,
+          });
+          const d = destinoDaTranscricao({
+            provedor: bindingAudio.provider,
+            chave: credAudio.apiKey,
+            model: bindingAudio.model_id,
+          });
+          if (d !== null) destinos.unshift(d);
+        } catch (err) {
+          logger.warn("[media-derive] ponto transcricao_de_audio sem credencial utilizável; usando a cadeia padrão", {
+            organization_id: row.organization_id,
+            provider: bindingAudio.provider,
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
 
@@ -267,15 +312,10 @@ export const GROQ_TRANSCRIPTION_BASE = "https://api.groq.com/openai";
 /** Modelo Whisper padrão quando o áudio vai pela Groq. */
 export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo";
 
-export interface DestinoDaTranscricao {
-  apiKey: string;
-  baseUrl?: string;
-  model?: string;
-}
-
 /**
  * Override EXPLÍCITO do `.env` (`TRANSCRIPTION_*`). Puro. `null` quando não há
  * `TRANSCRIPTION_API_KEY` — o chamador então resolve por credencial da org.
+ * O serviço explícito é sempre OpenAI-compatível (`/v1/audio/transcriptions`).
  */
 export function destinoExplicitoDaTranscricao(input: {
   apiKey?: string | null;
@@ -287,6 +327,7 @@ export function destinoExplicitoDaTranscricao(input: {
   const baseUrl = input.baseUrl?.trim() ?? "";
   const model = input.model?.trim() ?? "";
   return {
+    kind: "openai_compat",
     apiKey,
     ...(baseUrl !== "" ? { baseUrl } : {}),
     ...(model !== "" ? { model } : {}),
@@ -299,7 +340,8 @@ export function destinoExplicitoDaTranscricao(input: {
  * compatível (o chamador tenta o próximo).
  *
  * OpenRouter tem endpoint STT próprio (`/v1/audio/transcriptions`, Whisper) com
- * a mesma chave do chat; OpenAI é o padrão histórico (`api.openai.com`).
+ * a mesma chave do chat; OpenAI é o padrão histórico (`api.openai.com`); Deepgram
+ * fala o `POST /v1/listen` próprio (ver `lib/messaging/media/transcription.ts`).
  */
 export function destinoDaTranscricao(input: {
   provedor: string;
@@ -309,6 +351,7 @@ export function destinoDaTranscricao(input: {
   const model = input.model?.trim() ?? "";
   if (input.provedor === "groq") {
     return {
+      kind: "openai_compat",
       apiKey: input.chave,
       baseUrl: GROQ_TRANSCRIPTION_BASE,
       model: model !== "" ? model : GROQ_TRANSCRIPTION_MODEL,
@@ -316,6 +359,7 @@ export function destinoDaTranscricao(input: {
   }
   if (input.provedor === "openrouter") {
     return {
+      kind: "openai_compat",
       apiKey: input.chave,
       baseUrl: OPENROUTER_TRANSCRIPTION_BASE,
       model: model !== "" ? model : OPENROUTER_TRANSCRIPTION_MODEL,
@@ -323,11 +367,53 @@ export function destinoDaTranscricao(input: {
   }
   if (input.provedor === "openai") {
     return {
+      kind: "openai_compat",
       apiKey: input.chave,
       ...(model !== "" ? { model } : {}),
     };
   }
+  if (input.provedor === "deepgram") {
+    return {
+      kind: "deepgram",
+      apiKey: input.chave,
+      model: model !== "" ? model : DEEPGRAM_DEFAULT_MODEL,
+      language: DEEPGRAM_DEFAULT_LANGUAGE,
+    };
+  }
   return null;
+}
+
+/** Uma linha de `ai_transcription_targets` já filtrada por organização. */
+interface AlvoDeTranscricao {
+  provider: string;
+  model_id: string;
+  credential_id: string | null;
+}
+
+/**
+ * A CADEIA ordenada configurada na tela (`ai_transcription_targets`). Vazio =
+ * nenhuma cadeia configurada, e o worker cai no comportamento histórico.
+ */
+async function lerCadeiaDeTranscricao(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+): Promise<AlvoDeTranscricao[]> {
+  const { data, error } = await admin
+    .from("ai_transcription_targets")
+    .select("provider, model_id, credential_id")
+    .eq("organization_id", organizationId)
+    .eq("is_enabled", true)
+    .order("position", { ascending: true });
+  if (error) {
+    // Tabela ausente (clone com baseline atrasado) ou erro de leitura: cai no
+    // comportamento histórico em vez de derrubar a derivação.
+    logger.warn("[media-derive] não consegui ler a cadeia de transcrição; usando o padrão", {
+      organization_id: organizationId,
+      error: error.message,
+    });
+    return [];
+  }
+  return (data as AlvoDeTranscricao[] | null) ?? [];
 }
 
 function buildDeriveDeps(

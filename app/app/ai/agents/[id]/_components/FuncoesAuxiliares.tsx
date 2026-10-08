@@ -16,11 +16,13 @@
  * aqui é o que o motor usa.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -106,9 +108,20 @@ export function FuncoesAuxiliares() {
 
   return (
     <>
-      {cards.map((c) => (
-        <CartaoDaFuncao key={c.purpose} titulo={c.titulo} explicacao={c.explicacao} ponto={c.ponto} dados={dados} aoSalvar={carregar} />
-      ))}
+      {cards.map((c) =>
+        c.purpose === "transcricao_de_audio" ? (
+          <CartaoTranscricao key={c.purpose} titulo={c.titulo} explicacao={c.explicacao} />
+        ) : (
+          <CartaoDaFuncao
+            key={c.purpose}
+            titulo={c.titulo}
+            explicacao={c.explicacao}
+            ponto={c.ponto}
+            dados={dados}
+            aoSalvar={carregar}
+          />
+        ),
+      )}
     </>
   );
 }
@@ -254,6 +267,207 @@ function CartaoDaFuncao({
           </div>
         </div>
       )}
+    </Card>
+  );
+}
+
+interface AlvoDeTranscricao {
+  provider: string;
+  model_id: string;
+  credential_id: string | null;
+  base_url: string | null;
+}
+interface DadosDeTranscricao {
+  alvos: AlvoDeTranscricao[];
+  provedores: { id: string; rotulo: string }[];
+  credenciais: { id: string; provider: string; label: string; api_key_last4: string | null }[];
+  modelos: { provider: string; model_id: string; display_name: string }[];
+  podeEditar: boolean;
+}
+
+/**
+ * O card da tela do agente edita o PRINCIPAL (primeira posição) da cadeia de
+ * transcrição, preservando as reservas. A cadeia COMPLETA (principal + reservas)
+ * se monta em Agente de IA → Provedores.
+ *
+ * Antes este card era um ponto FIXO e não deixava editar; agora fala com o mesmo
+ * endpoint da tela de provedores (`/api/v1/ai/transcription`), então não há duas
+ * verdades sobre quem transcreve.
+ */
+function CartaoTranscricao({ titulo, explicacao }: { titulo: string; explicacao: string }) {
+  const t = useT();
+  const [dados, setDados] = useState<DadosDeTranscricao | null>(null);
+  const [provider, setProvider] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [credentialId, setCredentialId] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const carregar = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/ai/transcription");
+      const json = (await res.json()) as { data?: DadosDeTranscricao };
+      if (res.ok && json?.data) {
+        setDados(json.data);
+        const principal = json.data.alvos[0];
+        if (principal) {
+          setProvider(principal.provider);
+          setModelId(principal.model_id);
+          setCredentialId(principal.credential_id ?? "");
+        } else {
+          setProvider(json.data.provedores[0]?.id ?? "");
+        }
+      }
+    } catch {
+      // Silencioso: a tela do agente não pode quebrar porque a leitura falhou.
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  if (!dados) return null;
+
+  const editavel = dados.podeEditar;
+  const modelosDoProvider = dados.modelos.filter((m) => m.provider === provider);
+  const credsDoProvider = dados.credenciais.filter((c) => c.provider === provider);
+
+  async function salvar() {
+    if (modelId.trim() === "") {
+      toast.error(t("Escolha um modelo."));
+      return;
+    }
+    setSalvando(true);
+    try {
+      const principal = {
+        provider,
+        model_id: modelId,
+        credential_id: credentialId || null,
+        base_url: null,
+      };
+      // Preserva as reservas (posições 1+) — aqui só se edita o principal.
+      const reservas = dados!.alvos.slice(1).map((a) => ({
+        provider: a.provider,
+        model_id: a.model_id,
+        credential_id: a.credential_id,
+        base_url: a.base_url,
+      }));
+      const res = await fetch("/api/v1/ai/transcription", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ alvos: [principal, ...reservas] }),
+      });
+      const json = (await res.json()) as { error?: { message?: string } };
+      if (!res.ok) {
+        toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
+        return;
+      }
+      toast.success(t("Transcrição atualizada."));
+      await carregar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-4" data-testid="funcao-transcricao_de_audio">
+      <div>
+        <h3 className="text-sm font-medium">{t(titulo)}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">{t(explicacao)}</p>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        {t("Principal hoje:")}{" "}
+        <Badge variant="secondary" className="font-mono text-[11px]">
+          {provider}
+          {modelId ? ` · ${modelId}` : ""}
+        </Badge>
+      </div>
+
+      {editavel && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <Label className="text-xs">{t("Provedor")}</Label>
+            <Select
+              value={provider}
+              onValueChange={(v) => {
+                setProvider(v);
+                setModelId("");
+                setCredentialId("");
+              }}
+            >
+              <SelectTrigger data-testid="funcao-provider-transcricao_de_audio">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {dados.provedores.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.rotulo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs">{t("Modelo")}</Label>
+            {modelosDoProvider.length === 0 ? (
+              <Input
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                placeholder={t("ex.: nova-3")}
+                data-testid="funcao-modelo-transcricao_de_audio"
+              />
+            ) : (
+              <Select value={modelId} onValueChange={setModelId}>
+                <SelectTrigger data-testid="funcao-modelo-transcricao_de_audio">
+                  <SelectValue placeholder={t("escolha")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {modelosDoProvider.map((m) => (
+                    <SelectItem key={m.model_id} value={m.model_id}>
+                      {m.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div>
+            <Label className="text-xs">{t("Chave")}</Label>
+            <Select value={credentialId} onValueChange={setCredentialId}>
+              <SelectTrigger data-testid="funcao-chave-transcricao_de_audio">
+                <SelectValue placeholder={t("da instalação")} />
+              </SelectTrigger>
+              <SelectContent>
+                {credsDoProvider.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label} ••{c.api_key_last4 ?? "??"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="sm:col-span-3">
+            <Button
+              size="sm"
+              disabled={salvando || !modelId}
+              onClick={() => void salvar()}
+              data-testid="funcao-salvar-transcricao_de_audio"
+            >
+              {salvando ? t("Salvando…") : t("Salvar")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        <Link className="underline underline-offset-4" href="/app/ai/providers">
+          {t("Configurar a cadeia completa (principal e reservas) em Provedores")}
+        </Link>
+      </p>
     </Card>
   );
 }

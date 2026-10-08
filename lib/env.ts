@@ -187,6 +187,10 @@ const schema = z.object({
   TRANSCRIPTION_API_KEY: z.string().optional().default(""),
   TRANSCRIPTION_BASE_URL: z.string().optional().default(""),
   TRANSCRIPTION_MODEL: z.string().optional().default(""),
+  // Chave de plataforma do Deepgram (transcrição de áudio). Vale quando a org
+  // não tem credencial Deepgram cadastrada; a cadeia configurada na tela
+  // (Agente de IA → Provedores) tem prioridade sobre ela.
+  DEEPGRAM_API_KEY: z.string().optional().default(""),
   // Jev (System One) — decisão estruturada, multi-provedor. DESLIGADA por padrão:
   // sem JEV_ENABLED nada muda. Quando ligada, os pontos de LEITURA tentam a Jev
   // ANTES do modelo de chat e caem no chat se ela esgotar. `JEV_FALLBACK_*` é o

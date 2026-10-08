@@ -143,7 +143,7 @@ export const IDS_DE_PROVEDOR = PROVEDORES.map((p) => p.id) as unknown as readonl
  * `provedores-x-registry` (todo provedor oferecido precisa de fábrica de chat) —
  * por isso os provedores da Jev vivem aqui, e não lá.
  */
-export const IDS_DE_CREDENCIAL = [...IDS_DE_PROVEDOR, "typesafe"] as const;
+export const IDS_DE_CREDENCIAL = [...IDS_DE_PROVEDOR, "typesafe", "deepgram"] as const;
 
 /** O que a tela de credenciais mostra como opção (chat + Jev). */
 export const ROTULO_PROVEDOR_JEV_CADASTRAL = "TypeSafe (Jev — oficial)";
@@ -176,6 +176,14 @@ export const OPCOES_DE_CREDENCIAL: readonly OpcaoDeCredencial[] = [
     ondePegarAChave: "https://typesafe.ai",
     prefixoDaChave: "…",
   },
+  {
+    id: "deepgram",
+    rotulo: "Deepgram",
+    quandoUsar:
+      "Transcrição de áudio (modelos Nova) muito precisa e rápida, cobrada por minuto. Use como principal ou reserva para ouvir os áudios que o cliente manda no WhatsApp.",
+    ondePegarAChave: "https://console.deepgram.com/",
+    prefixoDaChave: "…",
+  },
 ];
 
 export const CREDENCIAL_POR_ID: ReadonlyMap<string, OpcaoDeCredencial> = new Map(
@@ -189,3 +197,37 @@ export const PROVEDOR_POR_ID: ReadonlyMap<string, ProvedorSuportado> = new Map(
 export function ehProvedorSuportado(id: string): boolean {
   return PROVEDOR_POR_ID.has(id);
 }
+
+/**
+ * OS PROVEDORES QUE SABEM TRANScrever áudio — a lista que alimenta a cadeia de
+ * transcrição (`ai_transcription_targets`) e o card "Transcrever o áudio do
+ * cliente".
+ *
+ * ⚠️ POR QUE SEPARADA de `PROVEDORES`: a lista de CHAT é casada com o registry
+ * de conversa (`provedores-x-registry`) — todo id ali precisa de uma fábrica de
+ * chat. Deepgram NÃO conversa: ele só transcreve. Pôr deepgram em `PROVEDORES`
+ * reprovaria aquele invariante (a tela ofereceria um provedor que o chat não
+ * executa). É a mesma razão pela qual os provedores da Jev vivem à parte.
+ *
+ * Groq, OpenAI e OpenRouter são OpenAI-compatíveis (`/v1/audio/transcriptions`);
+ * Deepgram fala o `POST /v1/listen` próprio (ver `lib/messaging/media/transcription.ts`).
+ */
+export const PROVEDORES_DE_TRANSCRICAO = ["groq", "openai", "openrouter", "deepgram"] as const;
+export type ProvedorDeTranscricao = (typeof PROVEDORES_DE_TRANSCRICAO)[number];
+
+export function ehProvedorDeTranscricao(id: string): id is ProvedorDeTranscricao {
+  return (PROVEDORES_DE_TRANSCRICAO as readonly string[]).includes(id);
+}
+
+/** A opção de credencial (rótulo, link, etc.) de um provedor de transcrição. */
+export interface ProvedorDeTranscricaoOpcao {
+  id: ProvedorDeTranscricao;
+  rotulo: string;
+}
+
+/** O que a tela de transcrição oferece no seletor de provedor. */
+export const OPCOES_DE_TRANSCRICAO: readonly ProvedorDeTranscricaoOpcao[] =
+  PROVEDORES_DE_TRANSCRICAO.map((id) => ({
+    id,
+    rotulo: CREDENCIAL_POR_ID.get(id)?.rotulo ?? id,
+  }));

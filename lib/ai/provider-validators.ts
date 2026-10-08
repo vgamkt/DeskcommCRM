@@ -22,7 +22,7 @@ import type { PROVEDORES } from "@/lib/ai/pontos/provedores";
  * uma tela que oferecia OpenRouter num ponto e não tinha onde cadastrar a
  * chave dela.
  */
-export type Provider = (typeof PROVEDORES)[number]["id"] | "typesafe";
+export type Provider = (typeof PROVEDORES)[number]["id"] | "typesafe" | "deepgram";
 
 export interface ValidationOk {
   ok: true;
@@ -293,6 +293,29 @@ export function validateTypesafeKey(apiKey: string): Promise<ValidationResult> {
   })();
 }
 
+/**
+ * Deepgram (transcrição de áudio). A prova é o endpoint AUTENTICADO
+ * `GET /v1/projects` com `Authorization: Token <chave>`: chave inválida →
+ * 401/403; válida → 200 com a lista de projetos. O catálogo de modelos de STT
+ * (Nova) é fixo e conhecido, então não derivamos de uma chamada — devolvemos os
+ * dois modelos que o produto oferece.
+ */
+export function validateDeepgramKey(apiKey: string): Promise<ValidationResult> {
+  return (async (): Promise<ValidationResult> => {
+    try {
+      const res = await timedFetch("https://api.deepgram.com/v1/projects", {
+        method: "GET",
+        headers: { Authorization: `Token ${apiKey}` },
+      });
+      if (res.status === 401 || res.status === 403) return { ok: false, error: "auth_failed_401" };
+      if (!res.ok) return { ok: false, error: `provider_status_${res.status}` };
+      return { ok: true, models: ["nova-3", "nova-2"] };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+    }
+  })();
+}
+
 export function validateProviderKey(
   provider: Provider,
   apiKey: string,
@@ -314,6 +337,8 @@ export function validateProviderKey(
       return validateOpenCodeGoKey(apiKey);
     case "typesafe":
       return validateTypesafeKey(apiKey);
+    case "deepgram":
+      return validateDeepgramKey(apiKey);
     default: {
       // Sem `never` aqui: `Provider` agora é derivado de PROVEDORES, e a lista
       // cresce sem que este arquivo saiba. Provedor novo cadastrado antes de

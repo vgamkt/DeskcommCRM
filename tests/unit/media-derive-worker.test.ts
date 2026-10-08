@@ -25,10 +25,23 @@ const messageRow = {
  */
 const bindingDeVisao: { provider: string; model_id: string; credential_id: string | null } | null = null;
 
+/** Cadeia de transcrição configurada (tabela) — `null` = nenhuma (comportamento histórico). */
+let cadeiaDeTranscricao:
+  | { provider: string; model_id: string; credential_id: string | null }[]
+  | null = null;
+
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: (tabela: string) => {
-      const linha = tabela === "ai_purpose_bindings" ? bindingDeVisao : messageRow;
+      // `messages` devolve a linha; as tabelas de configuração (bindings e a
+      // cadeia de transcrição) devolvem NADA — o caso "ninguém configurou", que
+      // é o comportamento histórico que estes casos existem para preservar.
+      const linha =
+        tabela === "ai_purpose_bindings" || tabela === "ai_transcription_targets"
+          ? bindingDeVisao
+          : messageRow;
+      const dadosDaTabela =
+        tabela === "ai_transcription_targets" ? (cadeiaDeTranscricao ?? []) : linha ? [linha] : [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const terminais: any = {
         maybeSingle: async () => ({ data: linha, error: null }),
@@ -38,7 +51,7 @@ vi.mock("@/lib/supabase/admin", () => ({
           return { eq: () => ({ eq: async () => ({ error: null }) }) };
         },
         then: (resolve: (v: unknown) => unknown) =>
-          Promise.resolve({ data: linha ? [linha] : [], error: null }).then(resolve),
+          Promise.resolve({ data: dadosDaTabela, error: null }).then(resolve),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: any = new Proxy(terminais, {
@@ -79,6 +92,7 @@ import {
   destinoExplicitoDaTranscricao,
 } from "@/workers/media-derive-worker";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
+import { resolveOrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
 
 function eventRow(attempts = 0) {
   return {
@@ -100,6 +114,7 @@ describe("deriveMessageMedia", () => {
     updateEqMock.mockReset();
     messageRow.media_derived_status = null;
     messageRow.type = "audio";
+    cadeiaDeTranscricao = null;
     vi.mocked(deriveMediaText).mockReset().mockResolvedValue("transcrição do áudio real");
   });
 
@@ -133,11 +148,29 @@ describe("deriveMessageMedia", () => {
       expect.objectContaining({ media_derived_status: "failed" }),
     );
   });
+
+  it("usa a CADEIA ORDENADA da tabela quando ela existe (ordem manda)", async () => {
+    cadeiaDeTranscricao = [
+      { provider: "deepgram", model_id: "nova-3", credential_id: null },
+      { provider: "groq", model_id: "whisper-large-v3-turbo", credential_id: null },
+    ];
+    vi.mocked(resolveOrgLlmConfig).mockClear();
+    const r = await deriveMessageMedia(eventRow());
+    expect(r.status).toBe("ok");
+    // `resolveOrgLlmConfig` é chamado uma vez sem override (config da org) e
+    // depois uma vez por item da cadeia, NA ORDEM configurada.
+    const provedores = vi
+      .mocked(resolveOrgLlmConfig)
+      .mock.calls.map((c) => (c[3] as { provider?: string } | undefined)?.provider)
+      .filter((p): p is string => typeof p === "string");
+    expect(provedores).toEqual(["deepgram", "groq"]);
+  });
 });
 
 describe("destinoDaTranscricao — o áudio tem caminho próprio, paralelo ao chat", () => {
   it("OpenRouter reusa a MESMA chave e o STT da OpenRouter (modelo padrão)", () => {
     expect(destinoDaTranscricao({ provedor: "openrouter", chave: "sk-or-v1-do-chat" })).toEqual({
+      kind: "openai_compat",
       apiKey: "sk-or-v1-do-chat",
       baseUrl: OPENROUTER_TRANSCRIPTION_BASE,
       model: OPENROUTER_TRANSCRIPTION_MODEL,
@@ -156,6 +189,7 @@ describe("destinoDaTranscricao — o áudio tem caminho próprio, paralelo ao ch
 
   it("Groq usa o endpoint OpenAI-compatível dela e whisper-large-v3-turbo", () => {
     expect(destinoDaTranscricao({ provedor: "groq", chave: "gsk_x" })).toEqual({
+      kind: "openai_compat",
       apiKey: "gsk_x",
       baseUrl: GROQ_TRANSCRIPTION_BASE,
       model: GROQ_TRANSCRIPTION_MODEL,
@@ -164,7 +198,17 @@ describe("destinoDaTranscricao — o áudio tem caminho próprio, paralelo ao ch
 
   it("OpenAI usa api.openai.com + whisper-1 (base/model ausentes = default)", () => {
     expect(destinoDaTranscricao({ provedor: "openai", chave: "sk-openai" })).toEqual({
+      kind: "openai_compat",
       apiKey: "sk-openai",
+    });
+  });
+
+  it("Deepgram usa o endpoint próprio com modelo/language", () => {
+    expect(destinoDaTranscricao({ provedor: "deepgram", chave: "dg_x" })).toEqual({
+      kind: "deepgram",
+      apiKey: "dg_x",
+      model: "nova-3",
+      language: "pt",
     });
   });
 
@@ -189,6 +233,7 @@ describe("destinoExplicitoDaTranscricao — o override do .env vence tudo", () =
         model: "whisper-large-v3-turbo",
       }),
     ).toEqual({
+      kind: "openai_compat",
       apiKey: "gsk_groq",
       baseUrl: "https://api.groq.com/openai",
       model: "whisper-large-v3-turbo",

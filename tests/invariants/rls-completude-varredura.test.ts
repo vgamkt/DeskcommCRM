@@ -234,6 +234,14 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "0 linhas da vizinha nos dois sentidos (countAs com JWT real) e escrita " +
       "cruzada barrada pelo WITH CHECK da policy (writeCountAs em 0 linhas).",
   },
+  {
+    tabela: "ai_transcription_targets",
+    razao:
+      "tests/invariants/transcricao-cadeia-rls.test.ts — cadeia ordenada de " +
+      "transcrição (migration 0270): controle positivo da própria org, 0 linhas " +
+      "da vizinha nos dois sentidos (countAs com JWT real) e escrita cruzada " +
+      "barrada pelo WITH CHECK da policy (writeCountAs em 0 linhas).",
+  },
 ];
 
 /**

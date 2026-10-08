@@ -63,14 +63,26 @@ export function apiTranscriptionProvider(
  * diante. Só propaga o erro quando TODOS falham — e propaga o erro do ÚLTIMO,
  * que é o mais próximo de "ninguém conseguiu".
  *
- * `creds` vazio devolve um provider que sempre falha com `transcription_sem_provedor`
+ * `destinos` vazio devolve um provider que sempre falha com `transcription_sem_provedor`
  * (o chamador decide o aviso ao operador; aqui não inventamos texto).
+ *
+ * Cada destino carrega o SEU `kind`: os provedores OpenAI-compatíveis (Groq,
+ * OpenAI, OpenRouter) falam `POST /v1/audio/transcriptions`; o Deepgram fala
+ * `POST /v1/listen` com outro esquema de auth e de resposta. Sem o discriminador,
+ * um destino Deepgram seria enviado ao endpoint errado e voltaria 404/401.
  */
 export function transcricaoEmCadeia(
-  creds: readonly TranscriptionCreds[],
+  destinos: readonly DestinoDaTranscricao[],
   fetchImpl: typeof fetch = fetch,
 ): TranscriptionProvider {
-  const provedores = creds.map((c) => apiTranscriptionProvider(c, fetchImpl));
+  const provedores = destinos.map((d) =>
+    d.kind === "deepgram"
+      ? deepgramTranscriptionProvider(
+          { apiKey: d.apiKey, model: d.model, language: d.language, baseUrl: d.baseUrl },
+          fetchImpl,
+        )
+      : apiTranscriptionProvider({ apiKey: d.apiKey, model: d.model, baseUrl: d.baseUrl }, fetchImpl),
+  );
   return {
     async transcribe(audio, mime) {
       let ultimo: unknown = null;
@@ -82,6 +94,59 @@ export function transcricaoEmCadeia(
         }
       }
       throw ultimo instanceof Error ? ultimo : new Error("transcription_sem_provedor");
+    },
+  };
+}
+
+/** Um destino já resolvido (chave em mãos) da cadeia de transcrição. */
+export type DestinoDaTranscricao =
+  | { kind: "openai_compat"; apiKey: string; baseUrl?: string; model?: string }
+  | { kind: "deepgram"; apiKey: string; model: string; language?: string; baseUrl?: string };
+
+/** Base do endpoint de STT do Deepgram (`+ /v1/listen`). */
+export const DEEPGRAM_BASE = "https://api.deepgram.com";
+/** Modelo Nova padrão do Deepgram. */
+export const DEEPGRAM_DEFAULT_MODEL = "nova-3";
+/** Idioma padrão da transcrição Deepgram (WhatsApp brasileiro). */
+export const DEEPGRAM_DEFAULT_LANGUAGE = "pt";
+
+export interface DeepgramCreds {
+  apiKey: string;
+  model?: string;
+  language?: string;
+  baseUrl?: string;
+}
+
+/**
+ * Transcrição Deepgram (`POST /v1/listen`). Difere dos OpenAI-compatíveis em três
+ * pontos: auth por `Authorization: Token <chave>` (não `Bearer`), corpo binário
+ * cru com o `Content-Type` do áudio (não multipart) e resposta aninhada em
+ * `results.channels[0].alternatives[0].transcript`. `smart_format=true` liga a
+ * pontuação/formatacão que a IA lê melhor; `language` default `pt`.
+ */
+export function deepgramTranscriptionProvider(
+  creds: DeepgramCreds,
+  fetchImpl: typeof fetch = fetch,
+): TranscriptionProvider {
+  const base = (creds.baseUrl?.trim() || DEEPGRAM_BASE).replace(/\/+$/, "");
+  const model = creds.model?.trim() || DEEPGRAM_DEFAULT_MODEL;
+  const language = creds.language?.trim() || DEEPGRAM_DEFAULT_LANGUAGE;
+  return {
+    async transcribe(audio, mime) {
+      const params = new URLSearchParams({ model, smart_format: "true", language });
+      const res = await fetchImpl(`${base}/v1/listen?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${creds.apiKey}`,
+          "Content-Type": mime.split(";")[0]!.trim(),
+        },
+        body: new Uint8Array(audio),
+      });
+      if (!res.ok) throw new Error(`transcription_${res.status}`);
+      const json = (await res.json()) as {
+        results?: { channels?: { alternatives?: { transcript?: string }[] }[] };
+      };
+      return json.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
     },
   };
 }
