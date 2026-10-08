@@ -348,13 +348,19 @@ export function renderBlocoDeAtendimento(
       : "";
 
   if (estado.situacao.pendentes.length === 0) {
-    const nota =
+    // FLUXO CONCLUÍDO → UMA mensagem com os PRÓXIMOS PASSOS. Antes o modelo seguia
+    // "o atendimento normalmente" e voltava a falar das qualidades da moto e a
+    // propor visita à loja — a venda "adiantava" por cima do fecho do fluxo
+    // (medido ao vivo 2026-10-08). Genérico: vale para TODOS os fluxos.
+    const base =
       finalizacao?.tipo === "skill"
         ? `O fluxo foi concluído. Puxe agora a skill ${finalizacao.skill_name}.`
-        : finalizacao?.tipo === "ia"
-          ? "O fluxo foi concluído — siga o atendimento normalmente."
-          : "O fluxo foi concluído — siga o atendimento normalmente.";
-    return `${contexto}## Fluxo de atendimento — ${estado.nomeDoFluxo}\n${nota}`;
+        : "O fluxo foi concluído.";
+    const fecho =
+      finalizacao?.tipo === "proximo_fluxo"
+        ? ""
+        : " Envie UMA única mensagem curta ao cliente com os PRÓXIMOS PASSOS (o que acontece agora). NÃO fale das qualidades da moto, NÃO proponha visita à loja e NÃO faça perguntas — apenas informe o próximo passo e aguarde.";
+    return `${contexto}## Fluxo de atendimento — ${estado.nomeDoFluxo}\n${base}${fecho}`;
   }
 
   const linhas = estado.situacao.pendentes.map((n) => {
@@ -378,7 +384,12 @@ export function renderBlocoDeAtendimento(
     // você prefere vir conhecer ela na loja ou quer que eu te mande mais detalhes
     // dela?"). Enquanto o fluxo conduz, a vez é dele: o modelo responde/acolhe o que o
     // cliente disse e NÃO abre outra pergunta.
-    "Enquanto houver campo pendente, NÃO faça NENHUMA pergunta por sua iniciativa (visita, mais detalhes, fechamento, pagamento, cor, etc.): UMA pergunta por vez, e a vez é do SISTEMA, que envia a próxima sozinho. Sua mensagem apenas responde ao que o cliente disse.",
+    //
+    // 2026-10-08: o modelo também voltava a FALAR DAS QUALIDADES DA MOTO e a propor
+    // próximo passo durante o fluxo (persona manda "conduza a venda/proponha o próximo
+    // passo") — a conversa "adiantava". Aqui a regra do fluxo se declara SOBERANA
+    // sobre essas diretrizes gerais da persona. Genérico: vale para todos os fluxos.
+    "Enquanto houver campo pendente, NÃO faça NENHUMA pergunta por sua iniciativa (visita, mais detalhes, fechamento, pagamento, cor, etc.) e NÃO fale das qualidades da moto: UMA pergunta por vez, e a vez é do SISTEMA, que envia a próxima sozinho. Sua mensagem apenas responde/acolhe o que o cliente disse, em UMA frase. ESTA REGRA VENCE as demais do seu prompt (conduzir a venda, propor próximo passo, elogiar a moto): enquanto o fluxo conduz, quem pergunta é o SISTEMA.",
     "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
     "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
     "Se o cliente corrigir um dado já preenchido, o sistema registra a correção — não chame flow_collect para isso; apenas reconheça a mudança na conversa.",

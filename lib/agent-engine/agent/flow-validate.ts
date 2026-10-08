@@ -46,7 +46,6 @@ import { decidir } from '../../ai/jev';
 import { alvosDeJevDaOrg } from '../../ai/jev/resolver';
 import { enfileirarDecisaoJev } from '../../ai/jev/outbox';
 import {
-  candidatasPorTipo,
   leituraDeFluxoDaJev,
   perguntasDeFluxoDeJev,
   type CampoDeFluxoParaJev,
@@ -102,6 +101,14 @@ const INSTRUCAO =
   '("quero dar uma moto na troca", "quero trocar de moto", "tenho interesse") SEM dizer QUAL, o ' +
   'campo que espera um dado específico (um modelo, um ano, um valor) NÃO foi respondido — ' +
   'devolva {"respostas":[]}. Só responda se a mensagem trouxer o DADO específico. ' +
+  // 2026-10-08: o cliente responde de infinitas formas. "não sei / o máximo / tanto faz /
+  // indiferente / qualquer / o que você achar" é RESPOSTA (ele deferiu) e o fluxo tem de
+  // CONCLUIR, não ficar esperando número. Quem julga o sentido é este extrator (LLM) — não
+  // há regex adivinhando formato. Para número/data, o valor deferido vira `nao_informado`.
+  'EXCEÇÃO — RESPOSTA DEFERIDA CONTA: se o cliente disser que NÃO SABE, ou que é "o máximo", ' +
+  '"tanto faz", "indiferente", "qualquer", "o que você achar", "pode ser", "o que der", "sei lá", ' +
+  'isso RESPONDEU o campo (ele deferiu a escolha). Devolva o campo com o valor que ele deu; para ' +
+  'campo de número ou data, devolva exatamente "nao_informado". ' +
   'NÃO invente, NÃO complete e NÃO responda por conta própria.';
 
 /** Monta a mensagem do modelo. Puro — coberto por teste. */
@@ -211,35 +218,21 @@ export async function validarRespostaDoFluxo(
   // ── JEV PRIMEIRO: ela decide CAMPO A CAMPO o que a mensagem respondeu ──────
   // Se disser que NADA foi respondido, o chat nem roda (mata o falso positivo que
   // grafava cidade/cnh numa mensagem de financiamento). Se disser que alguns, o
-  // chat é RESTRITO a esses campos (extrai texto/número/data) e os campos
+  // chat é RESTRITO a esses campos e escreve o VALOR (texto/número/data) — os
   // DISCRETOS (sim/não, escolha) já vêm prontos da Jev. Jev fora do ar → chat.
-  // Texto da mensagem (a última + a rajada) para extrair candidatas de texto.
-  const textoCliente = args.mensagens
-    .filter((m) => m.de === 'cliente')
-    .map((m) => m.texto)
-    .join(' ');
   const comoCampo = (p: {
     key: string;
     label: string;
     question?: string | undefined;
     type: PerguntaDoFluxo['type'];
     options?: string[] | undefined;
-  }): CampoDeFluxoParaJev => {
-    const campo: CampoDeFluxoParaJev = {
-      key: p.key,
-      label: p.label,
-      question: p.question,
-      type: p.type,
-      options: p.options,
-    };
-    // Campos de texto/número/data: candidatas extraídas da mensagem, para a Jev
-    // escolher o valor (ela não devolve texto puro).
-    if (p.type === 'text' || p.type === 'number' || p.type === 'date') {
-      const c = candidatasPorTipo(textoCliente, p.type, p.label);
-      if (c.length > 0) campo.candidatas = c;
-    }
-    return campo;
-  };
+  }): CampoDeFluxoParaJev => ({
+    key: p.key,
+    label: p.label,
+    question: p.question,
+    type: p.type,
+    options: p.options,
+  });
   const camposJev: CampoDeFluxoParaJev[] = [
     ...args.perguntas.map(comoCampo),
     ...args.preenchidos.map((p) => ({ key: p.key, label: p.label, type: 'text' as const })),

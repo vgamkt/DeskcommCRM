@@ -32,6 +32,13 @@ describe('perguntasDeFluxoDeJev', () => {
     expect(crit['azul']).toBeDefined();
     expect(crit['vermelha']).toBeDefined();
   });
+
+  it('a instrução de respondeu_ conta RESPOSTA DEFERIDA (não sei / o máximo)', () => {
+    const q = perguntasDeFluxoDeJev(campos);
+    const instr = (q['respondeu_cidade'] as { instructions: string }).instructions;
+    expect(instr).toMatch(/DEFERIDA/);
+    expect(instr).toMatch(/NÃO SABE/);
+  });
 });
 
 describe('leituraDeFluxoDaJev', () => {
@@ -76,6 +83,15 @@ describe('candidatasDeTexto', () => {
     expect(candidatasDeTexto('Sao paulo', 'Cidade')).toContain('Sao paulo');
     expect(candidatasDeTexto('Taubaté', 'Cidade')).toContain('Taubaté');
     expect(candidatasDeTexto('Vander', 'Nome')).toContain('Vander');
+  });
+
+  it('tira o conector inicial — "De sao paulo" vira "sao paulo" (medido 2026-10-08)', () => {
+    expect(candidatasDeTexto('De sao paulo', 'Cidade')).toEqual(['sao paulo']);
+    expect(candidatasDeTexto('de sao paulo', 'Cidade')).toEqual(['sao paulo']);
+    expect(candidatasDeTexto('sou de sao paulo', 'Cidade')).toContain('sao paulo');
+    // O valor sem conector continua intacto:
+    expect(candidatasDeTexto('Sao paulo', 'Cidade')).toEqual(['Sao paulo']);
+    expect(candidatasDeTexto('Vander', 'Nome')).toEqual(['Vander']);
   });
 
   it('intenção genérica não vira candidata', () => {

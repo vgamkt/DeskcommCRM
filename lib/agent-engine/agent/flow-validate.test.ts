@@ -177,6 +177,28 @@ describe("validarRespostaDoFluxo", () => {
     expect(r).toEqual({ resultado: "nao_respondeu" });
   });
 
+  it("RESPOSTA DEFERIDA: `nao_informado` é aceito (o fluxo conclui em vez de esperar)", async () => {
+    runModelCallMock.mockResolvedValue({
+      result: { text: '{"respostas":[{"campo":"troca_ano","valor":"nao_informado"}]}' },
+    } as never);
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      base,
+      { log: logger },
+    );
+    expect(r).toEqual({
+      resultado: "respondeu",
+      respostas: [{ campo: "troca_ano", valor: "nao_informado" }],
+    });
+  });
+
+  it("o extrator (LLM) recebe a instrução de RESPOSTA DEFERIDA", () => {
+    const msg = montarMensagemDoValidador([PERGUNTA], [], []);
+    expect(msg).toMatch(/DEFERIDA/);
+  });
+
   it("CORREÇÃO: campo preenchido corrigível é aceito", async () => {
     runModelCallMock.mockResolvedValue({
       result: { text: '{"respostas":[{"campo":"moto_troca","valor":"CG 150"}]}' },

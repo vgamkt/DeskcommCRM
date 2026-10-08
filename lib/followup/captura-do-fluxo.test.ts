@@ -190,6 +190,15 @@ describe("valorBateComTipo — o flow_collect do modelo respeita o tipo", () => 
     expect(valorBateComTipo(t, "qualquer coisa")).toBe(true);
     expect(valorBateComTipo(t, "")).toBe(false);
   });
+
+  it("aceita o marcador de resposta DEFERIDA (`nao_informado`) em qualquer tipo", () => {
+    const ano = campo("number", { key: "ano", label: "Ano" });
+    const data = campo("date", { key: "nasc", label: "Nascimento" });
+    expect(valorBateComTipo(ano, "nao_informado")).toBe(true);
+    expect(valorBateComTipo(data, "nao_informado")).toBe(true);
+    // A catraca do lixo continua de pé: "ok" para número segue recusado.
+    expect(valorBateComTipo(ano, "ok")).toBe(false);
+  });
 });
 
 describe("abertura do fluxo não vira resposta (regressão do teste ao vivo)", () => {

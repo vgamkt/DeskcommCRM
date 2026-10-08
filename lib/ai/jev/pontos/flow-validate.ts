@@ -30,6 +30,21 @@ export const NAO_RESPOSTA = 'nao_respondeu';
  * Padrões comuns: "sou de X", "moro em X", "estou em X", "X mesmo", "aqui é X".
  * Devolve no máximo 4 candidatas (limite do `choice` da Jev).
  */
+/**
+ * Tira o CONECTOR de ligação que o cliente costuma colar no valor.
+ *
+ * "De sao paulo" → "sao paulo"; "sou de sao paulo" → "sao paulo"; "moro em
+ * Taubaté" → "Taubaté". Sem isto, a candidata que a Jev escolhe vinha com a
+ * preposição e a CIDADE era gravada como "De sao paulo" (medido 2026-10-08).
+ * Só o conector INICIAL sai — o miolo do valor fica intacto.
+ */
+function semConectorDeLigacao(t: string): string {
+  return t
+    .replace(/^(?:sou|moro|estou|resido|venho|aqui)\s+(?:de|do|da|em|é|e)\s+/i, '')
+    .replace(/^(?:de|do|da|em)\s+/i, '')
+    .trim();
+}
+
 export function candidatasDeTexto(mensagem: string, label: string): string[] {
   const t = mensagem.replace(/\s+/g, ' ').trim();
   if (t === '') return [];
@@ -56,7 +71,12 @@ export function candidatasDeTexto(mensagem: string, label: string): string[] {
       /^(quero|queria|gostaria|tenho|preciso|procuro|busco|vou|estou|sim|nao|ok|blz|beleza|obrigad[oa]|valeu|oi|ola|bom dia|boa tarde|boa noite|tudo|como|qual|quando|onde|porque|quem)\b/i.test(
         t,
       );
-    if (palavras.length <= 4 && !pareceIntencao) grava(t);
+    if (palavras.length <= 4 && !pareceIntencao) {
+      // O conector inicial sai: "De sao paulo" virava a CIDADE "De sao paulo"
+      // (medido 2026-10-08). "Sao paulo"/"Vander" ficam iguais.
+      const limpo = semConectorDeLigacao(t);
+      grava(limpo !== '' ? limpo : t);
+    }
   }
   // O rótulo do campo nunca é candidato (evita ecoar "Cidade").
   const alvo = label.toLowerCase();
@@ -127,8 +147,12 @@ export function perguntasDeFluxoDeJev(
     perguntas[`respondeu_${c.key}`] = {
       type: 'noul',
       instructions:
-        `A mensagem do cliente RESPONDEU à pergunta "${alvo(c)}" trazendo o DADO específico? ` +
+        `A mensagem do cliente RESPONDEU à pergunta "${alvo(c)}"? ` +
         `Intenção genérica ("quero trocar", "tenho interesse") SEM o dado NÃO conta. ` +
+        `MAS RESPOSTA DEFERIDA CONTA: se o cliente disser que NÃO SABE, ou que é "o máximo", ` +
+        `"tanto faz", "indiferente", "qualquer", "o que você achar", "pode ser", "o que der", ` +
+        `"sei lá" — isso RESPONDEU (ele deferiu a escolha). O valor exato quem escreve é o ` +
+        `extrator; aqui só se decide SE respondeu. ` +
         `Considere TODAS as mensagens do cliente, inclusive as enviadas em sequência.`,
     };
     if (c.type === 'boolean') {
@@ -151,25 +175,11 @@ export function perguntasDeFluxoDeJev(
         instructions: `Qual opção o cliente escolheu para "${c.label}"?`,
         criteria,
       };
-    } else if (
-      (c.type === 'text' || c.type === 'number' || c.type === 'date') &&
-      (c.candidatas?.length ?? 0) > 0
-    ) {
-      // TEXTO/NÚMERO/DATA: a Jev escolhe, entre as CANDIDATAS extraídas da
-      // mensagem, qual é o valor do campo — ou "não respondeu". Assim ATÉ os
-      // campos livres passam só pela Jev (o motor não precisa do chat).
-      const criteria: Record<string, string> = {
-        [NAO_RESPOSTA]: `o cliente não disse "${c.label}"`,
-      };
-      for (const o of c.candidatas ?? []) {
-        criteria[o] = `o cliente informou "${c.label}" = "${o}"`;
-      }
-      perguntas[`valor_${c.key}`] = {
-        type: 'choice',
-        instructions: `Qual destes valores é o(a) "${c.label}" informado(a) pelo cliente?`,
-        criteria,
-      };
     }
+    // TEXTO/NÚMERO/DATA: a Jev NÃO escolhe mais o valor (nem por candidatas). Ela só
+    // marca `respondeu_<key>`; o VALOR é escrito pelo extrator (LLM), restrito aos
+    // campos que ela marcou. Assim o reconhecimento é inteligente e não depende de
+    // o motor adivinhar candidatas por regex (decisão do dono, 2026-10-08).
   }
   return perguntas;
 }

@@ -285,6 +285,13 @@ export function valorBateComTipo(campo: CampoPendenteParaCaptura, valor: unknown
   if (v === null || v === undefined || v === "") return false;
   const s = String(v).trim();
 
+  // Resposta DEFERIDA (o cliente não sabe / "tanto faz" / "o máximo"): o extrator
+  // (LLM) devolve o marcador canônico `nao_informado` — aceito em QUALQUER tipo,
+  // para o fluxo CONCLUIR em vez de ficar esperando o formato (decisão do dono,
+  // 2026-10-08). É um marcador único, não uma lista de sinônimos: quem reconhece a
+  // infinidade de formas é o LLM, não o motor.
+  if (s.toLowerCase() === "nao_informado") return true;
+
   // ─── Régua por NOME do campo, antes do tipo ─────────────────────────────────
   //
   // Alguns campos têm formato PRÓPRIO que o `type` não expressa: o CPF do fluxo
