@@ -6627,6 +6627,29 @@ async function executarTurnoDoAgente(
         '"uso diário" — isso NÃO ajuda a venda e não se pergunta. Qualifique pelo que importa: qual ' +
         'TIPO/MODELO de moto ele procura e a FAIXA DE PREÇO. UMA pergunta de cada vez; se já ' +
         'perguntou algo e ele não respondeu, NÃO repita.',
+      // ── REFERÊNCIA vs. PENDENTE (decisão do dono, 2026-10-09) ──────────────
+      // O histórico tem ~20 mensagens; sem separar, o modelo re-responde o que já
+      // foi respondido e re-pergunta o que já perguntou. Deixa EXPLÍCITO: o
+      // histórico é REFERÊNCIA; o que o cliente disse e AINDA NÃO foi respondido é
+      // o que precisa de decisão AGORA.
+      ...(() => {
+        const pendentes = inboundsNaoRespondidos(effectiveContext.messages);
+        if (pendentes.length === 0) {
+          return [
+            '## Referência vs. pendente\n' +
+              'O histórico acima é apenas REFERÊNCIA. NÃO reabra o que já foi respondido ' +
+              'nem repita perguntas; siga o próximo passo da conversa.',
+          ];
+        }
+        return [
+          '## Referência vs. o que FALTA (decida ISTO agora)\n' +
+            'As mensagens anteriores são APENAS REFERÊNCIA — NÃO responda de novo o que já foi ' +
+            'respondido e NÃO repita o que você já perguntou.\n' +
+            'O cliente disse e AINDA NÃO foi respondido (é ISTO que você resolve nesta mensagem):\n' +
+            pendentes.map((t, i) => `${i + 1}. ${t}`).join('\n') +
+            '\nResolva TODOS os pontos acima de uma vez; se algo já foi respondido, NÃO repita.',
+        ];
+      })(),
       blocoConhecimento,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
