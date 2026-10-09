@@ -7616,31 +7616,14 @@ async function executarTurnoDoAgente(
       }
     }
 
-    // ── TEXTO AVULSO QUE AGREGA (D7, 2026-10-09) ─────────────────────────────
-    // O modelo pode enviar pela ferramenta E escrever algo a MAIS como TEXTO. Se
-    // esse texto avulso tiver conteúdo que NÃO saiu em nenhuma mensagem do turno
-    // (ex.: a resposta de conhecimento, enquanto a pergunta do fluxo saiu pela
-    // ferramenta), ele NÃO pode ser descartado — o cliente perderia a resposta.
-    // Aqui ele passa pela MESMA régua (`enviarTextoDoMotor`) e só sai quando
-    // AGREGA conteúdo novo (evita duplicata de mensagem).
-    if (
-      !preview &&
-      liveJob().kind === 'inbound_turn' &&
-      outcomes.length > 0 &&
-      seq < maxSendsPerTurn
-    ) {
-      const textoDoModelo = (turn.result.text ?? '').trim();
-      if (textoDoModelo.length >= 12 && !perguntaSaiuNosTextos(textoDoModelo, corposEnviados)) {
-        // `semNeutroSeVetado`: se a régua barrar (ex.: nota interna), NÃO inserir a
-        // contingência neutra — o cliente já recebeu a resposta pela ferramenta.
-        const desfecho = await enviarTextoDoMotor(textoDoModelo, { semNeutroSeVetado: true });
-        runLog.info('texto avulso agregou conteúdo novo e foi enviado (D7)', {
-          desfecho,
-          chars: textoDoModelo.length,
-        });
-      }
-    }
-
+    // ── TEXTO AVULSO NÃO É ENVIADO (D7 REVERTIDO, 2026-10-09) ────────────────
+    // Experimento medido ao vivo: enviar o TEXTO AVULSO do modelo (além do
+    // `send_message`) vazou NOTAS INTERNAS ("Respondi os três pontos… Turno
+    // encerrado.") e até narração em OUTRO IDIOMA (chinês) para o cliente. O texto
+    // avulso é o "rascunho" do modelo — NÃO é fala de atendimento. A resposta
+    // legítima sai pela ferramenta `send_message`; o rascunho é DESCARTADO (como
+    // era antes). O caminho "nunca terminar sem resposta" (outcomes.length === 0,
+    // acima) continua enviando o texto quando NADA saiu — aí com a régua completa.
     runLog.info('turno do agente concluído', {
       kind: liveJob().kind,
       messages_sent: outcomes.length,
