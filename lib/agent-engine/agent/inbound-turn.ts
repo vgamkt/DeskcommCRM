@@ -3328,6 +3328,23 @@ async function executarTurnoDoAgente(
   // ORÇAMENTO da conversa: o citado AGORA ou o guardado antes — "até 20 mil"
   // continua valendo no "quero ver mais opções" seguinte. Persistido por conversa.
   const orcamentoTurno = valorPropostaTurno ?? catalogoDaConversa.orcamento ?? null;
+  // D1 (decisão do dono, 2026-10-09): o cliente disse um valor ("até 20 mil") — grava
+  // JÁ o orçamento no metadata (merge jsonb, sem tocar no resto). Sem isto, o valor
+  // ficava `null` e a margem de 30% não se aplicava nos turnos seguintes.
+  if (!preview && valorPropostaTurno !== null && valorPropostaTurno !== catalogoDaConversa.orcamento) {
+    void pool
+      .query(
+        `update conversations
+            set metadata = jsonb_set(
+                  coalesce(metadata, '{}'::jsonb),
+                  '{agent_catalogo}',
+                  coalesce(metadata->'agent_catalogo', '{}'::jsonb) || $2::jsonb,
+                  true)
+          where organization_id = $1 and id = $3`,
+        [tenantId, JSON.stringify({ orcamento: valorPropostaTurno }), input.conversationId],
+      )
+      .catch(() => {});
+  }
   // Quantas vezes o cliente pede para ver opções (contando este turno). Na 2ª
   // vez, se as opções dentro do orçamento não atenderam, libera valores PRÓXIMOS.
   const pedidoDeOpcoesTurno =
@@ -3453,8 +3470,16 @@ async function executarTurnoDoAgente(
   // A Jev do `offer_motos` pode dizer que o pedido é VAGO (`perguntar`): antes de
   // despejar o catálogo, PERGUNTAR o que falta (uso/tipo/orçamento). Mesma
   // mecânica do C-107 — a pergunta sai no lugar do texto do modelo.
+  // D3 (decisão do dono, 2026-10-09): se o cliente JÁ deu ALGUM critério (orçamento
+  // OU um tipo/modelo de moto, ou já há moto em foco), NÃO perguntar — mostrar o
+  // catálogo. A pergunta de necessidade/orçamento só vale quando NADA foi dado.
+  const jaTemCriterioDeOferta =
+    orcamentoTurno !== null ||
+    motoAtualDaConversa !== null ||
+    catalogoDaConversa.motos.length > 0 ||
+    (currentInboundText !== null && currentInboundText.trim() !== '' && mencionaMoto(currentInboundText));
   const perguntaDeFaltaTurno =
-    precoSemValorTurno || vereditoOfertaJev?.perguntar === true;
+    !jaTemCriterioDeOferta && (precoSemValorTurno || vereditoOfertaJev?.perguntar === true);
   const textoPerguntaFaltaTurno = precoSemValorTurno
     ? PERGUNTA_DE_ORCAMENTO
     : PERGUNTA_DE_NECESSIDADE;
@@ -4846,8 +4871,9 @@ async function executarTurnoDoAgente(
             // próximos do orçamento) — "não atendeu nenhuma" é o sinal. MAS um
             // valor dito AGORA é FIRME: a tolerância só vale quando o orçamento
             // vem da memória, não de uma fala nova do cliente.
-            const tolerancia =
-              valorPropostaTurno === null && pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
+            // D1 (decisão do dono, 2026-10-09): a margem é +30% acima do valor informado
+            // ("até 20 mil" → teto R$ 26.000). Vale sempre que houver orçamento.
+            const tolerancia = orcamentoTurno !== null ? 1.3 : 1;
             const valorLimite =
               orcamentoTurno !== null ? Math.round(orcamentoTurno * tolerancia) : null;
             if (valorLimite !== null) {
