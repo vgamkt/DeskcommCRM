@@ -288,7 +288,7 @@ import {
 } from '@/lib/followup/captura-do-fluxo';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { escolherFluxosPorIA } from './flow-intent';
-import { renderAgora } from '@/lib/tempo/agora';
+import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
 /**
@@ -6475,7 +6475,7 @@ async function executarTurnoDoAgente(
     // tarde" no meio da conversa. Agora ela só aparece quando ainda não há fala
     // NOSSA no histórico — a régua do horário continua valendo para a 1ª vez.
     const saudacaoPrimeiroContato = !jaFalamosComOCliente
-      ? '## Primeiro contato\nCumprimente pelo horário do bloco ## Agora — até 12h "bom dia"; de 12h às 18h "boa tarde"; depois das 18h "boa noite" — e apresente-se. Nas próximas mensagens desta conversa NÃO cumprimente nem se apresente de novo.'
+      ? `## Primeiro contato\nAbra cumprimentando com EXATAMENTE "${saudacaoDoHorario(clock(), fusoDaOrg)}" (o relógio do bloco ## Agora — NUNCA use "bom dia" se não for de manhã) e apresente-se. Nas próximas mensagens desta conversa NÃO cumprimente nem se apresente de novo.`
       : '';
     // ── PARTE 1: BRIEF DO TURNO (quando a Jev está ligada) ────────────────────
     // A Jev já decidiu o essencial do turno; em vez de 4 blocos crus (estado,

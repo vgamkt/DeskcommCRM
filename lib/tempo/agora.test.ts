@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isoLocalComOffset } from "./agora";
+import { isoLocalComOffset, saudacaoDoHorario } from "./agora";
 
 /**
  * Regressão do defeito medido em produção (YADEA, 2026-09-02): `get-lead-context.ts`
@@ -29,5 +29,26 @@ describe("isoLocalComOffset", () => {
     const instante = new Date("2026-09-02T18:45:38Z");
     expect(isoLocalComOffset(instante, "")).toBe(isoLocalComOffset(instante, "America/Sao_Paulo"));
     expect(isoLocalComOffset(instante, "Nao/Existe")).toBe(isoLocalComOffset(instante, "America/Sao_Paulo"));
+  });
+});
+
+/**
+ * Defeito medido ao vivo (2026-10-09, 02:01 em America/Sao_Paulo): o modelo
+ * recebeu o bloco `## Agora` com "02:01" e ainda abriu com "bom dia". O
+ * cumprimento agora é DETERMINÍSTICO — sai do relógio, não da prosa.
+ */
+describe("saudacaoDoHorario", () => {
+  it("02:01 em São Paulo → Boa noite (não 'bom dia')", () => {
+    expect(saudacaoDoHorario(new Date("2026-10-09T05:01:00Z"), "America/Sao_Paulo")).toBe("Boa noite");
+  });
+
+  it("faixas: manhã / tarde / noite", () => {
+    expect(saudacaoDoHorario(new Date("2026-10-09T13:00:00Z"), "America/Sao_Paulo")).toBe("Bom dia"); // 10:00
+    expect(saudacaoDoHorario(new Date("2026-10-09T16:00:00Z"), "America/Sao_Paulo")).toBe("Boa tarde"); // 13:00
+    expect(saudacaoDoHorario(new Date("2026-10-09T22:00:00Z"), "America/Sao_Paulo")).toBe("Boa noite"); // 19:00
+  });
+
+  it("fuso inválido cai no padrão, sem lançar", () => {
+    expect(saudacaoDoHorario(new Date("2026-10-09T05:01:00Z"), "Nao/Existe")).toBe("Boa noite");
   });
 });

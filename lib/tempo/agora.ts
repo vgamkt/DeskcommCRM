@@ -92,6 +92,29 @@ export function renderAgora(agora: Date, fuso: string): string {
 }
 
 /**
+ * O cumprimento que corresponde ao RELÓGIO — "Bom dia" até 12h, "Boa tarde" de
+ * 12h às 18h, "Boa noite" depois das 18h, no fuso da organização.
+ *
+ * Determinístico DE PROPÓSITO. Medido ao vivo (2026-10-09, 02:01 em
+ * America/Sao_Paulo): o modelo recebeu o bloco `## Agora` com "02:01" e ainda
+ * assim abriu com "bom dia" — a instrução em prosa ("cumprimente pelo horário
+ * do bloco") não sobrevive à persona do tenant. O texto exato sai daqui, e o
+ * modelo só copia; não há o que ele possa errar.
+ *
+ * Fuso ausente, vazio ou inválido cai em {@link FUSO_PADRAO} — nunca lança
+ * (mesma regra de falha aberta de `renderAgora`).
+ */
+export function saudacaoDoHorario(agora: Date, fuso: string): string {
+  const fusoEmVigor = fusoValido(fuso) ? fuso : FUSO_PADRAO;
+  const { hora } = partesNoFuso(agora, fusoEmVigor);
+  // Madrugada (00h–05h) ainda é "Boa noite" — não "Bom dia".
+  if (hora < 5) return "Boa noite";
+  if (hora < 12) return "Bom dia";
+  if (hora < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+/**
  * "quinta-feira 04/09 às 14:00" — um instante na parede daquele fuso.
  *
  * Existe para os HORÁRIOS LIVRES. `crm_find_free_slots` devolvia só o ISO em

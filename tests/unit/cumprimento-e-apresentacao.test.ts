@@ -26,8 +26,9 @@ describe("turno — cumprimentar pelo relógio SÓ no primeiro contato", () => {
   it("a regra de cumprimento está no bloco de primeiro contato, condicionado a !jaFalamosComOCliente", () => {
     expect(FONTE).toMatch(/const saudacaoPrimeiroContato = !jaFalamosComOCliente/);
     expect(FONTE).toMatch(/## Primeiro contato/);
-    expect(FONTE).toMatch(/boa tarde/);
-    expect(FONTE).toMatch(/boa noite/);
+    // Determinístico: o texto exato do cumprimento vem do relógio (saudacaoDoHorario),
+    // não de prosa que o modelo pode ignorar (defeito medido 2026-10-09: 02:01 → "bom dia").
+    expect(FONTE).toMatch(/saudacaoDoHorario\(clock\(\), fusoDaOrg\)/);
   });
 
   it("o bloco entra na abertura (openingSuffixes)", () => {
