@@ -79,8 +79,11 @@ export function faseDaAcao(acao: AcaoNegociacao):
     // Negou as opções: avisa o responsável e SEGUE atendendo (não silencia).
     case 'encaminhar_e_encerrar':
       return 'encaminhar';
+    // LEGADO: a ação `handoff` NÃO silencia mais. É rebaixada para o mesmo
+    // comportamento de 'encaminhar' (avisa e segue). O silêncio (`force_human`)
+    // fica reservado ao pedido EXPLÍCITO de humano, fora da negociação.
     case 'handoff':
-      return 'handoff';
+      return 'encaminhar';
     // O cliente NÃO respondeu à pergunta pendente: nenhuma ação de negociação.
     case 'nenhuma':
       return null;

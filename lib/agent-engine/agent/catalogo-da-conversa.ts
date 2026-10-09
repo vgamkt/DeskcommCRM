@@ -673,14 +673,18 @@ export async function motoEscolhidaPeloClienteComJev(
       });
       return candidatas[idx];
     }
-    // A Jev disse "nenhuma" — pode ser ambiguidade REAL ou uma falha dela. Cai
-    // no determinístico como COBERTURA (logado); se ele também não achar, é
-    // "sem escolha".
-    deps?.log?.info('escolha: Jev disse "nenhuma" — checando o determinístico', {
+    // A Jev respondeu "nenhuma" — isso é DECISÃO (negativa), NÃO ausência de
+    // decisão. Pela doutrina `jev-decide-sempre` (invariante 2), o fallback
+    // determinístico NÃO roda por cima de um veredito negativo. Se a negativa
+    // estiver errada, conserta-se o PROMPT da Jev — não a contorna aqui.
+    // (Antes, o determinístico rodava como "cobertura" e podia escolher uma moto
+    // que a Jev deliberadamente negou.)
+    deps?.log?.info('escolha: a JEV decidiu "nenhuma" — sem fallback (doutrina)', {
       fonte: 'jev_nenhuma',
     });
+    return undefined;
   }
-  // ── FALLBACK determinístico (Jev indisponível OU disse "nenhuma") ──────────
+  // ── FALLBACK determinístico — SÓ quando a Jev está INDISPONÍVEL (null) ──────
   const deterministica = motoEscolhidaPeloCliente(
     textoDoModelo,
     textoDoCliente,
@@ -688,7 +692,7 @@ export async function motoEscolhidaPeloClienteComJev(
     jaDetalhadas,
     textoCitado,
   );
-  deps?.log?.info('escolha: determinístico (cobertura/fallback)', {
+  deps?.log?.info('escolha: determinístico (fallback — Jev indisponível)', {
     fonte: 'deterministica',
     escolhida: deterministica?.nome ?? null,
   });

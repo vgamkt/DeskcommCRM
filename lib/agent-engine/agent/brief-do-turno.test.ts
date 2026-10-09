@@ -139,7 +139,10 @@ describe('renderBriefDoTurno', () => {
     expect(brief).not.toContain('no máximo 3x');
     expect(brief).toContain('- Tem CNH? (key cnh, tipo boolean, obrigatória).');
     expect(brief).not.toContain('perguntar:');
-    expect(brief).toContain('enviada pelo SISTEMA');
+    // Agora o modelo INCLUI a pergunta (copiada exatamente) na própria mensagem;
+    // o sistema só a reenvia se ela não sair.
+    expect(brief).toContain('inclua a pergunta pendente do fluxo COPIADA EXATAMENTE');
+    expect(brief).toContain('Pergunta do fluxo a incluir (copie exatamente este texto): "Você tem CNH?"');
     expect(brief).toContain('- Entrada (key entrada, tipo number, opcional).');
     expect(brief).toContain('não aceita correção.');
     expect(brief).toContain('- Cor (key cor, tipo select, obrigatória).');
@@ -215,13 +218,14 @@ describe('renderDiretrizDoTurno', () => {
   it('encaminhar_e_encerrar: avisa o responsável, SEGUE atendendo e NÃO chama o handoff duro', () => {
     const d = renderDiretrizDoTurno({ acao: 'encaminhar_e_encerrar', motivo: 'preco', attempts: 3, pedirValor: false });
     expect(d).toContain('SEGUE por aqui');
-    expect(d).toContain('NÃO chame `crm_request_human_handoff`');
+    expect(d).toContain('NÃO chame `request_human_handoff`');
     expect(d).toContain('NÃO ofereça desconto');
   });
 
-  it('handoff (insistiu em desconto): encaminha e chama o handoff', () => {
+  it('handoff (legado): avisa o responsável e SEGUE — NÃO chama o handoff duro', () => {
     const d = renderDiretrizDoTurno({ acao: 'handoff', motivo: 'preco', attempts: 2, pedirValor: false });
-    expect(d).toContain('crm_request_human_handoff');
+    expect(d).toContain('NÃO chame `request_human_handoff`');
+    expect(d).not.toContain('Chame `request_human_handoff`');
     expect(d).toContain('NÃO ofereça desconto');
   });
 });

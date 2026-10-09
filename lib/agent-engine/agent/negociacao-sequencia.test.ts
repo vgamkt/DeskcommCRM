@@ -103,18 +103,20 @@ describe('sequência de negociação 1→2→3→confirma/nega', () => {
     expect(t.ofereceMotos).toBe(false);
     // Encaminha ao responsável e SEGUE atendendo: NÃO chama o handoff duro
     // (que silencia o bot e deixaria o próximo turno mudo).
-    expect(t.diretriz).toContain('NÃO chame `crm_request_human_handoff`');
+    expect(t.diretriz).toContain('NÃO chame `request_human_handoff`');
   });
 
-  it('desconto (regra proibida) → handoff, sem prometer', () => {
+  it('ação handoff (legado) é REBAIXADA para encaminhar — NUNCA silencia o bot', () => {
     const t = turno(
       { motivo: 'preco', attempts: 1, aguardandoConfirmacao: false, mensagem: '', desconto: true },
       resp('handoff'),
     );
     expect(t.acao).toBe('handoff');
-    expect(t.fase).toBe('handoff');
+    // A fase NÃO é 'handoff' (que silenciava): vira 'encaminhar' (avisa e segue).
+    expect(t.fase).toBe('encaminhar');
     expect(t.ofereceMotos).toBe(false);
-    expect(t.diretriz).toContain('NÃO ofereça desconto');
+    expect(t.diretriz).toContain('NÃO chame `request_human_handoff`');
+    expect(t.diretriz).not.toContain('Chame `request_human_handoff`');
   });
 
   it('mudou o tipo → reinicia (attempts do banco zera por tópico)', () => {

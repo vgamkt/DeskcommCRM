@@ -4,7 +4,8 @@
  * A REGRA (dono, 2026-10-03): TRÊS tentativas de convencer; a pergunta ("posso
  * mostrar outras opções?") sai JUNTO da 3ª. Confirmou → mostra; negou → encaminha
  * e encerra a objeção (mas o bot SEGUE atendendo). Mudou o tipo → reinicia.
- * Nunca ferir regra (desconto/promessa) → handoff.
+ * Pedido de desconto é objeção de PREÇO normal — NÃO vira handoff/silêncio
+ * (regra do dono: silêncio só em pedido EXPLÍCITO de humano).
  *
  * A Jev conta/analisa (recebe `attempts` do banco); o GLM só redige.
  * Módulo PURO (sem env, sem rede).
@@ -55,7 +56,6 @@ export interface ContextoDeNegociacao {
 function instrucoesDaAcao(ctx: {
   attempts: number;
   aguardandoConfirmacao: boolean;
-  desconto: boolean;
 }): string {
   if (ctx.aguardandoConfirmacao) {
     return (
@@ -67,9 +67,6 @@ function instrucoesDaAcao(ctx: {
       'ATENÇÃO: um "sim"/"ok" que pertence a OUTRA frase (ex.: "tenho CNH sim", "moro em X, sim") ' +
       'NÃO é resposta à pergunta — nesse caso escolha "nenhuma".'
     );
-  }
-  if (ctx.desconto) {
-    return 'O cliente pediu DESCONTO (regra proibida) — escolha "handoff".';
   }
   return 'Escolha a ação certa para ESTA tentativa.';
 }
@@ -93,7 +90,8 @@ export function perguntaDeNegociacaoJev(ctx: ContextoDeNegociacao): PerguntasDeJ
         mostrar_opcoes: 'o cliente confirmou: mostrar opções que atacam o motivo',
         encaminhar_e_encerrar:
           'o cliente negou: enviar mensagem de encaminhamento e encerrar a objeção (seguir atendendo)',
-        handoff: 'insistiu em desconto/regra proibida: encaminhar sem prometer',
+        handoff:
+          'encaminhar ao responsável MANTENDO o atendimento — NUNCA silenciar o bot (evitar; é legado)',
         nenhuma:
           'o cliente NÃO respondeu à pergunta pendente (falou de outro assunto): não fazer nada agora',
       },
@@ -145,7 +143,6 @@ export function perguntaDeNegociacaoAutoContida(
         instrucoesDaAcao({
           attempts: ctx.tentativasAnterior,
           aguardandoConfirmacao: ctx.aguardandoConfirmacao,
-          desconto: ctx.desconto,
         }) +
         ' Regras (só quando NÃO há pergunta pendente): tentativa 1 → persuadir_1; tentativa 2 → ' +
         'persuadir_2; tentativa 3 → persuadir_3_e_perguntar (convencer E perguntar). NUNCA pule etapas.',
@@ -157,7 +154,8 @@ export function perguntaDeNegociacaoAutoContida(
         mostrar_opcoes: 'o cliente confirmou: mostrar opções que atacam o motivo',
         encaminhar_e_encerrar:
           'o cliente negou: enviar mensagem de encaminhamento e encerrar a objeção (seguir atendendo)',
-        handoff: 'insistiu em desconto/regra proibida: encaminhar sem prometer',
+        handoff:
+          'encaminhar ao responsável MANTENDO o atendimento — NUNCA silenciar o bot (evitar; é legado)',
         nenhuma:
           'o cliente NÃO respondeu à pergunta pendente (falou de outro assunto): não fazer nada agora',
       },

@@ -18,10 +18,25 @@
  * sempre foi. Quem decide se usa o brief é o chamador (gate por Jev ligada).
  */
 import type { EstadoDeAtendimento } from '@/lib/followup/atendimento';
+import { textoDaPergunta } from '@/lib/followup/captura-do-fluxo';
 import type { EndFinish } from '@/lib/followup/graph-schema';
 
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
+
+/** O campo pendente no formato que `textoDaPergunta` espera. */
+function campoParaPergunta(
+  n: EstadoDeAtendimento['situacao']['pendentes'][number],
+): Parameters<typeof textoDaPergunta>[0] {
+  const cfg = n.config;
+  return {
+    key: cfg.key,
+    label: cfg.label,
+    type: cfg.type,
+    ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+    ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+  };
+}
 
 export interface BriefDoTurnoInput {
   /**
@@ -72,9 +87,12 @@ function blocoDoFluxoCompacto(estado: EstadoDeAtendimento, finalizacao?: EndFini
   }
 
   const linhas = estado.situacao.pendentes.map(linhaDaPendente);
+  const primeira = estado.situacao.pendentes[0]!;
   return [
-    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o; atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria E não abra OUTRA pergunta (visita, detalhes, fechamento): a vez é do sistema, uma por vez; só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
+    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o e atenda o cliente PRIMEIRO. Responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE (abaixo). Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem. NÃO abra OUTRA pergunta (visita, detalhes, fechamento). Só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
     ...linhas,
+    `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(campoParaPergunta(primeira))}"`,
+    `Se o cliente não responder o campo em até ${estado.maxTentativas} tentativa(s), pare de perguntá-lo e SIGA a venda normalmente — NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.`,
   ].join('\n');
 }
 
@@ -153,16 +171,16 @@ export function renderDiretrizDoTurno(args: {
     return [
       cab,
       'O que fazer: informe, em tom acolhedor, que vai pedir ao responsável para analisar essa moto e que você SEGUE por aqui. O sistema já avisa o responsável.',
-      'O que NÃO fazer: NÃO chame `crm_request_human_handoff` (isso silencia o bot e deixa o cliente sem resposta); NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo.',
+      'O que NÃO fazer: NÃO chame `request_human_handoff` (isso silencia o bot e deixa o cliente sem resposta); NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo.',
       'Exemplo (adapte): "Sem problema, Vander. Vou pedir ao responsável para ver o que dá pra fazer nessa moto e já te retorno por aqui."',
     ].join('\n');
   }
-  // handoff (insistiu em desconto/regra proibida)
+  // handoff (legado): NÃO silencia mais — avisa o responsável e SEGUE atendendo.
   return [
     cab,
-    'O que fazer: informe, em tom acolhedor, que vai encaminhar ao responsável e peça para aguardar. Chame `crm_request_human_handoff` (repasse interno, SEM perguntar "posso encaminhar?").',
-    'O que NÃO fazer: NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo.',
-    'Exemplo (adapte): "Sem problema, Vander. Vou encaminhar seu caso para o responsável e ele te retorna por aqui. Pode aguardar?"',
+    'O que fazer: informe, em tom acolhedor, que vai pedir ao responsável para analisar a condição e que você SEGUE por aqui. O sistema já avisa o responsável.',
+    'O que NÃO fazer: NÃO chame `request_human_handoff` (isso silencia o bot e deixa o cliente sem resposta); NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos; NÃO tente contornar a objeção de novo.',
+    'Exemplo (adapte): "Sem problema, Vander. Vou pedir ao responsável para ver o que dá pra fazer nessa moto e já te retorno por aqui."',
   ].join('\n');
 }
 

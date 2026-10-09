@@ -32,7 +32,6 @@
  */
 import {
   ehObjecaoValor,
-  ehPedidoDesconto,
   ehPedidoDiferente,
   motivoDaObjecao,
   type EstadoObjecao,
@@ -168,8 +167,10 @@ export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {
   //    o bot AVISA o responsável e PERGUNTA antes de mostrar (NÃO oferece ainda).
   //    Mudou o tipo de objeção → reinicia a contagem.
   if (ehObjecaoValor(msg)) {
-    // Insistência em DESCONTO é caso de handoff (C-071), não de trocar de moto.
-    if (ehPedidoDesconto(msg)) return decisao(false, 'insistencia_desconto_handoff');
+    // Pedido de desconto NÃO é caso especial de handoff: é objeção de PREÇO
+    // normal (persuade; na 3ª do mesmo tipo, encaminha SEM silenciar). Antes,
+    // "dá pra melhorar o preço?" virava 'insistencia_desconto_handoff' e o bot
+    // silenciava (medido ao vivo 2026-10-09).
     const a = s.estadoObjecaoAnterior;
     const mesmoTipo = a !== null && a.motivo === motivoDaObjecao(msg);
     if (mesmoTipo && a.tentativas >= 2) {

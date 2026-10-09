@@ -41,18 +41,23 @@ export function perguntasDeFluxosDeJev(fluxos: readonly FluxoParaJev[]): Pergunt
         'A mensagem do cliente deve INICIAR algum fluxo de atendimento? ' +
         'Se houver MAIS de um processo pedido, escolha o PRIMEIRO na ordem que o cliente mencionou/priorizou. ' +
         'Catálogo/informação (ver/saber preço, fotos, detalhes) ou saudação → "none". ' +
-        'Escolha da moto (gostou/quer essa) → Qualificação. Financiamento/parcelar → Financiamento. ' +
-        'Dar a moto na troca → Troca. Vender/consignar → Venda ou Consignação. ' +
-        // Decisão do dono 2026-10-09: PERGUNTA/INTERESSE sobre o processo ABRE o fluxo.
-        // (Reverte a regra de 2026-10-08, em que "vocês aceitam troca?" não abria.)
-        'IMPORTANTE — inicie um fluxo quando o cliente QUER/PEDE fazer aquele processo ' +
-        '("quero dar minha moto na troca", "quero financiar", "quero vender minha moto") OU ' +
-        'quando ele PERGUNTA/SE INTERESSA por ele ("vocês fazem financiamento?", "como funciona ' +
-        'o financiamento?", "dá pra financiar?", "vocês aceitam troca?"). ' +
+        // Decisão do dono 2026-10-09: o fluxo abre pelo INTERESSE REAL numa ÚNICA moto
+        // (ou por PEDIDO EXPLÍCITO de um processo). Uma PERGUNTA genérica sobre o
+        // processo ("vocês aceitam troca?", "dá pra financiar?") NÃO abre sozinha.
+        'ABRA o fluxo Qualificação quando o cliente demonstrar INTERESSE REAL por UMA moto ' +
+        'específica ("gostei dessa", "quero essa", "qual o ano dessa?", "quanto custa a X?"). ' +
+        'Um pedido GENÉRICO sem moto definida ("quero uma moto até 15 mil", "moto pra trabalhar", ' +
+        '"me mostra opções") ainda NÃO é interesse por uma moto → "none". ' +
+        'ABRA um fluxo de PROCESSO somente quando o cliente PEDIR EXPLICITAMENTE para fazer o ' +
+        'processo: financiar/parcelar → Financiamento; dar a moto na troca → Troca; vender/consignar → ' +
+        'Venda ou Consignação ("quero financiar", "quero dar minha moto na troca", "quero vender minha moto"). ' +
+        'Uma MERA PERGUNTA ou comentário sobre o processo ("vocês fazem financiamento?", "como funciona ' +
+        'o financiamento?", "dá pra financiar?", "vocês aceitam troca?") NÃO abre o fluxo → "none" ' +
+        '(responda a dúvida e só abra quando ele quiser de fato). ' +
         'ATENÇÃO: uma OBJEÇÃO ou comentário sobre PREÇO ("achei caro", "tá caro", "acima do que ' +
-        'posso pagar", "não tenho condições") NÃO é pedido nem pergunta sobre o processo — responda "none". ' +
-        'Se a mensagem apenas reclama, comenta ou agradece sem PEDIR nem PERGUNTAR sobre um ' +
-        'desses processos, responda "none".',
+        'posso pagar", "não tenho condições") NÃO é pedido → responda "none". ' +
+        'Se a mensagem apenas reclama, comenta ou agradece — sem PEDIR um processo e sem mostrar ' +
+        'interesse por uma moto — responda "none".',
       criteria,
     },
   };

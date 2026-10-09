@@ -33,7 +33,11 @@ import {
   type FlowNode,
 } from "./graph-schema";
 import type { ContactFlowEventKind } from "./contact-flow-data";
-import { classificarInbound, type CampoPendenteParaCaptura } from "./captura-do-fluxo";
+import {
+  classificarInbound,
+  textoDaPergunta,
+  type CampoPendenteParaCaptura,
+} from "./captura-do-fluxo";
 
 export type PassoDeAtendimento =
   | { kind: "collect"; node: Extract<FlowNode, { type: "collect" }> }
@@ -373,29 +377,39 @@ export function renderBlocoDeAtendimento(
     const corrige = cfg.permite_correcao ? "" : " Não aceite correção depois de preenchida.";
     return `- ${cfg.label} (campo: ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${corrige}`;
   });
+  const primeira = estado.situacao.pendentes[0]!;
+  const campoPrimeira: CampoPendenteParaCaptura = {
+    key: primeira.config.key,
+    label: primeira.config.label,
+    type: primeira.config.type,
+    ...(primeira.config.options !== undefined ? { options: primeira.config.options } : {}),
+    ...(primeira.config.question !== undefined ? { question: primeira.config.question } : {}),
+  };
 
   return [
     `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
-    "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO. A PERGUNTA de cada campo pendente é enviada pelo SISTEMA (mensagem própria) — NÃO faça a pergunta do fluxo por conta própria.",
+    "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO: responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE. Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem.",
     // ANTI-REPETIÇÃO (medido ao vivo 2026-10-06): com o fluxo ativo, o modelo somava à
     // pergunta do sistema uma pergunta PRÓPRIA (visita/detalhes/fechamento). Como o
     // cliente só consegue responder UMA por vez, a pergunta do modelo ficava pendente
     // e era repetida, quase literal, no turno seguinte ("Pra eu te ajudar a fechar,
     // você prefere vir conhecer ela na loja ou quer que eu te mande mais detalhes
-    // dela?"). Enquanto o fluxo conduz, a vez é dele: o modelo responde/acolhe o que o
-    // cliente disse e NÃO abre outra pergunta.
+    // dela?"). A regra: a ÚNICA pergunta permitida é a do fluxo — nada de perguntas
+    // próprias nem de "adiantar" a venda.
     //
     // 2026-10-08: o modelo também voltava a FALAR DAS QUALIDADES DA MOTO e a propor
     // próximo passo durante o fluxo (persona manda "conduza a venda/proponha o próximo
     // passo") — a conversa "adiantava". Aqui a regra do fluxo se declara SOBERANA
     // sobre essas diretrizes gerais da persona. Genérico: vale para todos os fluxos.
-    "Enquanto houver campo pendente, NÃO faça NENHUMA pergunta por sua iniciativa (visita, mais detalhes, fechamento, pagamento, cor, etc.) e NÃO fale das qualidades da moto: UMA pergunta por vez, e a vez é do SISTEMA, que envia a próxima sozinho. Sua mensagem apenas responde/acolhe o que o cliente disse, em UMA frase. ESTA REGRA VENCE as demais do seu prompt (conduzir a venda, propor próximo passo, elogiar a moto): enquanto o fluxo conduz, quem pergunta é o SISTEMA.",
+    "Enquanto houver campo pendente, NÃO abra OUTRA pergunta além da pergunta do fluxo (visita, mais detalhes, fechamento, pagamento, cor, etc.) e NÃO fale das qualidades da moto. Sua mensagem responde/acolhe o que o cliente disse E termina com a pergunta do fluxo. ESTA REGRA VENCE as demais do seu prompt (conduzir a venda, propor próximo passo, elogiar a moto).",
     "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
     "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
     "Se o cliente corrigir um dado já preenchido, o sistema registra a correção — não chame flow_collect para isso; apenas reconheça a mudança na conversa.",
-    `Pergunta sem resposta pode ser repetida no máximo ${estado.maxTentativas} vez(es); depois disso, pare de perguntá-la.`,
+    `Pergunta sem resposta pode ser repetida no máximo ${estado.maxTentativas} vez(es); depois disso, pare de perguntá-la e SIGA a venda normalmente.`,
+    "NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido — continue atendendo o cliente. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.",
     "Perguntas pendentes:",
     ...linhas,
+    `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(campoPrimeira)}"`,
   ].join("\n");
 }
 
@@ -736,11 +750,18 @@ export interface ResultadoDoInbound {
  * Processa o INBOUND contra a PRIMEIRA pergunta pendente antes de o modelo rodar:
  *
  *   - `respondeu`  → grava o valor normalizado (fonte `deterministic`) e conclui
- *                    se era o último obrigatório. NÃO conta tentativa.
- *   - `desviou`    → registra `fora_do_fluxo`; a pergunta continua pendente e a
- *                    tentativa NÃO conta (decisão 7 do plano robusto).
+ *                    se era o último obrigatório. NÃO conta tentativa (a pergunta
+ *                    FOI respondida).
+ *   - `desviou`    → registra `fora_do_fluxo` e CONTA tentativa (decisão dono
+ *                    2026-10-08: a pergunta foi feita e o cliente falou de outro
+ *                    assunto); ao teto, esgota e conclui.
  *   - `ignorou`/`nao_identificado` → conta tentativa (a pergunta foi feita e não
  *                    veio resposta capturável); ao teto, esgota e conclui.
+ *
+ * INVARIANTE: nos TRÊS caminhos (validador com resposta/correção, validador sem
+ * resposta e classificador puro), a pergunta que ficou SEM resposta no turno
+ * incrementa `attempts`. É o freio que faz `max_tentativas_pergunta` esgotar a
+ * pergunta — sem ele, o fluxo reperguntava a mesma coisa para sempre.
  *
  * Best-effort na gravação (falha não derruba o turno); a telemetria nunca conta
  * como bloqueio.
@@ -784,6 +805,11 @@ export async function processarInboundDoFluxo(
       // best-effort: sem a checagem, o pior caso é o comportamento anterior.
     }
   }
+
+  // A PRIMEIRA pergunta pendente NO INÍCIO do turno. É ela que foi feita ao
+  // cliente e cuja resposta este turno tenta capturar. Se, ao fim, ela continuar
+  // sem valor, o turno conta 1 tentativa (freio contra a pergunta infinita).
+  const primeiroKeyInicial = estado.situacao.pendentes[0]?.config.key;
 
   // MÚLTIPLAS validações do validador (respostas e correções), em QUALQUER ordem.
   // O cliente costuma responder a VÁRIAS perguntas na mesma mensagem ("é uma CG
@@ -845,11 +871,39 @@ export async function processarInboundDoFluxo(
       valoresNovos[v.campo] = v.valor;
       aplicou = true;
     }
-    if (!aplicou) return { estado, concluiu: false };
+    // Nada aplicado: a mensagem do cliente não respondeu a NENHUM campo — a
+    // pergunta do turno segue sem resposta → conta tentativa. É o freio que faz
+    // a pergunta ESGOTAR em vez de repetir para sempre. Antes, este `return`
+    // pulava a contagem e a pergunta nunca esgotava (bug medido ao vivo
+    // 2026-10-09: "quantos km rodados?" em loop no caminho do validador).
+    if (!aplicou) {
+      const r = await registrarTentativaDoTurno(db, {
+        organizationId: args.organizationId,
+        estado,
+      });
+      return r.concluiu
+        ? { estado: r.estado, concluiu: true, finalizacao: r.estado.checklist.fim.config.ao_finalizar }
+        : { estado: r.estado, concluiu: false };
+    }
 
     const comValor = { ...estado, valores: valoresNovos };
     const atualizado = recomputarSituacao(comValor, new Set(Object.keys(valoresNovos)));
-    if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
+    if (!atualizado.situacao.completo) {
+      // Aplicou ALGUMA validação (outro campo/correção), mas a PRIMEIRA pergunta
+      // pendente do turno continua sem valor → ela foi feita e o cliente não a
+      // respondeu (desviou) → conta tentativa. Sem isto, o caminho do validador
+      // nunca incrementava `attempts` e a pergunta reperguntava para sempre.
+      if (primeiroKeyInicial !== undefined && !valoresNovos[primeiroKeyInicial]) {
+        const r = await registrarTentativaDoTurno(db, {
+          organizationId: args.organizationId,
+          estado: atualizado,
+        });
+        return r.concluiu
+          ? { estado: r.estado, concluiu: true, finalizacao: r.estado.checklist.fim.config.ao_finalizar }
+          : { estado: r.estado, concluiu: false };
+      }
+      return { estado: atualizado, concluiu: false };
+    }
     const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
       organizationId: args.organizationId,
       estado: atualizado,

@@ -176,10 +176,15 @@ describe('podeOferecerMotos — a régua única', () => {
     }
   });
 
-  it('objeção que persiste NÃO oferece se for insistência em DESCONTO (é handoff)', () => {
+  it('pedido de desconto é objeção de PREÇO normal (NÃO vira handoff/silêncio)', () => {
+    // 3ª do mesmo tipo (preco, 2 tentativas) → pede confirmação, NÃO oferece.
     expect(
       podeOferecerMotos(s({ mensagem: 'me da um desconto', estadoObjecaoAnterior: OBJ('preco', 2) })),
-    ).toMatchObject({ pode: false, motivo: 'insistencia_desconto_handoff' });
+    ).toMatchObject({ pode: false, motivo: 'objecao_pedir_confirmacao' });
+    // 1ª vez → persuade (não oferece), sem motivo de handoff.
+    expect(
+      podeOferecerMotos(s({ mensagem: 'me da um desconto', estadoObjecaoAnterior: null })),
+    ).toMatchObject({ pode: false, motivo: 'objecao_tentativa_1' });
   });
 
   it('NÃO oferece com escolha travada, a menos que o cliente queira outra', () => {

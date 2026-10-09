@@ -58,6 +58,27 @@ const REGRAS: ReadonlyArray<RegraNota> = [
     re: /\b(ja|acabei de|acabo de)\s+(respondi|enviei|mandei|confirmei|perguntei|avisei|informei|passei|registrei|repassei)\s+(ao|a|à|para o|pro|para a|pra o|pra a)\s+(?!seu\b|sua\b|te\b|voce\b|você\b)/g,
   },
   {
+    // Auto-relato ao TERCEIRO SEM o prefixo "já" — medido ao vivo 2026-10-09:
+    // "Respondi ao Vander sobre o valor da troca…", "Registrei ao…". Exclui o
+    // interlocutor formal/familiar ("seu/sua/te/você/senhor/senhora") — "respondi
+    // ao senhor" é fala legítima e NÃO casa.
+    categoria: 'auto_relato_terceiro_sem_ja',
+    re: /\b(respondi|enviei|mandei|confirmei|perguntei|avisei|informei|passei|registrei|repassei|encaminhei)\b[^.!?\n]{0,40}\b(ao|à|para o|pro|para a|pra o|pra a|pra)\s+(?!seu\b|sua\b|te\b|voce\b|você\b|senhor\b|senhora\b)/g,
+  },
+  {
+    // "Mensagem/resposta enviada ao <terceiro>" — relato de envio (medido 2026-10-09:
+    // "Mensagem enviada ao Vander respondendo sobre o financiamento…").
+    categoria: 'envio_relatado',
+    re: /\b(mensagem|resposta|texto|retorno)\s+(enviad[ao]|mandad[ao]|passad[ao]|encaminhad[ao])\b/g,
+  },
+  {
+    // Metalinguagem interna: "avaliação/análise interna", "ainda barrado" (medido
+    // 2026-10-09: "Respondi… (avaliação interna, sem estimativa)"; "Ainda barrado.
+    // Vou remover…"). Nada disso é fala de vendedor para o cliente.
+    categoria: 'meta_interna',
+    re: /\b(avaliacao|analise|cotacao|regra)\s+interna\b|\bainda\s+barrad[oa]\b|\bbarrad[oa]\s+pela\s+regua\b/g,
+  },
+  {
     // Status/narrativa sobre o SISTEMA ou o FLUXO (o cliente nunca lê isso):
     // "o sistema está conduzindo as perguntas do fluxo", "o fluxo foi iniciado".
     categoria: 'status_sistema_fluxo',
@@ -85,6 +106,19 @@ const REGRAS: ReadonlyArray<RegraNota> = [
   },
 ];
 
+/**
+ * Regras sobre o texto ORIGINAL (sem normalizar) — precisam da MAIÚSCULA para
+ * detectar o auto-relato dirigido a um TERCEIRO PELO NOME ("Enviei a resposta ao
+ * Vander", "Respondi os três pontos … do Vander"). Medido ao vivo 2026-10-09.
+ * Exigem verbo em 1ª pessoa + preposição + NOME PRÓPRIO (maiúscula).
+ */
+const REGRAS_BRUTO: ReadonlyArray<RegraNota> = [
+  {
+    categoria: 'auto_relato_nome_proprio',
+    re: /\b(Respondi|Enviei|Mandei|Registrei|Informei|Confirmei|Avisei|Perguntei|Passei|Repassei|Encaminhei)\b[^.!?\n]{0,60}\b(do|da|ao|à|para o|para a|pro|pra)\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-zà-úâãéêíóôõç]+/g,
+  },
+];
+
 /** True se a candidata é uma NOTA INTERNA do modelo (não uma fala ao cliente). */
 export function detectarNotaInterna(body: string): NotaInterna {
   if (body.trim() === '') return { achou: false, categorias: [] };
@@ -92,6 +126,10 @@ export function detectarNotaInterna(body: string): NotaInterna {
   const categorias = new Set<string>();
   for (const regra of REGRAS) {
     if (regra.re.test(texto)) categorias.add(regra.categoria);
+    regra.re.lastIndex = 0;
+  }
+  for (const regra of REGRAS_BRUTO) {
+    if (regra.re.test(body)) categorias.add(regra.categoria);
     regra.re.lastIndex = 0;
   }
   return { achou: categorias.size > 0, categorias: [...categorias].sort() };

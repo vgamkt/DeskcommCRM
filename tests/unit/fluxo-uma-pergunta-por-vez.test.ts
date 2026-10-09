@@ -9,19 +9,17 @@ import {
 import { renderBriefDoTurno } from "@/lib/agent-engine/agent/brief-do-turno";
 
 /**
- * UMA PERGUNTA POR VEZ (medido ao vivo, 2026-10-06).
+ * A PERGUNTA DO FLUXO SAI NA MESMA MENSAGEM (revisão 2026-10-09).
  *
- * Com o fluxo de Qualificação ativo, o modelo somou à pergunta do sistema
- * ("De qual cidade você fala?") uma pergunta PRÓPRIA de fechamento ("Pra eu te
- * ajudar a fechar, você prefere vir conhecer ela na loja ou quer que eu te mande
- * mais detalhes dela?"). O cliente só responde uma por vez; a do modelo ficou
- * pendente e voltou quase idêntica no turno seguinte ("...quer vir conhecer ela
- * na loja aqui em São José dos Campos ou prefere que eu já te passe mais
- * detalhes dela?").
+ * Antes: com o fluxo ativo, o modelo era proibido de fazer a pergunta do fluxo
+ * ("a vez é do sistema") — e, obedecendo, deixava de RESPONDER as dúvidas do
+ * cliente (ex.: "qual a garantia?" ficou sem resposta; medido ao vivo 2026-10-09).
  *
- * O conserto é de CONTEXTO (a Jev decide): enquanto houver campo pendente, a vez
- * é do SISTEMA e o modelo não abre pergunta própria. Aqui fixamos a instrução nos
- * DOIS renderizadores — o bloco cru e o brief compacto da Jev.
+ * Agora: o modelo responde TUDO o que o cliente disse E inclui a pergunta
+ * pendente do fluxo (copiada exatamente) na MESMA mensagem; o motor só a reenvia
+ * sozinho se ela não sair. A única proibição que permanece é abrir OUTRA pergunta
+ * (visita, detalhes, fechamento) enquanto há campo pendente. Vale nos DOIS
+ * renderizadores — o bloco cru e o brief compacto da Jev.
  */
 
 function collectNode(key: string): Extract<FlowNode, { type: "collect" }> {
@@ -64,14 +62,17 @@ function estado(): EstadoDeAtendimento {
   };
 }
 
-describe("com fluxo pendente, o modelo não abre pergunta própria", () => {
-  it("o bloco cru do fluxo manda deixar a pergunta com o SISTEMA", () => {
+describe("com fluxo pendente, o modelo responde tudo E inclui a pergunta do fluxo", () => {
+  it("o bloco cru manda incluir a pergunta (copiada exatamente) e NÃO abrir OUTRA pergunta", () => {
     const bloco = renderBlocoDeAtendimento(estado());
-    expect(bloco).toMatch(/NÃO faça NENHUMA pergunta por sua iniciativa/);
-    expect(bloco).toMatch(/uma por vez|UMA pergunta por vez/i);
+    expect(bloco).toMatch(/inclua a pergunta pendente do fluxo COPIADA EXATAMENTE/i);
+    expect(bloco).toMatch(/NÃO abra OUTRA pergunta/i);
+    expect(bloco).toContain('Pergunta do fluxo a incluir (copie exatamente este texto): "cidade?"');
+    // Não proíbe mais o modelo de fazer a pergunta do fluxo.
+    expect(bloco).not.toMatch(/NÃO faça a pergunta do fluxo/);
   });
 
-  it("o brief compacto da Jev carrega a mesma regra (senão a Jev ignora)", () => {
+  it("o brief compacto da Jev carrega a mesma regra", () => {
     const brief = renderBriefDoTurno({
       estagioHint: "",
       objecaoBloco: "",
@@ -79,14 +80,15 @@ describe("com fluxo pendente, o modelo não abre pergunta própria", () => {
       escolhida: null,
       fluxo: estado(),
     });
-    expect(brief).toMatch(/não abra OUTRA pergunta/i);
-    expect(brief).toMatch(/a vez é do sistema/i);
+    expect(brief).toMatch(/inclua a pergunta pendente do fluxo COPIADA EXATAMENTE/i);
+    expect(brief).toMatch(/NÃO abra OUTRA pergunta/i);
+    expect(brief).toContain('"cidade?"');
   });
 
-  it("sem pendentes (fluxo concluído) a regra de 'uma pergunta por vez' sai do bloco", () => {
+  it("sem pendentes (fluxo concluído) a regra sai do bloco", () => {
     const e = estado();
     e.situacao = situacaoDoChecklist(e.checklist, new Set(["cidade"]));
     const bloco = renderBlocoDeAtendimento(e);
-    expect(bloco).not.toMatch(/NÃO faça NENHUMA pergunta por sua iniciativa/);
+    expect(bloco).not.toMatch(/NÃO abra OUTRA pergunta/);
   });
 });

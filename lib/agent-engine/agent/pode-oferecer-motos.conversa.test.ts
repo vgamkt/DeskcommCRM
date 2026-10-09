@@ -100,17 +100,23 @@ describe('simulação de conversa — quando pode oferecer motos', () => {
     });
   });
 
-  it('insistência em desconto → NÃO oferece (handoff), qualquer que seja o estado', () => {
+  it('pedido de desconto é objeção de PREÇO normal: NÃO oferece e NUNCA vira handoff', () => {
+    const esperado: Record<string, string> = {
+      null: 'objecao_tentativa_1',
+      'preco:1': 'objecao_tentativa_2',
+      'preco:2': 'objecao_pedir_confirmacao',
+    };
     for (const estado of [null, obj('preco', 1), obj('preco', 2)]) {
       const e: Estado = {
         temEscolhaTravada: true,
         estadoObjecaoAnterior: estado,
         pediuOutraMoto: false,
       };
-      expect(rodar(e, 'me da um desconto'), JSON.stringify(estado)).toMatchObject({
-        pode: false,
-        motivo: 'insistencia_desconto_handoff',
-      });
+      const chave = estado === null ? 'null' : `${estado.motivo}:${estado.tentativas}`;
+      const r = rodar(e, 'me da um desconto');
+      expect(r.pode, JSON.stringify(estado)).toBe(false);
+      expect(r.motivo, JSON.stringify(estado)).toBe(esperado[chave]);
+      expect(r.motivo).not.toContain('handoff');
     }
   });
 

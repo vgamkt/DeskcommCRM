@@ -17,15 +17,17 @@ import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 
 // Fase do TURNO. Duas tentativas de persuasão ('persuadir' → 'persuadir2') e, na
 // 3ª vez do MESMO tipo de objeção, 'oferecer' (libera alternativas com o aviso ao
-// responsável). 'handoff' quando o cliente insiste em desconto.
+// responsável). 'handoff' é LEGADO e NÃO silencia mais (ver `renderBlocoObjecao`).
 export type FaseObjecao =
   | 'persuadir'
   | 'persuadir2'
   | 'oferecer'
   | 'mostrar'
+  // LEGADO: não é mais produzido (desconto é objeção de preço normal). Tratado
+  // como 'encaminhar' — avisa o responsável e SEGUE atendendo, sem silenciar.
   | 'handoff'
   // O cliente NEGOU as opções (`encaminhar_e_encerrar`): avisa o responsável e
-  // SEGUE atendendo. NÃO é o `handoff` duro (que silencia) — ver `renderBlocoObjecao`.
+  // SEGUE atendendo. NUNCA silencia o bot — ver `renderBlocoObjecao`.
   | 'encaminhar';
 
 /** O TIPO da objeção — a contagem é POR TIPO (mudou o tipo, reinicia em 1). */
@@ -70,31 +72,33 @@ export function motivoDaObjecao(mensagem: string): MotivoObjecao {
 }
 
 /**
- * O TIPO final da objeção: a JEV decide; quando ela devolve o catch-all `outro`
- * (não determinou um tipo específico) e o regex reconhece preço/km/ano, o regex
- * refina. Doutrina "a Jev decide sempre": o regex só cobre o que a Jev deixou em
- * aberto — não "vence" um tipo específico que ela deu.
+ * O TIPO final da objeção: a **JEV decide**. Se ela respondeu — inclusive o
+ * catch-all `outro` — isso é uma DECISÃO, e o regex **NÃO** a corrige (doutrina
+ * `jev-decide-sempre`, invariante 2: "o fallback nunca 'melhora'/'vence' um
+ * veredito existente"). O regex só entra quando a Jev está **indisponível**
+ * (veredito `null`).
+ *
+ * (Antes, um veredito `outro` era refinado por regex para preco/km/ano — o motor
+ * decidia por cima da Jev. Corrigido 2026-10-09, decisão do dono.)
  */
 export function motivoObjecaoFinal(jev: MotivoObjecao | null, mensagem: string): MotivoObjecao {
-  if (jev !== null && jev !== 'outro') return jev;
-  const regex = motivoDaObjecao(mensagem);
-  if (regex !== 'outro') return regex;
-  return jev ?? 'outro';
+  if (jev !== null) return jev;
+  return motivoDaObjecao(mensagem);
 }
 
 /**
  * A FASE deste turno, a partir do estado ANTERIOR e do motivo de AGORA:
  *  - sem estado anterior OU motivo DIFERENTE → 'persuadir' (1ª do novo motivo);
  *  - mesmo motivo com 1 tentativa → 'persuadir2' (2ª);
- *  - mesmo motivo com 2+ tentativas → 'oferecer' (3ª);
- *  - insistência em DESCONTO → 'handoff'.
+ *  - mesmo motivo com 2+ tentativas → 'oferecer' (3ª).
+ *
+ * NÃO existe mais "desconto → handoff". Um pedido de desconto é uma objeção de
+ * PREÇO normal: persuade e, na 3ª do MESMO tipo, encaminha ao responsável SEM
+ * silenciar. Silenciar o bot (`force_human`) só em pedido EXPLÍCITO de humano.
+ * (Antes, uma pergunta como "dá pra melhorar o preço?" virava silêncio — medido
+ * ao vivo 2026-10-09.)
  */
-export function faseDoTurno(
-  anterior: EstadoObjecao | null,
-  motivo: MotivoObjecao,
-  desconto: boolean,
-): FaseObjecao {
-  if (desconto) return 'handoff';
+export function faseDoTurno(anterior: EstadoObjecao | null, motivo: MotivoObjecao): FaseObjecao {
   if (anterior === null || anterior.motivo !== motivo) return 'persuadir';
   if (anterior.tentativas >= 2) return 'oferecer';
   return 'persuadir2';
@@ -107,16 +111,8 @@ export function faseDoTurno(
 export function avancarObjecao(
   anterior: EstadoObjecao | null,
   motivo: MotivoObjecao,
-  desconto: boolean,
   valor?: number | null,
 ): { motivo: MotivoObjecao; tentativas: number; valorProposta?: number } {
-  if (desconto) {
-    return {
-      motivo: anterior?.motivo ?? motivo,
-      tentativas: anterior?.tentativas ?? 1,
-      ...(anterior?.valorProposta !== undefined ? { valorProposta: anterior.valorProposta } : {}),
-    };
-  }
   if (anterior === null || anterior.motivo !== motivo) {
     return { motivo, tentativas: 1, ...(valor ? { valorProposta: valor } : {}) };
   }
@@ -326,12 +322,15 @@ export function renderBlocoObjecao(fase: FaseObjecao): string {
     ].join('\n');
   }
   if (fase === 'handoff') {
+    // LEGADO rebaixado: NÃO silencia. Mesmo comportamento de 'encaminhar' —
+    // avisa o responsável e o atendimento CONTINUA. (Antes mandava chamar a
+    // ferramenta de handoff duro, que deixava o bot mudo para sempre.)
     return [
-      '## Objeção de valor — passo final: ENCAMINHAR ao consultor',
-      'Você já justificou o valor e o cliente INSISTIU numa condição melhor (desconto), que você não pode conceder.',
+      '## Objeção de valor — encaminhar ao consultor SEM parar de atender',
+      'O cliente pediu uma condição melhor (desconto), que você não pode conceder.',
       '- NÃO ofereça desconto nem prometa nada; NÃO ofereça outras motos.',
-      '- Informe, em tom acolhedor, que vai pedir ao responsável para analisar essa condição — SEM pedir autorização ("Vou pedir para o consultor responsável analisar o que dá pra fazer nessa moto e já te retorno por aqui.").',
-      '- Chame `crm_request_human_handoff` para encaminhar. NUNCA pergunte "posso encaminhar?".',
+      '- Informe, em UMA linha acolhedora, que vai pedir ao responsável para analisar essa condição ("Vou pedir ao responsável para analisar o que dá pra fazer nessa moto e já te retorno por aqui."). É um AVISO — NÃO peça autorização.',
+      '- NÃO chame `request_human_handoff`: isso silencia o bot e o cliente fica sem resposta. O sistema já avisa o responsável e o atendimento CONTINUA com você.',
     ].join('\n');
   }
   if (fase === 'mostrar') {
@@ -351,17 +350,17 @@ export function renderBlocoObjecao(fase: FaseObjecao): string {
       'O cliente disse que não quer ver outras opções e quer tratar essa moto. O sistema já avisa o responsável e o atendimento CONTINUA com você.',
       '- Informe, em UMA linha acolhedora, que vai pedir ao responsável para analisar essa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É um AVISO — não peça autorização.',
       '- NÃO ofereça outras motos. NÃO prometa desconto. NÃO tente contornar a objeção de novo.',
-      '- NÃO chame `crm_request_human_handoff`: o sistema já encaminhou; chamar isso silencia o bot e o cliente fica sem resposta. Continue respondendo normalmente no próximo assunto.',
+      '- NÃO chame `request_human_handoff`: o sistema já encaminhou; chamar isso silencia o bot e o cliente fica sem resposta. Continue respondendo normalmente no próximo assunto.',
     ].join('\n');
   }
   return [
     '## Objeção — última tentativa: avisar o responsável e PERGUNTAR antes de mostrar',
     'Você já tentou convencer DUAS vezes e o cliente continua na objeção. Neste turno NÃO mostre motos:',
-    '- Diga, em UMA linha acolhedora, que vai PEDIR AO RESPONSÁVEL para ver o que pode ser feito nessa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É só um AVISO — NÃO chame `crm_request_human_handoff` e NÃO pare de atender.',
+    '- Diga, em UMA linha acolhedora, que vai PEDIR AO RESPONSÁVEL para ver o que pode ser feito nessa moto ("Vou pedir ao responsável para ver o que dá pra fazer nessa moto pra você."). É só um AVISO — NÃO chame `request_human_handoff` e NÃO pare de atender.',
     '- DEPOIS, sem enviar fotos, pergunte se é SÓ essa moto que ele tem interesse OU se você pode mostrar opções parecidas com VALORES E CONDIÇÕES diferentes.',
     '- Se a objeção for de PREÇO, pergunte TAMBÉM qual valor ele tem em mente (a proposta dele) — "Me diz uma coisa: qual valor você tem em mente? Assim eu já te mostro o que cabe."',
     '- NÃO chame `crm_offer_similar_motos` e NÃO envie fotos neste turno. Aguarde a resposta.',
-    '- Se ele quiser ESSA moto do jeito que está ("é essa", "não troco") → aí chame `crm_request_human_handoff`.',
+    '- Se ele quiser ESSA moto do jeito que está ("é essa", "não troco") → informe que vai PEDIR AO RESPONSÁVEL para analisar essa moto (o sistema já avisa) e CONTINUE atendendo; NÃO chame `request_human_handoff` (isso silencia o bot).',
     '- NUNCA pergunte "posso encaminhar?".',
   ].join('\n');
 }

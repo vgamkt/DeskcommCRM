@@ -37,6 +37,17 @@ describe("perguntasDeFluxosDeJev", () => {
     expect(p.fluxo_adicional_1?.type).toBe("noul");
     expect(p.fluxo_adicional_2?.type).toBe("noul");
   });
+
+  it("as instruções exigem INTERESSE REAL por uma moto e barras a mera pergunta de processo (2026-10-09)", () => {
+    const p = perguntasDeFluxosDeJev(fluxos);
+    const instr = (p.fluxo_principal as { instructions: string }).instructions;
+    // Abre por interesse REAL numa moto específica...
+    expect(instr).toMatch(/INTERESSE REAL por UMA moto/);
+    // ...e NÃO por pedido genérico sem moto definida.
+    expect(instr).toMatch(/GEN[EÉ]RICO sem moto definida/);
+    // Pergunta de processo não abre sozinha.
+    expect(instr).toMatch(/MER[AA] PERGUNTA[\s\S]*N[ÃA]O abre o fluxo/);
+  });
 });
 
 describe("fluxosDaRespostaDeJev", () => {

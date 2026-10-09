@@ -31,11 +31,29 @@ describe('detectarNotaInterna', () => {
     expect(detectarNotaInterna('Já mandei para a Ana a tabela.').achou).toBe(true);
   });
 
+  it('bloqueia auto-relato ao terceiro SEM o "já" e metalinguagem interna (2026-10-09)', () => {
+    const notas = [
+      'Respondi ao Vander sobre o valor da troca (avaliação interna, sem estimativa), registrei a moto.',
+      'Mensagem enviada ao Vander respondendo sobre o financiamento (parcelas definidas pela financeira).',
+      'Informei ao cliente o valor da troca.',
+      'Enviei a resposta ao Vander defendendo o valor da CG 160 com dados reais.',
+      'Pronto. Respondi os três pontos da mensagem do Vander e segui o roteiro.',
+      'Ainda barrado. Vou remover totalmente a parte da garantia (respondo a garantia depois).',
+    ];
+    for (const frase of notas) {
+      expect(detectarNotaInterna(frase).achou, frase).toBe(true);
+    }
+  });
+
   it('NÃO bloqueia fala legítima ao cliente (controles)', () => {
     const ok = [
       'Aguardo sua resposta.',
       'Já respondi sua pergunta acima.',
       'Confirmei sua visita para amanhã às 10h.',
+      'Confirmei a visita para amanhã às 10h.',
+      'Registrei a moto no sistema.',
+      'Passei o valor para o senhor.',
+      'Respondi ao senhor sobre a visita.',
       'Enviei as fotos para você.',
       'Você tem CNH?',
       'Posso separar uma moto para o seu uso?',

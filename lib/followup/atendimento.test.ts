@@ -365,6 +365,21 @@ describe("desvio (off-flow) conta a pergunta feita (decisão do dono 2026-10-08)
   });
 });
 
+describe("P4 — o caminho do VALIDADOR também conta tentativa (2026-10-09)", () => {
+  it("validações aplicadas mas 1ª pendente não respondida → incrementa attempts", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    // Antes, o ramo `validacoes` retornava cedo SEM contar tentativa → a pergunta
+    // (ex.: troca_km) reperguntava para sempre (medido ao vivo 2026-10-09).
+    expect(src).toMatch(
+      /primeiroKeyInicial !== undefined && !valoresNovos\[primeiroKeyInicial\][\s\S]*registrarTentativaDoTurno/,
+    );
+    // O ramo `!aplicou` (nada aplicado) também conta — a pergunta não foi respondida.
+    expect(src).toMatch(/if \(!aplicou\) \{[\s\S]*registrarTentativaDoTurno/);
+    // A chave da 1ª pendente é capturada no INÍCIO do turno.
+    expect(src).toMatch(/const primeiroKeyInicial = estado\.situacao\.pendentes\[0\]\?\.config\.key/);
+  });
+});
+
 describe("contexto da Jev no fluxo (decisão do dono 2026-10-08)", () => {
   it("a Jev recebe ~20 mensagens de contexto (não só as últimas 6, nem a conversa toda)", () => {
     const src = readFileSync(

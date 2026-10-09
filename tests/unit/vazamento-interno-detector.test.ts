@@ -37,7 +37,7 @@ const FALA_LEGITIMA: readonly string[] = [
   "Sinto muito que você esteja com dor. Posso pedir que a equipe avalie seu caso com prioridade.",
   "A etapa «Retorno pos-cirurgico» ainda não existe no funil, mas não consigo criá-la por aqui. Peça para alguém do time adicioná-la no fim do funil.",
   "Olá Ana, seu pedido 1234 foi confirmado.",
-  "vou verificar seu pedido no sistema",
+  "vou verificar seu pedido com o responsável",
   "Confirmado: consulta dia 12 às 15h. Confirma pra mim?",
   "Quer que eu chame alguém do time pra fechar os detalhes com você?",
   "Sua dúvida sobre devolução: você tem 7 dias úteis após o recebimento.",

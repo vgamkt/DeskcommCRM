@@ -3186,8 +3186,10 @@ async function executarTurnoDoAgente(
     preview || !leadId ? null : await carregarNegociacao(pool, tenantId, leadId);
   const negociacaoEmAberto =
     negociacaoAnterior !== null && negociacaoAnterior.awaitingConfirmation;
-  // Pedido DIRETO de desconto/condição melhor: persuade na 1ª vez; se insistir,
-  // encaminha ao consultor (não oferece outras motos).
+  // Pedido DIRETO de desconto/condição melhor. NÃO força mais handoff/silêncio:
+  // é tratado como objeção de PREÇO normal (persuade; na 3ª do mesmo tipo,
+  // encaminha SEM silenciar). A flag segue no contexto por compatibilidade, mas
+  // nenhuma instrução manda a Jev escolher `handoff` por causa dela.
   const descontoTurno =
     mensagemDoJob.trim() !== '' && ehPedidoDesconto(mensagemDoJob);
   const motivoAnteriorPersistido = negociacaoAnterior?.motivo ?? null;
@@ -3300,7 +3302,7 @@ async function executarTurnoDoAgente(
     acaoNegociacao !== null
       ? faseDaAcao(acaoNegociacao)
       : motivoNegociacao !== null
-        ? faseDoTurno(catalogoDaConversa.objecao, motivoNegociacao, descontoTurno)
+        ? faseDoTurno(catalogoDaConversa.objecao, motivoNegociacao)
         : null;
   // Já perguntamos ("é só essa ou posso mostrar outras?") na 3ª objeção e o
   // cliente CONFIRMOU → só agora a oferta sai. Com a Jev, a ação `mostrar_opcoes`
@@ -3352,6 +3354,34 @@ async function executarTurnoDoAgente(
     : vereditoTrio !== null
       ? vereditoDeOfertaDaJev(vereditoTrio.porPonto.offer_motos ?? {})
       : await decidirOfertaComJev(pool, tenantId, ofertaCtx, runLog);
+
+  // ── GRAVADOR DE DECISÕES DO TURNO (P7, 2026-10-09) ───────────────────────
+  // Um registro ÚNICO, sem PII, de QUEM decidiu o quê neste turno: ponto,
+  // veredito da Jev, parâmetro determinístico pré-calculado e o caminho tomado.
+  // Sem isto, "a regex venceu a Jev?" e "por que o bot mudou de assunto/silenciou?"
+  // ficam invisíveis. NÃO loga conteúdo de mensagem.
+  if (!preview) {
+    runLog.info('turno: decisões de orquestração', {
+      desconto_regex: descontoTurno,
+      objecao: {
+        eh_objecao: ehObjecaoTurno,
+        motivo: motivoObjecaoTurno,
+        fonte: vereditoObjecaoJev !== null ? 'jev' : 'regex',
+      },
+      negociacao: {
+        motivo: motivoNegociacao,
+        acao: acaoNegociacao,
+        fonte: acaoNegociacao !== null ? 'jev' : 'fallback',
+        fase: faseObjecaoTurno,
+      },
+      oferta: {
+        veredito_jev: vereditoOfertaJev === null ? null : vereditoOfertaJev.oferecer,
+        negou_opcoes: negouOpcoes,
+        confirmou_opcoes: confirmouOpcoes,
+      },
+      fluxo_ativo: fluxoAtendimento !== null,
+    });
+  }
   // ─── A RÉGUA ÚNICA, consultada por TODOS os caminhos ──────────────────────
   // ORDEM (doutrina "a Jev decide sempre"): (1) negociação em curso (objeção OU
   // resposta à pergunta da 3ª) → a JEV manda (só `mostrar_opcoes` oferece); (2) o
@@ -5040,7 +5070,6 @@ async function executarTurnoDoAgente(
                   ...avancarObjecao(
                     catalogoDaConversa.objecao,
                     motivoObjecaoTurno,
-                    descontoTurno,
                     valorPropostaTurno,
                   ),
                 }
@@ -6586,7 +6615,8 @@ async function executarTurnoDoAgente(
         '4. Junte TUDO em UMA única mensagem, natural e bem elaborada, como um humano ' +
         'escrevendo — sem ideias repetidas e sem virar um bloco robótico de tópicos.\n' +
         '5. Se houver uma pergunta pendente do fluxo (bloco "Fluxo de atendimento"), inclua-a ' +
-        'naturalmente nessa mesma mensagem, encaixada na conversa.',
+        'nessa mesma mensagem — use as MESMAS palavras indicadas no bloco (o sistema só a ' +
+        'reenvia sozinho se ela não sair; incluir mantém tudo em UMA mensagem).',
       blocoConhecimento,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
@@ -6741,7 +6771,10 @@ async function executarTurnoDoAgente(
      * — usado pelas contingências (turno sem resposta / modelo esgotado). Best-effort:
      * nunca lança. No preview não envia. Devolve `true` se saiu.
      */
-    const enviarTextoDoMotor = async (texto: string): Promise<'sent' | 'neutro' | 'falhou'> => {
+    const enviarTextoDoMotor = async (
+      texto: string,
+      opts?: { semNeutroSeVetado?: boolean },
+    ): Promise<'sent' | 'neutro' | 'falhou'> => {
       if (preview || texto.trim() === '' || seq >= maxSendsPerTurn) return 'falhou';
       const tentar = async (corpo: string): Promise<boolean> => {
         const r = await runBeforeSend({
@@ -6787,6 +6820,10 @@ async function executarTurnoDoAgente(
       };
       try {
         if (await tentar(texto)) return 'sent';
+        // Veto + "não inserir neutro": usado pelo envio do TEXTO AVULSO (D7), em que
+        // o cliente JÁ recebeu a resposta pela ferramenta — inserir a contingência
+        // neutra aqui seria ruído. Só reporta o veto.
+        if (opts?.semNeutroSeVetado === true) return 'neutro';
         // A régua VETOU o texto (ex.: nota interna do modelo). NUNCA mandar o texto
         // barrado: cai na contingência neutra, para o cliente não ficar mudo.
         const NEUTRO = TEXTO_ATENDIMENTO_HUMANO;
@@ -7576,6 +7613,31 @@ async function executarTurnoDoAgente(
               : 'o modelo não enviou resposta ao cliente neste turno (não chamou a ferramenta de envio)',
           log: runLog,
         }).catch(() => {});
+      }
+    }
+
+    // ── TEXTO AVULSO QUE AGREGA (D7, 2026-10-09) ─────────────────────────────
+    // O modelo pode enviar pela ferramenta E escrever algo a MAIS como TEXTO. Se
+    // esse texto avulso tiver conteúdo que NÃO saiu em nenhuma mensagem do turno
+    // (ex.: a resposta de conhecimento, enquanto a pergunta do fluxo saiu pela
+    // ferramenta), ele NÃO pode ser descartado — o cliente perderia a resposta.
+    // Aqui ele passa pela MESMA régua (`enviarTextoDoMotor`) e só sai quando
+    // AGREGA conteúdo novo (evita duplicata de mensagem).
+    if (
+      !preview &&
+      liveJob().kind === 'inbound_turn' &&
+      outcomes.length > 0 &&
+      seq < maxSendsPerTurn
+    ) {
+      const textoDoModelo = (turn.result.text ?? '').trim();
+      if (textoDoModelo.length >= 12 && !perguntaSaiuNosTextos(textoDoModelo, corposEnviados)) {
+        // `semNeutroSeVetado`: se a régua barrar (ex.: nota interna), NÃO inserir a
+        // contingência neutra — o cliente já recebeu a resposta pela ferramenta.
+        const desfecho = await enviarTextoDoMotor(textoDoModelo, { semNeutroSeVetado: true });
+        runLog.info('texto avulso agregou conteúdo novo e foi enviado (D7)', {
+          desfecho,
+          chars: textoDoModelo.length,
+        });
       }
     }
 

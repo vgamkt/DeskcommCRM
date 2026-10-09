@@ -140,20 +140,20 @@ describe('motivoDaObjecao', () => {
   });
 });
 
-describe('motivoObjecaoFinal (Jev decide; regex refina o catch-all)', () => {
-  it('usa o tipo específico da Jev', () => {
+describe('motivoObjecaoFinal (a Jev decide; regex só quando ela está off)', () => {
+  it('usa o tipo da Jev — inclusive "outro" (veredito é decisão)', () => {
     expect(motivoObjecaoFinal('km', 'achei caro')).toBe('km');
     expect(motivoObjecaoFinal('preco', 'tá acima do que posso pagar')).toBe('preco');
+    // A Jev disse "outro": o regex NÃO a corrige (doutrina jev-decide-sempre).
+    expect(motivoObjecaoFinal('outro', 'tá acima do que posso pagar')).toBe('outro');
+    expect(motivoObjecaoFinal('outro', 'achei muito rodada')).toBe('outro');
+    expect(motivoObjecaoFinal('outro', 'achei antiga')).toBe('outro');
   });
-  it('quando a Jev devolve "outro", o regex refina o tipo', () => {
-    expect(motivoObjecaoFinal('outro', 'tá acima do que posso pagar')).toBe('preco');
-    expect(motivoObjecaoFinal('outro', 'achei muito rodada')).toBe('km');
-    expect(motivoObjecaoFinal('outro', 'achei antiga')).toBe('ano');
-  });
-  it('sem Jev (null) ou sem tipo reconhecível → regex/outro', () => {
+  it('sem Jev (null) → o regex decide (fallback)', () => {
     expect(motivoObjecaoFinal(null, 'achei caro')).toBe('preco');
+    expect(motivoObjecaoFinal(null, 'achei muito rodada')).toBe('km');
+    expect(motivoObjecaoFinal(null, 'achei antiga')).toBe('ano');
     expect(motivoObjecaoFinal(null, 'vou pensar')).toBe('outro');
-    expect(motivoObjecaoFinal('outro', 'vou pensar')).toBe('outro');
   });
 });
 
@@ -208,29 +208,34 @@ describe('valorCitado', () => {
 
 describe('faseDoTurno — 2 tentativas POR TIPO e, na 3ª, pergunta', () => {
   it('sem estado (ou tipo novo) → persuadir; 1 tentativa do tipo → persuadir2; 2+ → oferecer', () => {
-    expect(faseDoTurno(null, 'preco', false)).toBe('persuadir');
+    expect(faseDoTurno(null, 'preco')).toBe('persuadir');
     // Mudou o tipo → reinicia em persuadir.
-    expect(faseDoTurno(est('km', 2), 'preco', false)).toBe('persuadir');
-    expect(faseDoTurno(est('preco', 1), 'preco', false)).toBe('persuadir2');
-    expect(faseDoTurno(est('preco', 2), 'preco', false)).toBe('oferecer');
-    expect(faseDoTurno(est('preco', 5), 'preco', false)).toBe('oferecer');
+    expect(faseDoTurno(est('km', 2), 'preco')).toBe('persuadir');
+    expect(faseDoTurno(est('preco', 1), 'preco')).toBe('persuadir2');
+    expect(faseDoTurno(est('preco', 2), 'preco')).toBe('oferecer');
+    expect(faseDoTurno(est('preco', 5), 'preco')).toBe('oferecer');
   });
 
-  it('INSISTIU no desconto → handoff (a IA não concede)', () => {
-    expect(faseDoTurno(null, 'preco', true)).toBe('handoff');
-    expect(faseDoTurno(est('preco', 2), 'preco', true)).toBe('handoff');
+  it('pedido de desconto é objeção de PREÇO normal — NUNCA handoff/silêncio', () => {
+    // "dá pra melhorar o preço?" (1ª vez) → persuade (não silencia).
+    expect(faseDoTurno(null, 'preco')).toBe('persuadir');
+    expect(faseDoTurno(est('preco', 2), 'preco')).toBe('oferecer');
   });
 });
 
 describe('avancarObjecao — conta por tipo', () => {
-  it('mesmo tipo soma; tipo novo reinicia em 1; desconto preserva', () => {
-    expect(avancarObjecao(null, 'preco', false)).toEqual({ motivo: 'preco', tentativas: 1 });
-    expect(avancarObjecao(est('preco', 1), 'preco', false)).toEqual({ motivo: 'preco', tentativas: 2 });
-    expect(avancarObjecao(est('preco', 2), 'preco', false)).toEqual({ motivo: 'preco', tentativas: 3 });
+  it('mesmo tipo soma; tipo novo reinicia em 1', () => {
+    expect(avancarObjecao(null, 'preco')).toEqual({ motivo: 'preco', tentativas: 1 });
+    expect(avancarObjecao(est('preco', 1), 'preco')).toEqual({ motivo: 'preco', tentativas: 2 });
+    expect(avancarObjecao(est('preco', 2), 'preco')).toEqual({ motivo: 'preco', tentativas: 3 });
     // Mudou o motivo → 1.
-    expect(avancarObjecao(est('preco', 2), 'km', false)).toEqual({ motivo: 'km', tentativas: 1 });
-    // Desconto não incrementa.
-    expect(avancarObjecao(est('preco', 2), 'preco', true)).toEqual({ motivo: 'preco', tentativas: 2 });
+    expect(avancarObjecao(est('preco', 2), 'km')).toEqual({ motivo: 'km', tentativas: 1 });
+    // Pedido de desconto NÃO tem tratamento especial: incrementa como preço.
+    expect(avancarObjecao(est('preco', 2), 'preco', 30000)).toEqual({
+      motivo: 'preco',
+      tentativas: 3,
+      valorProposta: 30000,
+    });
   });
 });
 
@@ -264,18 +269,20 @@ describe('renderBlocoObjecao', () => {
     expect(b).toContain('SÓ opções DENTRO desse valor');
   });
 
-  it('handoff: encaminhar sem oferecer motos nem perguntar', () => {
+  it('handoff (legado): encaminhar SEM silenciar e SEM chamar a ferramenta de handoff duro', () => {
     const b = renderBlocoObjecao('handoff');
-    expect(b).toContain('ENCAMINHAR');
-    expect(b).toContain('crm_request_human_handoff');
-    expect(b).toContain('NUNCA pergunte');
+    expect(b).toContain('encaminhar');
+    expect(b).toContain('SEM parar de atender');
+    // NÃO chama o handoff duro (nome real da ferramenta no engine).
+    expect(b).toContain('NÃO chame `request_human_handoff`');
+    expect(b).not.toContain('crm_request_human_handoff');
   });
 
   it('encaminhar (cliente negou): avisa o responsável, SEGUE atendendo e NÃO chama o handoff duro', () => {
     const b = renderBlocoObjecao('encaminhar');
     expect(b).toContain('NEGOU');
     expect(b).toContain('CONTINUA');
-    expect(b).toContain('NÃO chame `crm_request_human_handoff`');
+    expect(b).toContain('NÃO chame `request_human_handoff`');
   });
 });
 
