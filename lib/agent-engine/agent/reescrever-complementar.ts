@@ -66,8 +66,9 @@ export async function reescreverMensagemJuntada(args: ReescreverInput): Promise<
       partes.length === 1
         ? partes[0]!
         : partes.map((p, i) => `[trecho ${i + 1}]\n${p}`).join('\n\n');
+    // As regras vão no `system` do input (o provider não aceita `role:'system'`
+    // dentro de `messages` — erro medido ao vivo 2026-10-09).
     const messages: ModelMessage[] = [
-      { role: 'system', content: REGRAS_INEGOCIAVEIS },
       { role: 'user', content: 'TRECHOS A JUNTAR E REESCREVER:\n\n' + conteudo },
     ];
     const { result } = await runModelCall(
@@ -78,6 +79,7 @@ export async function reescreverMensagemJuntada(args: ReescreverInput): Promise<
         leadId: args.leadId,
         jobId: args.jobId,
         purpose: 'reescrita_avulso',
+        system: REGRAS_INEGOCIAVEIS,
         ...(args.model !== undefined ? { model: args.model } : {}),
         ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
         messages,
