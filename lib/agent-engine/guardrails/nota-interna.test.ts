@@ -39,6 +39,7 @@ describe('detectarNotaInterna', () => {
       'Enviei a resposta ao Vander defendendo o valor da CG 160 com dados reais.',
       'Pronto. Respondi os três pontos da mensagem do Vander e segui o roteiro.',
       'Respondi o cliente com a abertura e apresentação, e já puxei a conversa.',
+      'Respondi os três pontos (opções até 15 mil, troca e financiamento). Turno encerrado.',
       'Ainda barrado. Vou remover totalmente a parte da garantia (respondo a garantia depois).',
     ];
     for (const frase of notas) {
@@ -54,7 +55,7 @@ describe('detectarNotaInterna', () => {
       'Confirmei a visita para amanhã às 10h.',
       'Registrei a moto no sistema.',
       'Passei o valor para o senhor.',
-      'Respondi ao senhor sobre a visita.',
+      'Vou responder ao senhor assim que possível.',
       'Enviei as fotos para você.',
       'Você tem CNH?',
       'Posso separar uma moto para o seu uso?',

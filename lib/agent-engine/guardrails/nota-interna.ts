@@ -88,6 +88,20 @@ const REGRAS: ReadonlyArray<RegraNota> = [
     re: /\b(avaliacao|analise|cotacao|regra)\s+interna\b|\bainda\s+barrad[oa]\b|\bbarrad[oa]\s+pela\s+regua\b/g,
   },
   {
+    // Frase que COMEÇA com verbo de auto-relato em 1ª pessoa do passado ("Respondi
+    // os três pontos…", "Enviei…", "Apresentei…"): um vendedor NÃO abre a fala com
+    // isso. Medido 2026-10-09: "Respondi os três pontos (…) . Turno encerrado."
+    // Verbo restrito aos que NÃO aparecem em fala legítima de abertura ("confirmei
+    // sua visita", "enviei as fotos", "registrei a moto") — só a auto-narrativa.
+    categoria: 'auto_narrativa_inicio',
+    re: /(^|[.!?]\s)(respondi|apresentei|informei|avisei|perguntei|repassei|encaminhei|encerrei)\b/g,
+  },
+  {
+    // Relato de fim/estado do turno: "Turno encerrado", "atendimento finalizado".
+    categoria: 'meta_turno',
+    re: /\b(turno|atendimento|conversa)\s+(encerrad[oa]|finalizad[oa]|conclu[ií]d[oa]|resumid[oa])\b/g,
+  },
+  {
     // Status/narrativa sobre o SISTEMA ou o FLUXO (o cliente nunca lê isso):
     // "o sistema está conduzindo as perguntas do fluxo", "o fluxo foi iniciado".
     categoria: 'status_sistema_fluxo',
