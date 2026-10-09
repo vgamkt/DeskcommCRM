@@ -194,7 +194,6 @@ import {
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
-import { reescreverComplementar } from './reescrever-complementar';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import { perguntaDeMaisOpcoes } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
@@ -7617,51 +7616,13 @@ async function executarTurnoDoAgente(
       }
     }
 
-    // ── TEXTO AVULSO → COMPLEMENTO REESCRITO (2026-10-09) ────────────────────
-    // O modelo às vezes usa `send_message` E ainda escreve um TEXTO AVULSO (o
-    // "rascunho" do turno). Descartá-lo perde dado; enviá-lo CRU vazou nota interna
-    // e até outro idioma (medido ao vivo). Decisão do dono: o MODELO reescreve —
-    // recebe a mensagem JÁ enviada + o rascunho e devolve SÓ o que for COMPLEMENTAR
-    // e útil ao cliente (PT-BR), descartando notas internas/narração/outro idioma/
-    // repetição. Se não houver nada, não envia.
-    if (
-      !preview &&
-      liveJob().kind === 'inbound_turn' &&
-      outcomes.length > 0 &&
-      seq < maxSendsPerTurn
-    ) {
-      const rascunho = (turn.result.text ?? '').trim();
-      if (rascunho.length >= 12) {
-        const complementar = await reescreverComplementar({
-          pool,
-          llmCfg: deps.llmCfg,
-          log: runLog,
-          tenantId,
-          leadId: leadId || null,
-          jobId: liveJob().id,
-          ...(agentConfig !== null
-            ? {
-                model: agentConfig.model,
-                llmOverride: {
-                  provider: agentConfig.provider,
-                  credentialId: agentConfig.credentialId,
-                },
-              }
-            : {}),
-          enviadas: corposEnviados,
-          rascunho,
-          ...(deps.registry !== undefined ? { registry: deps.registry } : {}),
-        });
-        if (complementar !== null && complementar !== '' && seq < maxSendsPerTurn) {
-          const desfecho = await enviarTextoDoMotor(complementar, { semNeutroSeVetado: true });
-          runLog.info('texto avulso reescrito como complemento (revisor)', {
-            desfecho,
-            chars: complementar.length,
-          });
-        }
-      }
-    }
-
+    // ── TEXTO AVULSO: DESCARTADO (revisor revertido, 2026-10-09) ─────────────
+    // O revisor ("reescrever o rascunho como complemento") mandava uma SEGUNDA
+    // mensagem quando o modelo escrevia uma resposta ALTERNATIVA como texto avulso
+    // (medido ao vivo: "Boa tarde! Que bom ter você…" foi enviado como complemento →
+    // o cliente recebeu DUAS mensagens no mesmo turno). O texto avulso é "rascunho":
+    // volta a ser DESCARTADO. A resposta legítima sai por `send_message`; o caminho
+    // "nunca terminar sem resposta" (nada saiu) segue enviando o texto, com a régua.
     runLog.info('turno do agente concluído', {
       kind: liveJob().kind,
       messages_sent: outcomes.length,
