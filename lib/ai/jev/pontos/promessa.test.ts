@@ -17,6 +17,13 @@ describe('promise_semantic Jev', () => {
     expect(crit[PROMESSA_NAO]).toBeDefined();
   });
 
+  it('instrui que REPASSAR fato/política da loja (ex.: garantia) NÃO é promessa (2026-10-09)', () => {
+    const instr = (perguntaDePromessaJev().promessa as { instructions: string }).instructions;
+    expect(instr).toMatch(/FATO\/POL[IÍ]TICA/);
+    expect(instr).toMatch(/90 dias de garantia/);
+    expect(instr).toMatch(/sem_promessa/);
+  });
+
   it('mapeia a escolha para o veredito binário', () => {
     const sim: RespostasDeJev = {
       promessa: { type: 'choice', choice: PROMESSA_SIM, confidence: 1, probabilities: {} },

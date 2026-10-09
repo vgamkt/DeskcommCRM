@@ -26,13 +26,19 @@ export function perguntaDePromessaJev(): PerguntasDeJev {
     promessa: {
       type: 'choice',
       instructions:
-        'A MENSAGEM que o vendedor quer enviar contém uma PROMESSA/COMPROMISSO concreto em texto ' +
-        'livre (gratuidade/cortesia/brinde, isentar taxa, garantia de devolução, prazo de entrega ' +
-        'concreto, resolver pessoalmente até um prazo)? Slogans genéricos ("garantimos qualidade", ' +
-        '"entrega rápida") NÃO contam. Perguntas, saudações e próximos passos vagos NÃO contam.',
+        'A MENSAGEM que o vendedor quer enviar contém uma PROMESSA/COMPROMISSO NOVO, criado pela ' +
+        'própria IA, em texto livre? Ex.: gratuidade/cortesia/brinde, isentar taxa, desconto ou ' +
+        'condição especial, prazo de entrega concreto, resolver pessoalmente até um prazo. ' +
+        'NÃO contam: slogans genéricos ("garantimos qualidade", "entrega rápida"); perguntas, ' +
+        'saudações e próximos passos vagos. ' +
+        'IMPORTANTE — NÃO é promessa REPASSAR um FATO/POLÍTICA já estabelecido da loja (costuma vir ' +
+        'da base de conhecimento): "a moto tem 90 dias de garantia da loja", "a garantia cobre a ' +
+        'moto como um todo", "a entrega é feita por transportadora parceira", "a garantia segue o ' +
+        'CDC". Isso é INFORMAÇÃO, não compromisso novo — marque sem_promessa.',
       criteria: {
-        [PROMESSA_SIM]: 'contém promessa/compromisso concreto',
-        [PROMESSA_NAO]: 'NÃO contém promessa (pergunta, saudação, slogan, próximo passo vago)',
+        [PROMESSA_SIM]: 'contém promessa/compromisso NOVO criado pela IA',
+        [PROMESSA_NAO]:
+          'NÃO contém promessa nova (fato/política da loja, pergunta, saudação, slogan, passo vago)',
       },
     },
   };
