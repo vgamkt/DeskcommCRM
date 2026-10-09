@@ -65,6 +65,14 @@ describe('detectarNotaInterna', () => {
     }
   });
 
+  it('bloqueia narração em OUTRO idioma (chinês/japonês/coreano)', () => {
+    expect(
+      detectarNotaInterna('已发送。我已回应配送问题（合作运输公司），并提出了待处理的资格问题。').achou,
+    ).toBe(true);
+    expect(detectarNotaInterna('送信しました。配送について回答しました。').achou).toBe(true);
+    expect(detectarNotaInterna('메시지를 보냈습니다.').achou).toBe(true);
+  });
+
   it('vazio não é nota', () => {
     expect(detectarNotaInterna('').achou).toBe(false);
     expect(detectarNotaInterna('   ').achou).toBe(false);

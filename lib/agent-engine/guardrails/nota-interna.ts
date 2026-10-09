@@ -102,6 +102,15 @@ const REGRAS: ReadonlyArray<RegraNota> = [
     re: /\b(turno|atendimento|conversa)\s+(encerrad[oa]|finalizad[oa]|conclu[ií]d[oa]|resumid[oa])\b/g,
   },
   {
+    // OUTRO IDIOMA: o modelo às vezes emite a narração/razão em chinês, japonês ou
+    // coreano (medido ao vivo 2026-10-09: "已发送。我已回应配送问题…"). O cliente é
+    // brasileiro: qualquer escrita Han/Hiragana/Katakana/Hangul é vazamento interno.
+    categoria: 'outro_idioma',
+    // Inclui Jamo (1100–11FF / 3130–318F): o normalizar NFD DECOMPÕE o Hangul em
+    // Jamo, fora da faixa de sílabas (AC00–D7AF) — sem isto o coreano escapava.
+    re: /[\u1100-\u11ff\u3040-\u30ff\u3130-\u318f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/g,
+  },
+  {
     // Status/narrativa sobre o SISTEMA ou o FLUXO (o cliente nunca lê isso):
     // "o sistema está conduzindo as perguntas do fluxo", "o fluxo foi iniciado".
     categoria: 'status_sistema_fluxo',
