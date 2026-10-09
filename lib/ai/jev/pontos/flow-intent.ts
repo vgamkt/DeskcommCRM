@@ -40,21 +40,19 @@ export function perguntasDeFluxosDeJev(fluxos: readonly FluxoParaJev[]): Pergunt
       instructions:
         'A mensagem do cliente deve INICIAR algum fluxo de atendimento? ' +
         'Se houver MAIS de um processo pedido, escolha o PRIMEIRO na ordem que o cliente mencionou/priorizou. ' +
-        'Catálogo/informação (ver/saber preço, fotos, detalhes), saudação ou dúvida → "none". ' +
+        'Catálogo/informação (ver/saber preço, fotos, detalhes) ou saudação → "none". ' +
         'Escolha da moto (gostou/quer essa) → Qualificação. Financiamento/parcelar → Financiamento. ' +
         'Dar a moto na troca → Troca. Vender/consignar → Venda ou Consignação. ' +
-        // ⚠️ INTENÇÃO, não palavra: o cliente precisa QUERER o processo. Perguntar
-        // COMO funciona ou SE aceita NÃO inicia o fluxo (medido 2026-10-08: "vocês
-        // aceitam minha moto na troca?" abriu o fluxo de Troca sem o cliente pedir).
-        'IMPORTANTE — só inicie um fluxo quando o cliente QUER/PEDE fazer aquele processo ' +
-        '("quero dar minha moto na troca", "quero financiar", "quero vender minha moto"). ' +
-        'Uma PERGUNTA sobre o processo ("vocês aceitam troca?", "como funciona o financiamento?", ' +
-        '"dá pra financiar?") é DÚVIDA — responda "none". ' +
+        // Decisão do dono 2026-10-09: PERGUNTA/INTERESSE sobre o processo ABRE o fluxo.
+        // (Reverte a regra de 2026-10-08, em que "vocês aceitam troca?" não abria.)
+        'IMPORTANTE — inicie um fluxo quando o cliente QUER/PEDE fazer aquele processo ' +
+        '("quero dar minha moto na troca", "quero financiar", "quero vender minha moto") OU ' +
+        'quando ele PERGUNTA/SE INTERESSA por ele ("vocês fazem financiamento?", "como funciona ' +
+        'o financiamento?", "dá pra financiar?", "vocês aceitam troca?"). ' +
         'ATENÇÃO: uma OBJEÇÃO ou comentário sobre PREÇO ("achei caro", "tá caro", "acima do que ' +
-        'posso pagar", "não tenho condições") NÃO é pedido de financiamento — responda "none". ' +
-        'Só escolha Financiamento quando o cliente PERGUNTAR ou PEDIR financiamento/parcelas/entrada. ' +
-        'Se a mensagem apenas reclama, comenta, agradece ou responde algo sem PEDIR um desses ' +
-        'processos, responda "none".',
+        'posso pagar", "não tenho condições") NÃO é pedido nem pergunta sobre o processo — responda "none". ' +
+        'Se a mensagem apenas reclama, comenta ou agradece sem PEDIR nem PERGUNTAR sobre um ' +
+        'desses processos, responda "none".',
       criteria,
     },
   };

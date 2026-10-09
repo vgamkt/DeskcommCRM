@@ -223,6 +223,15 @@ const RE_ARQUIVO_DE_CODIGO = new RegExp(
 
 const REGRAS: ReadonlyArray<RegraTexto> = [
   { categoria: 'arquitetura', re: alternacao([...PALAVRAS_ARQUITETURA, ...PROVIDERES_DE_CANAL]) },
+  // (D) VOCABULÁRIO DE OPERAÇÃO — a máquina falando de si ("o sistema te pergunta",
+  // "no sistema"). Exige o artigo/contração E EXCLUI "de": no domínio da moto,
+  // "sistema de freios/injeção/ABS" é a moto, não a máquina; "o sistema te pergunta"
+  // é a máquina. Medido 2026-10-09: "é só responder o que o sistema te perguntar".
+  {
+    categoria: 'arquitetura',
+    rotulo: 'o sistema',
+    re: /\b(?:o|no|do|pelo|ao|esse|este|nesse|desse|nosso|seu)\s+sistema\b(?!\s+de\b)/gi,
+  },
   { categoria: 'papel', re: alternacao(PALAVRAS_PAPEL) },
   { categoria: 'papel', rotulo: 'admin', re: RE_ADMIN },
   // (C-bis) as duas ambíguas, só em contexto de papel. "seu perfil atual é agent" é a
