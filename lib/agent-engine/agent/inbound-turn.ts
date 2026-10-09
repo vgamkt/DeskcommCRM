@@ -653,7 +653,7 @@ export const PERGUNTA_DE_ORCAMENTO =
  */
 export const PERGUNTA_DE_NECESSIDADE =
   'Claro, te ajudo! Me conta só duas coisas para eu acertar de primeira: ' +
-  'como você vai usar a moto (cidade, trilha, trabalho…) e quanto você pensa investir? ' +
+  'qual TIPO de moto você está procurando e quanto você pensa investir? ' +
   'Assim eu já separo as que combinam com você.';
 
 /**
@@ -6618,6 +6618,15 @@ async function executarTurnoDoAgente(
         '5. Se houver uma pergunta pendente do fluxo (bloco "Fluxo de atendimento"), inclua-a ' +
         'nessa mesma mensagem — use as MESMAS palavras indicadas no bloco (o sistema só a ' +
         'reenvia sozinho se ela não sair; incluir mantém tudo em UMA mensagem).',
+      // ── NÃO perguntar sobre uso/km por dia (decisão do dono, 2026-10-09) ────
+      // A pergunta "quantos km você roda por dia / trânsito" (que vinha do RAG de
+      // qualificação e o modelo repetia) NÃO ajuda a venda. Qualificar pelo que
+      // importa: o TIPO de moto procurado e a FAIXA DE PREÇO.
+      '## NÃO pergunte sobre uso / km por dia\n' +
+        'NÃO pergunte quantos quilômetros o cliente roda por dia, nem sobre trânsito, rodovia ou ' +
+        '"uso diário" — isso NÃO ajuda a venda e não se pergunta. Qualifique pelo que importa: qual ' +
+        'TIPO/MODELO de moto ele procura e a FAIXA DE PREÇO. UMA pergunta de cada vez; se já ' +
+        'perguntou algo e ele não respondeu, NÃO repita.',
       blocoConhecimento,
       // ── A CITAÇÃO VAI AO MODELO ───────────────────────────────────────────
       // "Gostei dessa" sozinho não nomeia moto; a mensagem citada nomeia. Sem
