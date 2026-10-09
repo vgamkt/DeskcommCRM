@@ -72,6 +72,15 @@ const REGRAS: ReadonlyArray<RegraNota> = [
     re: /\b(mensagem|resposta|texto|retorno)\s+(enviad[ao]|mandad[ao]|passad[ao]|encaminhad[ao])\b/g,
   },
   {
+    // Auto-relato com o TERCEIRO como OBJETO do verbo ("respondi o cliente",
+    // "informei o cliente", "mandei o lead") — medido 2026-10-09: "Respondi o
+    // cliente com a abertura…". A marca é o SUBSTANTIVO de terceiro; o artigo
+    // pode ser "o/a/ao/para o". NÃO casa fala legítima ("confirmei a visita",
+    // "registrei a moto" — o objeto não é o cliente).
+    categoria: 'auto_relato_cliente_objeto',
+    re: /\b(respondi|enviei|mandei|registrei|informei|confirmei|avisei|perguntei|passei|repassei|encaminhei)\b[^.!?\n]{0,40}\b(?:o|a|os|as|ao|à|para o|para a|pro|pra)\s+(cliente|lead|vendedor|vendedora|responsavel|atendente)\b/g,
+  },
+  {
     // Metalinguagem interna: "avaliação/análise interna", "ainda barrado" (medido
     // 2026-10-09: "Respondi… (avaliação interna, sem estimativa)"; "Ainda barrado.
     // Vou remover…"). Nada disso é fala de vendedor para o cliente.

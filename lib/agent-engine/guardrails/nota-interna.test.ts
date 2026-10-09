@@ -38,6 +38,7 @@ describe('detectarNotaInterna', () => {
       'Informei ao cliente o valor da troca.',
       'Enviei a resposta ao Vander defendendo o valor da CG 160 com dados reais.',
       'Pronto. Respondi os três pontos da mensagem do Vander e segui o roteiro.',
+      'Respondi o cliente com a abertura e apresentação, e já puxei a conversa.',
       'Ainda barrado. Vou remover totalmente a parte da garantia (respondo a garantia depois).',
     ];
     for (const frase of notas) {
