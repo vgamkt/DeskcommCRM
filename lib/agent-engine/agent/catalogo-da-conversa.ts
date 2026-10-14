@@ -439,8 +439,12 @@ export function temReferenciaAMoto(
   // (1) nome (maximal) de alguma candidata no cliente/na citação.
   if (citadasMaximais(texto, candidatas).length > 0) return true;
   // (2) trecho do nome: todos os termos significativos citados caem no nome de alguma.
+  // ⚠️ SPLIT por NÃO-alfanumérico (não só espaço): `normalizarNomeDeMoto` NÃO tira
+  // pontuação, então "Factor 150," gerava o token "150," (com vírgula) que nunca
+  // casava o nome — a ESCOLHA não era detectada e as fotos da moto não saíam
+  // (medido ao vivo 2026-10-14: "Gostei da Factor 150, quero essa.").
   const tokens = normalizarNomeDeMoto(textoDoCliente)
-    .split(/\s+/)
+    .split(/[^a-z0-9]+/)
     .filter((t) => t.length >= 2 && !PALAVRAS_NAO_NOME.has(t));
   if (
     tokens.length > 0 &&
@@ -517,7 +521,7 @@ export function motoEscolhidaPeloCliente(
   // ela; mais de uma = ambíguo. (dono, 2026-10-06: "o nome que tiver, com tudo o
   // que tem cadastrado, é suficiente para definir".)
   const tokens = normalizarNomeDeMoto(textoDoCliente)
-    .split(/\s+/)
+    .split(/[^a-z0-9]+/)
     .filter((t) => t.length >= 2 && !PALAVRAS_NAO_NOME.has(t));
   if (tokens.length > 0) {
     const contem = candidatas.filter((m) => {

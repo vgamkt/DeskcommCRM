@@ -52,15 +52,49 @@ describe('ajustarFechoDoTurnoDeCatalogo', () => {
       variacao: 0,
       temEscolha: true,
     });
-    expect(r.corpo).toContain('Como você pretende levar?');
+    expect(r.corpo).toContain('adquirir essa moto');
     expect(r.corpo).not.toContain('chamou');
     expect(r.corpo).not.toContain('cidade');
     expect(r.corpo).toContain('Boa escolha!');
   });
 
+  it('a pergunta de AQUISIÇÃO chama o cliente pelo nome', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Boa escolha!',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      temEscolha: true,
+      nomeCliente: 'Vander',
+    });
+    expect(r.corpo).toContain('Vander, ');
+  });
+
   it('sem escolha, continua a pergunta de ESCOLHA', () => {
     const r = ajustarFechoDoTurnoDeCatalogo({ corpo: 'Separei umas opções.', perguntaDoFluxo: null, variacao: 0 });
     expect(r.corpo).toContain('chamou');
-    expect(r.corpo).not.toContain('Como você pretende levar?');
+    expect(r.corpo).not.toContain('adquirir essa moto');
+  });
+
+  it('sem escolha + MAIS opções → re-adiciona o "quer ver mais?" (o passo 2 apagou)', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Separei umas opções parecidas que podem te agradar.',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      temMaisOpcoes: true,
+    });
+    expect(r.corpo).toContain('chamou'); // escolha
+    expect(r.corpo).toMatch(/mais op|mais algumas|outras|alternativas/); // mais opções
+  });
+
+  it('com ESCOLHA + mais opções → NÃO pergunta mais opções (fecho de aquisição)', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Boa escolha! A Factor é econômica.',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      temEscolha: true,
+      temMaisOpcoes: true,
+    });
+    expect(r.corpo).toContain('adquirir essa moto');
+    expect(r.corpo).not.toMatch(/mais op|mais algumas|alternativas/);
   });
 });

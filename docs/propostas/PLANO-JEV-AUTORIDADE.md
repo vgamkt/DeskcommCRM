@@ -110,12 +110,36 @@ moto escolhida por `pedeMotoExplicito` (`:3387`). **Justificados (não migrar):*
 | **F4** | NÃO re-tentar o turno quando alguma peça JÁ saiu (evita duplicar) | `inbound-turn.ts` + `re-tentativa-de-envio.ts` | **✅ FEITO** (build `dcaf95ff`) — falha transitória não duplica mais |
 | **F5** | aviso/alerta de falha NÃO vai para o próprio número do cliente (anti-loop) | `handoff-por-lentidao.ts` | **✅ FEITO** (build `dcaf95ff`) — aviso não entra na conversa |
 | **F6** | fotos do catálogo em **HTTPS** (WhatsApp exige) | `fotos-do-catalogo.ts` | **✅ FEITO** (build `dcaf95ff`) — fim do `131053`; fotos `sent` |
+| **F7** | escolha detectada com PONTUAÇÃO ("Factor 150,") → envia as fotos da escolhida | `catalogo-da-conversa.ts` | **✅ FEITO** — split por não-alfanumérico nos tokens |
+| **F8** | fecho re-adiciona o "quer ver mais?" (o F3 o apagava) | `fecho-do-turno.ts` | **✅ FEITO** — "Quer que eu separe mais opções?" ao vivo |
+| **F9** | pergunta de AQUISIÇÃO educada, com o NOME e todas as formas (à vista/financiado/cartão/troca) | `mais-opcoes.ts` + `fecho-do-turno.ts` | **✅ FEITO** — "Vander, só pra eu te ajudar…" ao vivo |
 
 **Ordem de execução acordada:** **A1 → A2 → A3 → B1 → C1/C2/C3 → D1 → E1 → F1.**
 
 ---
 
 ## §6) LOG DE MUDANÇAS (mais recente no topo)
+- **2026-10-14** — **F9 (pergunta de aquisição educada, com nome e todas as formas) — FEITO e VALIDADO.**
+  `perguntaDeAquisicao` (`mais-opcoes.ts`) reescrita: chama o cliente pelo **nome** e oferece **todas** as formas
+  (à vista, financiado, **no cartão**, ou **moto na troca** como parte do pagamento), em tom educado ("só pra eu
+  te ajudar do jeito certo…"). O nome vem de `effectiveContext.contact.name` (`display_name ?? name`) passado ao
+  fecho (`nomeCliente`). Também corrigida a **duplicação** do "quer ver mais?" (a regex `jaPergunta` não cobria a
+  variante "mais algumas" → o fecho F3 somava com a garantia). **DEPOIS (WAHA real):** "Gostei da XRE 190, quero
+  essa!" → 9 imagens + *"Vander, só pra eu te ajudar do jeito certo: qual forma de pagamento você está pensando —
+  à vista, financiado, no cartão, ou com uma moto na troca como parte do pagamento?"*; `custom_fields.moto_interesse
+  = "HONDA XRE 190"` gravado; T1 sem duplicação. Suíte **1105/1105**, typecheck ✓, lint 0.
+- **2026-10-14** — **F7 + F8 (escolha com pontuação + "quer ver mais?" no fecho) — FEITO e VALIDADO (WAHA real).**
+  **Defeito 1:** o cliente escolhia ("Gostei da Factor 150, quero essa.") e as fotos da escolhida NÃO saíam.
+  **Causa:** `normalizarNomeDeMoto` NÃO tira pontuação → o token `"150,"` (com vírgula) não casava o nome →
+  `temReferenciaAMoto` false → escolha não detectada. **Correção:** split dos tokens por **não-alfanumérico**
+  (`catalogo-da-conversa.ts`, 2 pontos). **Defeito 2:** o "Quer ver mais?" (garantido em `inbound-turn.ts`) era
+  **apagado pelo fecho F3** (que remove a cauda interrogativa). **Correção:** `ajustarFechoDoTurnoDeCatalogo`
+  ganhou `temMaisOpcoes` — re-adiciona o "quer ver mais?" (sem escolha). **DEPOIS (WAHA real 0101→2501):** T1
+  "têm Factor 150?" → 2 imagens + "Qual delas…? Quer ver mais algumas?"; T2 "Gostei da Factor 150, quero essa."
+  → **7 imagens** (todas as fotos da escolhida) + "…à vista, financiado ou com troca?" (sem "quer ver mais
+  fotos"); persistência confirmada (`agent_catalogo`: motos=2, `escolhida=YAMAHA Factor 150 ED`). Suíte
+  **1104/1104**, typecheck ✓, lint 0. **Pendente de decisão:** no turno de "Lander" **após** já haver moto
+  escolhida, o fecho é o de aquisição (não "qual delas?") — comportamento por desenho (moto travada).
 - **2026-10-14** — **F6 (upload de mídia `131053` — fotos em http) — FEITO e VALIDADO.** **Causa-raiz:** o
   catálogo entrega as imagens em **`http://loja.vgasistemas.app/...`** (27/27 URLs http, 0 https) e o WhatsApp
   **só baixa mídia por HTTPS** → `131053 Media upload error` (a foto não chegava). **Correção:** `extrairMotosDoResultado`

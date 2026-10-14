@@ -6,6 +6,7 @@ import {
   montarPedidoDeEscolha,
   motoEscolhidaPeloCliente,
   salvarCatalogoDaConversa,
+  temReferenciaAMoto,
 } from './catalogo-da-conversa';
 
 const CB300: MotoDoCatalogo = {
@@ -21,6 +22,28 @@ const TWISTER: MotoDoCatalogo = {
   fotos: ['https://x/tw-1.jpg', 'https://x/tw-2.jpg', 'https://x/tw-3.jpg'],
 };
 const CATALOGO = [CB300, TWISTER];
+
+describe('escolha com PONTUAÇÃO (2026-10-14)', () => {
+  const CAT = [
+    { nome: 'YAMAHA Factor 150 ED', fotos: [] },
+    { nome: 'YAMAHA Factor 125 K', fotos: [] },
+  ] as never;
+  it('"Gostei da Factor 150, quero essa." referencia a moto (a vírgula não quebra o token)', () => {
+    expect(temReferenciaAMoto('Gostei da Factor 150, quero essa.', '', CAT)).toBe(true);
+  });
+  it('montarPedidoDeEscolha deixa de ser null nesse caso (escolha detectada)', () => {
+    const p = montarPedidoDeEscolha({
+      textoDoModelo: '',
+      textoDoCliente: 'Gostei da Factor 150, quero essa.',
+      catalogo: [
+        { nome: 'YAMAHA Factor 150 ED', ano: '2018', cor: 'Vermelho', fotos: [] },
+        { nome: 'YAMAHA Factor 125 K', ano: '2015', cor: 'Vermelho', fotos: [] },
+      ],
+      jaDetalhadas: [],
+    });
+    expect(p).not.toBeNull();
+  });
+});
 
 describe('A3 — montarPedidoDeEscolha inclui a moto JÁ ESCOLHIDA (2026-10-13)', () => {
   const F150: MotoDoCatalogo = { nome: 'YAMAHA Factor 150 ED', ano: '2018', cor: 'Vermelho', fotos: ['https://x/f150.jpg'] };

@@ -5406,9 +5406,13 @@ async function executarTurnoDoAgente(
                 modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
                 variacao: pedidosDeOpcoesTurno,
               });
-              const jaPergunta =
-                /(mais op[çc]|outras op[çc]|alternativ|parecid)/i.test(final) ||
-                /(mais op[çc]|outras op[çc]|alternativ|parecid)/i.test(introducao);
+              // Cobre TODAS as variantes do `perguntaDeMaisOpcoes` (senão o fecho F3,
+              // que re-adiciona o convite, somaria com esta garantia e DUPLICARIA o
+              // "Quer ver mais?" — medido ao vivo 2026-10-14: "…Quer ver mais algumas?
+              // Quer ver mais algumas").
+              const reMais =
+                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid)/i;
+              const jaPergunta = reMais.test(final) || reMais.test(introducao);
               if (!jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
               }
@@ -5521,6 +5525,9 @@ async function executarTurnoDoAgente(
                   perguntaDoFluxo: perguntaFluxo,
                   variacao: pedidosDeOpcoesTurno,
                   temEscolha: catalogoDaConversa.escolhida !== null,
+                  temMaisOpcoes: temMaisOpcoesNesteTurno,
+                  modeloCitado: motoAtualDaConversa?.nome ?? null,
+                  nomeCliente: effectiveContext.contact.name,
                 });
                 if (ajuste.ajustado) {
                   corpoFinal = ajuste.corpo;
@@ -7948,6 +7955,9 @@ async function executarTurnoDoAgente(
                   perguntaDoFluxo: pendenteTexto,
                   variacao: pedidosDeOpcoesTurno,
                   temEscolha: catalogoDaConversa.escolhida !== null,
+                  temMaisOpcoes: temMaisOpcoesNesteTurno,
+                  modeloCitado: motoAtualDaConversa?.nome ?? null,
+                  nomeCliente: effectiveContext.contact.name,
                 }).corpo
               : unificado;
           const primeira = textos[0]!;

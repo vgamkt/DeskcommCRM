@@ -69,13 +69,15 @@ export function perguntaDeEscolha(args: { variacao?: number } = {}): string {
  * fluxo de pagamento. Antes, o fecho forçava "Gostou de alguma?" mesmo com UMA moto
  * (a já escolhida) na tela (medido ao vivo 2026-10-14). Pura.
  */
-export function perguntaDeAquisicao(args: { variacao?: number } = {}): string {
+export function perguntaDeAquisicao(args: { nome?: string | null; variacao?: number } = {}): string {
   const v = Math.abs(Math.floor(args.variacao ?? 0));
+  const nome = (args.nome ?? '').trim();
+  const trata = nome !== '' ? `${nome}, ` : '';
   const opcoes = [
-    'Como você pretende levar? À vista, financiado ou dando sua moto na troca?',
-    'Pra eu já seguir com tudo: você pensa em pagar à vista, financiar ou dar uma moto na troca?',
-    'Me diz como fica melhor pra você: à vista, financiado ou com a sua moto na troca?',
-    'Como prefere acertar? À vista, no financiamento ou com a sua moto na troca?',
+    `${trata}só pra eu entender: como você está pensando em adquirir essa moto? Qual forma de pagamento você tem em mente — à vista, financiado, no cartão, ou tem uma moto pra dar na troca como parte do pagamento?`,
+    `${trata}me conta uma coisa: como você pretende adquirir essa moto? À vista, financiado, no cartão, ou tem uma moto pra dar na troca como parte do pagamento?`,
+    `${trata}só pra eu te ajudar do jeito certo: qual forma de pagamento você está pensando — à vista, financiado, no cartão, ou com uma moto na troca como parte do pagamento?`,
+    `${trata}como você está pensando em levar essa moto? À vista, financiado, no cartão, ou dando uma moto na troca como parte do pagamento?`,
   ];
   return opcoes[v % opcoes.length]!;
 }

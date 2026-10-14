@@ -12,7 +12,7 @@
  * A pergunta do fluxo NÃO se perde: o campo segue pendente e vira a do próximo
  * turno. Módulo PURO.
  */
-import { perguntaDeAquisicao, perguntaDeEscolha } from './mais-opcoes';
+import { perguntaDeAquisicao, perguntaDeEscolha, perguntaDeMaisOpcoes } from './mais-opcoes';
 
 export function ajustarFechoDoTurnoDeCatalogo(args: {
   corpo: string;
@@ -24,6 +24,17 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
    * fluxo de pagamento. Estrutural: mesma regra do motor, sem regra nova por fora.
    */
   temEscolha?: boolean;
+  /**
+   * Ainda há mais opções que casam (o motor guarda a fila do "quer ver mais?")? Sem
+   * isto, o fecho REMOVE a cauda interrogativa e apaga o "Quer ver mais?" que o motor
+   * garantiu (medido ao vivo 2026-10-14: "Lander" → só "qual delas?", sem "mais").
+   * Só entra quando NÃO há escolha (com moto escolhida, o fecho é o de aquisição).
+   */
+  temMaisOpcoes?: boolean;
+  /** Modelo que o cliente tem em vista — varia a pergunta de "mais opções". */
+  modeloCitado?: string | null;
+  /** Nome do cliente — a pergunta de aquisição o chama pelo nome. */
+  nomeCliente?: string | null;
 }): { corpo: string; ajustado: boolean } {
   let corpo = args.corpo.trim();
 
@@ -53,10 +64,18 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
 
   // 3) Garante o fecho do turno: se o cliente JÁ escolheu, é a pergunta de AQUISIÇÃO
   //    (induz o fluxo de pagamento); senão, a de ESCOLHA.
+  const v = args.variacao ?? 0;
   const pergunta = args.temEscolha === true
-    ? perguntaDeAquisicao({ variacao: args.variacao ?? 0 })
-    : perguntaDeEscolha({ variacao: args.variacao ?? 0 });
-  corpo = corpo === '' ? pergunta : `${corpo}\n\n${pergunta}`;
+    ? perguntaDeAquisicao({ nome: args.nomeCliente ?? null, variacao: v })
+    : perguntaDeEscolha({ variacao: v });
+  // 3b) Sem escolha e com MAIS opções que casam → re-adiciona o "quer ver mais?"
+  //     (o passo 2 apagou a cauda interrogativa). Com escolha, NÃO (o fecho é o de
+  //     aquisição — o cliente já decidiu; não se pergunta por mais fotos/opções).
+  const mais =
+    args.temEscolha !== true && args.temMaisOpcoes === true
+      ? `\n\n${perguntaDeMaisOpcoes({ modeloCitado: args.modeloCitado ?? null, variacao: v })}`
+      : '';
+  corpo = corpo === '' ? `${pergunta}${mais}` : `${corpo}\n\n${pergunta}${mais}`;
 
   return { corpo, ajustado: true };
 }
