@@ -38,8 +38,15 @@ describe('extrairMotosDoResultado', () => {
   it('extrai nome, fotos e campos de legenda ignorando linhas sem imagem', () => {
     const motos = extrairMotosDoResultado(RESULTADO);
     expect(motos.map((m) => m.nome)).toEqual(['CB 300 F Twister', 'XMax 250', 'YS Fazer 250']);
-    expect(motos[0]?.fotos).toEqual(['http://x/cb1.jpg', 'http://x/cb2.jpg']);
+    // MEDIA 2026-10-14: as URLs são normalizadas para HTTPS (o WhatsApp só baixa
+    // mídia por https; http dá `131053 Media upload error`).
+    expect(motos[0]?.fotos).toEqual(['https://x/cb1.jpg', 'https://x/cb2.jpg']);
     expect(motos[0]).toMatchObject({ ano: '2025', cor: 'Vermelho', preco: '28990.00', quilometragem: '4500' });
+  });
+
+  it('normaliza http:// → https:// (o WhatsApp exige https para mídia)', () => {
+    const motos = extrairMotosDoResultado(RESULTADO);
+    expect(motos.every((m) => m.fotos.every((u) => u.startsWith('https://')))).toBe(true);
   });
 
   it('não lança e devolve [] para shapes desconhecidos', () => {
@@ -77,7 +84,7 @@ describe('extrairMotosDoResultado', () => {
       cor: 'Vermelho',
       quilometragem: '4500',
       preco: '28990.00',
-      fotos: ['http://x/cb.jpg'],
+      fotos: ['https://x/cb.jpg'],
     });
   });
 
@@ -129,7 +136,7 @@ describe('fotosComLegenda', () => {
     const catalogo = extrairMotosDoResultado(RESULTADO);
     const texto = 'Não temos a CB 250, mas separei a CB 300 F Twister e a YS Fazer 250 pra você.';
     const plano = fotosComLegenda(texto, catalogo);
-    expect(plano.map((p) => p.url)).toEqual(['http://x/cb1.jpg', 'http://x/fazer1.jpg']);
+    expect(plano.map((p) => p.url)).toEqual(['https://x/cb1.jpg', 'https://x/fazer1.jpg']);
     expect(plano[0]?.legenda).toContain('CB 300 F Twister 2025');
     expect(plano[0]?.legenda).toContain('R$ 28.990,00');
     expect(plano[1]?.legenda).toContain('YS Fazer 250 2017');
@@ -139,7 +146,7 @@ describe('fotosComLegenda', () => {
   it('casa ignorando acento, caixa e espaços', () => {
     const catalogo = extrairMotosDoResultado(RESULTADO);
     expect(fotosComLegenda('olha essa cb300f twister', catalogo).map((p) => p.url)).toEqual([
-      'http://x/cb1.jpg',
+      'https://x/cb1.jpg',
     ]);
   });
 
@@ -199,20 +206,20 @@ describe('planoDeFotos / fotosComLegendaDeNomes', () => {
 
   it('usa os nomes explícitos do campo `motos`, na ordem pedida', () => {
     const plano = planoDeFotos(['XMax 250', 'CB 300 F Twister'], 'abertura genérica sem nomes', catalogo);
-    expect(plano.map((p) => p.url)).toEqual(['http://x/xmax1.jpg', 'http://x/cb1.jpg']);
+    expect(plano.map((p) => p.url)).toEqual(['https://x/xmax1.jpg', 'https://x/cb1.jpg']);
     expect(plano[0]?.legenda).toContain('XMax 250');
     expect(plano[1]?.legenda).toContain('CB 300 F Twister');
   });
 
   it('casa nome com acento/caixa/espaço diferentes', () => {
     const plano = fotosComLegendaDeNomes(['cb300f twister'], catalogo);
-    expect(plano.map((p) => p.url)).toEqual(['http://x/cb1.jpg']);
+    expect(plano.map((p) => p.url)).toEqual(['https://x/cb1.jpg']);
   });
 
   it('sem nomes, cai no matching por texto do body', () => {
     // UMA só moto citada → agora vão TODAS as fotos dela (antes, só a 1ª).
     const plano = planoDeFotos(undefined, 'temos a CB 300 F Twister', catalogo);
-    expect(plano.map((p) => p.url)).toEqual(['http://x/cb1.jpg', 'http://x/cb2.jpg']);
+    expect(plano.map((p) => p.url)).toEqual(['https://x/cb1.jpg', 'https://x/cb2.jpg']);
   });
 
   it('nomes que não casam caem no texto; sem nada, plano vazio', () => {

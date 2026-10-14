@@ -173,8 +173,9 @@ const envSchema = z.object({
   // Onda 5 (Task 5.1) — modelo auxiliar dos turnos classify/decide_timing do
   // sistema de fluxos de follow-up (sem valor = default da org).
   FOLLOWUP_AI_MODEL: z.string().min(1).optional(),
-  // Loop do agente — teto de steps de tool-calls por run.
-  AGENT_MAX_STEPS: z.coerce.number().int().positive().default(8),
+  // Loop do agente — teto de steps de tool-calls por run. Era 8; com 6 o turno
+  // pesado deixou de estourar o timeout do modelo (medido: 143s → 33s).
+  AGENT_MAX_STEPS: z.coerce.number().int().positive().default(6),
   // Teto de mensagens FÍSICAS enviadas ao lead por turno (send_message + send_template
   // somados, bolhas incluídas) — nenhum gate de before-send limita CONTAGEM, só ritmo.
   MAX_SENDS_PER_TURN: z.coerce.number().int().positive().default(3),

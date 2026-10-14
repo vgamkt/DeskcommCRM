@@ -343,6 +343,7 @@ export function fluxosPorGatilho(
 export function renderBlocoDeAtendimento(
   estado: EstadoDeAtendimento,
   finalizacao?: EndFinish,
+  mostrouMotos = false,
 ): string {
   // O "passa-bastão" do fluxo ANTERIOR (quando este foi encadeado): o que já foi
   // respondido não se repergunta, e o próximo passo da venda começa daqui.
@@ -386,6 +387,20 @@ export function renderBlocoDeAtendimento(
     ...(primeira.config.question !== undefined ? { question: primeira.config.question } : {}),
   };
 
+  // ── TURNO DE CATÁLOGO: a VENDA fecha (a pergunta do fluxo fica próxima) ──────
+  // Decisão do dono (2026-10-13): quando o turno MOSTROU MOTOS, a pergunta do
+  // turno é a de VENDA ("qual delas?" / "quer ver mais?"); a pergunta do fluxo
+  // NÃO entra agora — o campo segue pendente e vira a pergunta do próximo turno.
+  // Vale para TODOS os fluxos (não é regex).
+  if (mostrouMotos) {
+    return [
+      `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo} (mas você ACABOU DE MOSTRAR MOTOS)`,
+      'Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?"). NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).',
+      'Campos do fluxo (só para REGISTRAR se o cliente informar — NÃO pergunte agora):',
+      ...linhas,
+    ].join('\n');
+  }
+
   return [
     `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
     "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO: responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE. Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem.",
@@ -407,9 +422,9 @@ export function renderBlocoDeAtendimento(
     "Se o cliente corrigir um dado já preenchido, o sistema registra a correção — não chame flow_collect para isso; apenas reconheça a mudança na conversa.",
     `Pergunta sem resposta pode ser repetida no máximo ${estado.maxTentativas} vez(es); depois disso, pare de perguntá-la e SIGA a venda normalmente.`,
     "NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido — continue atendendo o cliente. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.",
-    "Perguntas pendentes:",
+    "Campos do fluxo (use só para REGISTRAR se o cliente informar — NUNCA pergunte os que NÃO forem a pergunta da vez):",
     ...linhas,
-    `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(campoPrimeira)}"`,
+    `Faça SOMENTE a pergunta da vez, copiada exatamente: "${textoDaPergunta(campoPrimeira)}". NUNCA pergunte os outros campos listados acima — eles só entram quando virarem, um a um, a pergunta pendente atual.`,
   ].join("\n");
 }
 

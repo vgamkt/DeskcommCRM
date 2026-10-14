@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildFlowIntentPrompt, parseFlowIntents, type FluxoParaIA } from './flow-intent';
+import {
+  buildFlowIntentPrompt,
+  escolherFluxoIniciado,
+  parseFlowIntents,
+  type EscolhaDeFluxosPorIA,
+  type FluxoParaIA,
+} from './flow-intent';
 
 const FLUXOS: FluxoParaIA[] = [
   { id: 'f1', nome: 'Qualificação', gatilhos: ['quero comprar', 'tenho interesse'] },
@@ -60,5 +66,45 @@ describe('parseFlowIntents', () => {
     expect(parseFlowIntents('sem json', FLUXOS)).toEqual([]);
     expect(parseFlowIntents('{quebrado', FLUXOS)).toEqual([]);
     expect(parseFlowIntents('{"fluxos": 123}', FLUXOS)).toEqual([]);
+  });
+});
+
+describe('escolherFluxoIniciado (flow_start sem nome — Jev primeiro, regex só vazio)', () => {
+  const ATIVOS = [
+    { id: 'f1', nome: 'Qualificação' },
+    { id: 'f2', nome: 'Financiamento' },
+    { id: 'f3', nome: 'Troca' },
+  ];
+  const IA_OK = (ids: string[]): EscolhaDeFluxosPorIA => ({
+    ok: true,
+    fluxos: ids.map((id) => ({ id, nome: ATIVOS.find((a) => a.id === id)!.nome })),
+  });
+
+  it('ANTES (caracterização): o regex sozinho decidia, sem a Jev', () => {
+    // Comportamento anterior: só `porGatilho` era consultado.
+    expect(escolherFluxoIniciado(ATIVOS, null, { id: 'f3', nome: 'Troca' })?.id).toBe('f3');
+  });
+
+  it('a IA vence o regex quando escolhe um fluxo ativo', () => {
+    expect(escolherFluxoIniciado(ATIVOS, IA_OK(['f2']), { id: 'f3', nome: 'Troca' })?.id).toBe('f2');
+  });
+
+  it('IA vazia (ok:true, []) → cai no regex', () => {
+    expect(escolherFluxoIniciado(ATIVOS, IA_OK([]), { id: 'f3', nome: 'Troca' })?.id).toBe('f3');
+  });
+
+  it('IA falhou (ok:false) → cai no regex', () => {
+    expect(escolherFluxoIniciado(ATIVOS, { ok: false }, { id: 'f1', nome: 'Qualificação' })?.id).toBe(
+      'f1',
+    );
+  });
+
+  it('IA escolheu fluxo que NÃO está ativo → cai no regex', () => {
+    const ia: EscolhaDeFluxosPorIA = { ok: true, fluxos: [{ id: 'f9', nome: 'Fantasma' }] };
+    expect(escolherFluxoIniciado(ATIVOS, ia, { id: 'f2', nome: 'Financiamento' })?.id).toBe('f2');
+  });
+
+  it('nada decidiu (IA vazia + sem gatilho) → null', () => {
+    expect(escolherFluxoIniciado(ATIVOS, IA_OK([]), null)).toBeNull();
   });
 });

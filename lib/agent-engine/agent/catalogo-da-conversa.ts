@@ -562,6 +562,13 @@ export function montarPedidoDeEscolha(args: {
   catalogo: readonly MotoDoCatalogo[];
   jaDetalhadas: readonly string[];
   textoCitado?: string;
+  /**
+   * A3 (2026-10-13): a moto JÁ ESCOLHIDA na conversa. Entra nas candidatas mesmo se
+   * já "detalhada" — sem isto, uma referência AMBÍGUA a ela ("a Factor vermelha",
+   * havendo outra vermelha) não casava com a escolhida e a Jev elegia OUTRA unidade
+   * (medido ao vivo: `moto_interesse` trocou Factor 150 → Factor 125 K).
+   */
+  escolhidaAtual?: MotoDoCatalogo | null;
 }): { pedido: PedidoAoArbitro; candidatas: MotoDoCatalogo[]; rotulos: string[] } | null {
   const { textoDoModelo, textoDoCliente, catalogo, jaDetalhadas, textoCitado = '' } = args;
   if (catalogo.length === 0) return null;
@@ -574,8 +581,13 @@ export function montarPedidoDeEscolha(args: {
   const citadasDaCitacao = textoCitado === '' ? [] : citadasMaximais(textoCitado, catalogo);
   const ehCitada = (m: MotoDoCatalogo): boolean =>
     citadasDaCitacao.some((c) => normalizarNomeDeMoto(c.nome) === normalizarNomeDeMoto(m.nome));
+  // A3: a JÁ ESCOLHIDA também entra (ver o comentário do parâmetro `escolhidaAtual`).
+  const nomeEscolhidaAtual =
+    args.escolhidaAtual != null ? normalizarNomeDeMoto(args.escolhidaAtual.nome) : '';
+  const ehEscolhidaAtual = (m: MotoDoCatalogo): boolean =>
+    nomeEscolhidaAtual !== '' && normalizarNomeDeMoto(m.nome) === nomeEscolhidaAtual;
   const candidatas = catalogo.filter(
-    (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m),
+    (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m) || ehEscolhidaAtual(m),
   );
   // TRAVA ESTRUTURAL: sem referência a NENHUMA moto mostrada, a mensagem NÃO é
   // escolha ("Sao paulo", "Gostei", "ok", número solto).
@@ -623,6 +635,8 @@ export async function motoEscolhidaPeloClienteComJev(
      * os critérios, numa chamada só): quando presente, NÃO chama a Jev de novo.
      */
     respostasProntas?: RespostasDeJev;
+    /** A3: a moto já escolhida entra nas candidatas (não se perde em match ambíguo). */
+    escolhidaAtual?: MotoDoCatalogo | null;
   },
 ): Promise<MotoDoCatalogo | undefined> {
   const plano = montarPedidoDeEscolha({
@@ -631,6 +645,7 @@ export async function motoEscolhidaPeloClienteComJev(
     catalogo,
     jaDetalhadas,
     textoCitado,
+    escolhidaAtual: deps?.escolhidaAtual ?? null,
   });
   if (plano === null) return undefined;
   const { candidatas, rotulos } = plano;

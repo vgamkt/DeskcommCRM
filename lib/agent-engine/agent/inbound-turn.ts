@@ -35,7 +35,7 @@ import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/
 import type pg from 'pg';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
-import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
+import type { ChannelAdapter, ChannelSendInput, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
 import {
@@ -152,9 +152,11 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { selecionarSkillsComJev } from './skill-select-jev';
 import { rotearConhecimentoComJev } from './knowledge-route-jev';
 import { decidirOfertaComJev } from './oferta-jev';
+import { verificarNarracaoComJev } from './narracao-jev';
 import { decidirNegociacaoComJev, faseDaAcao } from './negociacao-jev';
 import { decidirObjecaoComJev } from './objecao-jev';
 import { chamarTurnoComResiliencia } from './turno-com-resiliencia';
+import { inputSchemaDeEnvio } from './oferta-de-envio';
 import { enviarHandoffPorLentidao } from './handoff-por-lentidao';
 import {
   carregarNegociacao,
@@ -194,9 +196,8 @@ import {
 } from './catalogo-da-conversa';
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
-import { reescreverMensagemJuntada } from './reescrever-complementar';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
-import { perguntaDeMaisOpcoes } from './mais-opcoes';
+import { perguntaDeEscolha, perguntaDeMaisOpcoes } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
 import { perguntaDeObjecaoJev, vereditoDeObjecaoDaJev } from '../../ai/jev/pontos/objecao';
@@ -222,11 +223,16 @@ import { montarConhecimentoDoTurno, renderBlocoDeConhecimento } from './conhecim
 import { abrirAvisoDeLacuna } from './lacuna-de-conhecimento';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
+import { categoriaDoModeloNaReferencia } from './categoria-da-referencia';
+import { categoriaDoModeloComJev } from './modelo-categoria-jev';
+import { CanalComBuffer } from './canal-com-buffer';
+import { unificarPecasDoTurno } from './juncao-do-turno';
+import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
+import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
+import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
 import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
-  fluxoBloqueiaOferta,
-  pedidoExplicitoDeMaisOpcoes,
-  podeOferecerMotos,
+  decidirOfertaComAutoridadeDaJev,
   preferenciaDoCriterio,
   type DecisaoDeOferta,
   type SinaisDeOferta,
@@ -288,7 +294,7 @@ import {
   valorBateComTipo,
 } from '@/lib/followup/captura-do-fluxo';
 import { validarRespostaDoFluxo } from './flow-validate';
-import { escolherFluxosPorIA } from './flow-intent';
+import { escolherFluxoIniciado, escolherFluxosPorIA } from './flow-intent';
 import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -634,27 +640,6 @@ export const MAX_VETOS_DE_FALSO_VAZIO = 2;
  * Soltar não é soltar calado: o fail-safe registra `runLog.warn`.
  */
 export const MAX_VETOS_DE_SPINNING = 2;
-
-/**
- * C-107 (decisão do dono, 2026-09-29): pergunta de ORÇAMENTO determinística.
- * Quando o cliente fala de preço SEM citar valor ("quero uma moto barata") e não
- * há moto atual, o motor NÃO apresenta catálogo e envia ESTA pergunta — o texto
- * do modelo é ignorado neste caso (medido ao vivo: ele dizia "separei estas...").
- * Sem resposta dele, o turno seguinte cai nas mais baratas (regra D5).
- */
-export const PERGUNTA_DE_ORCAMENTO =
-  'Claro! Para eu te mostrar as opções certas, qual valor você tem em mente? ' +
-  'Se preferir, me diga uma faixa (ex.: "até 15 mil").';
-
-/**
- * Pergunta quando o PEDIDO é vago (a Jev do `offer_motos` diz `perguntar`): o
- * cliente quer uma moto mas não deu uso/tipo nem orçamento. Entender antes de
- * despejar o catálogo.
- */
-export const PERGUNTA_DE_NECESSIDADE =
-  'Claro, te ajudo! Me conta só duas coisas para eu acertar de primeira: ' +
-  'qual TIPO de moto você está procurando e quanto você pensa investir? ' +
-  'Assim eu já separo as que combinam com você.';
 
 /**
  * Contingência quando o motor precisa passar o atendimento para uma pessoa e o
@@ -1262,6 +1247,73 @@ const AGENDA_TOOL_NAMES = new Set([
   'crm_book_appointment',
   'crm_reschedule_appointment',
 ]);
+
+/**
+ * Palavras de PEDIDO que não são nome de modelo — filtradas de `termosCitados`
+ * (o "modelo citado" é detectado por exclusão: palavra da mensagem que não está
+ * nos nomes do estoque). Sem isso, "vocês"/"alguma" viram falso termo e a Jev
+ * (degrau 2) é chamada à toa.
+ */
+const STOPWORDS_DE_PEDIDO = new Set([
+  'voce',
+  'voces',
+  'algum',
+  'alguma',
+  'alguns',
+  'algumas',
+  'quero',
+  'queria',
+  'gostaria',
+  'preciso',
+  'procuro',
+  'tenho',
+  'tem',
+  'teria',
+  'uma',
+  'umas',
+  'sobre',
+  'para',
+  'pra',
+  'mais',
+  'tipo',
+  'modelo',
+  'moto',
+  'motos',
+  'esta',
+  'esse',
+  'essa',
+  'isso',
+  'aquele',
+  'aquela',
+  'pode',
+  'poderia',
+  'consigo',
+  'seria',
+  'fazer',
+  'faz',
+  'como',
+  'qual',
+  'quais',
+  'quanto',
+  'quando',
+  'onde',
+  'porque',
+  'entao',
+  'tambem',
+  'ainda',
+  'muito',
+  'tudo',
+  'nada',
+  'sempre',
+  'nunca',
+  'agora',
+  'depois',
+  'antes',
+  'aqui',
+  'ali',
+  'la',
+]);
+
 
 export interface InboundTurnKnobs {
   /** últimas N mensagens no contexto de abertura (LEAD_CONTEXT_HISTORY_LIMIT) */
@@ -2682,9 +2734,18 @@ async function executarTurnoDoAgente(
   // de qualquer chamada de modelo; o canal precisa existir antes deles.
   const turnCrmCfg =
     agentConfig !== null ? { ...deps.crmCfg, agentActorId: agentConfig.agentId } : deps.crmCfg;
-  const channel = preview
+  const channelBruto = preview
     ? null
     : (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
+  // TURNO DE JUNÇÃO (decisão do dono; LIGADO por padrão, desliga com `TURNO_JUNCAO=0`):
+  // o canal GUARDA os envios do turno em vez de entregá-los na hora. No FIM do turno,
+  // se houver mais de uma peça de texto (ex.: resposta + pergunta do fluxo), uma 2ª
+  // chamada UNIFICA tudo numa só mensagem; senão, a fila é liberada como veio. Preview
+  // → canal cru (comportamento de hoje).
+  const juncaoAtiva = !preview && process.env.TURNO_JUNCAO !== '0';
+  const canalComBuffer =
+    channelBruto !== null && juncaoAtiva ? new CanalComBuffer(channelBruto) : null;
+  const channel: ChannelAdapter | null = canalComBuffer ?? channelBruto;
   const liveChannel = (): ChannelAdapter => {
     if (!channel) throw new Error('preview_transport_forbidden');
     return channel;
@@ -3407,82 +3468,52 @@ async function executarTurnoDoAgente(
   // (`vereditoOfertaJev === null`). A Jev NUNCA é corrigida por regex: se ela nega
   // um pedido legítimo, o conserto é o PROMPT dela, não um bypass aqui.
   const decidirOfertaDoTurno = (mensagem: string): DecisaoDeOferta => {
-    // ─── FLUXO DE ATENDIMENTO ATIVO TEM PRIORIDADE SOBRE A OFERTA ────────────
-    // Enquanto o fluxo tiver PERGUNTA PENDENTE, a oferta de motos ESPERA: o
-    // roteiro do fluxo termina antes de a apresentação começar (encadeamento).
-    // Mesmo espírito de duas decisões que já existem: o bloco de "dados
-    // essenciais" CEDE ao fluxo (`fluxoAtivo`), e a negociação tem prioridade
-    // logo abaixo. Sem isto, o motor oferecia motos DURANTE o fluxo e a conversa
-    // ficava confusa (medido ao vivo 2026-10-08). Genérico: vale para TODOS os
-    // fluxos, presentes e futuros. Quando o fluxo conclui (sem pendentes), a
-    // oferta volta a valer — inclusive no mesmo turno.
-    if (fluxoAtendimento !== null && fluxoBloqueiaOferta(fluxoAtendimento.situacao.pendentes.length)) {
-      return { pode: false, motivo: 'fluxo_de_atendimento_em_andamento', criterio: null };
-    }
-    // Há NEGOCIAÇÃO em curso (objeção nova OU resposta à pergunta da 3ª). A
-    // negociação manda — com a Jev (ação dela) OU sem ela (fallback determinístico
-    // pelo estado): `encaminhar_e_encerrar`/persuadir NÃO oferecem; só `mostrar`
-    // (confirmação) oferece. Antes o texto "não quero ver outras opções" caía no
-    // veredito de OFERTA da Jev (que via `pediuMaisOpcoes=true` e liberava motos).
-    if (motivoNegociacao !== null) {
-      const pode = acaoNegociacao !== null ? acaoNegociacao === 'mostrar_opcoes' : confirmouOpcoes;
-      return {
-        pode,
-        motivo: acaoNegociacao !== null ? `negociacao_${acaoNegociacao}` : 'objecao_fallback',
-        criterio: null,
-      };
-    }
-    if (vereditoOfertaJev !== null) {
-      return {
-        pode: vereditoOfertaJev.oferecer,
-        motivo: vereditoOfertaJev.motivo,
-        criterio: vereditoOfertaJev.criterio === 'nenhum' ? null : vereditoOfertaJev.criterio,
-      };
-    }
-    // Fallback determinístico (Jev indisponível neste ponto): pedido explícito de
-    // "mais opções" tem prioridade no fallback.
-    const pedidoExplicito = pedidoExplicitoDeMaisOpcoes(mensagem);
-    if (pedidoExplicito !== null) return pedidoExplicito;
-    return podeOferecerMotos({
+    // ── G3.6 PROMOVIDO (2026-10-10) ──────────────────────────────────────────
+    // O FLUXO de atendimento DEIXOU de ter prioridade sobre a oferta: quem decide
+    // é a Jev. Validado em cenário real — com `fluxo_ativo=true` e a Jev liberando,
+    // o bot apresentou motos (o fluxo não bloqueou mais). O motor não bloqueia
+    // mais a oferta por "fluxo em andamento".
+    // ── G3.5 PROMOVIDO (2026-10-11) ──────────────────────────────────────────
+    // A NEGOCIAÇÃO deixou de ter prioridade sobre a oferta: quem decide é a Jev.
+    // Medido ao vivo: em "tem outras opcoes mais baratas?" a Jev dizia
+    // `veredito_jev: true` (oferecer) mas o motor bloqueava (`negociacao_persuadir_2`,
+    // `pode: false`). O motor não sobrescreve mais a Jev por "negociação em curso".
+    // (Antes, um "não quero ver outras opções" caía no veredito de oferta vendo
+    // `pediuMaisOpcoes=true` e liberava motos — o conserto é o PROMPT da Jev.)
+    // ── G3.10 — REDE DE PROTEÇÃO (2026-10-12) ────────────────────────────────
+    // Um pedido INEQUÍVOCO de catálogo VENCE a Jev: ela não pode NEGAR um pedido
+    // claro ("e uma lander?", "tem uma XRE?", "tem outra?"). Medido ao vivo: em
+    // "e uma lander?" a Jev negou (`jev_negou`) e o bot prometeu sem mostrar. As
+    // exclusões (validação de moto em foco, processo, só-a-moto-em-foco) evitam
+    // abrir a oferta a QUALQUER menção de moto.
+    // B1: a JEV decide (inclusive negativa); a rede determinística só quando o
+    // veredito é `null`. Extraído para função pura (testável).
+    return decidirOfertaComAutoridadeDaJev({
+      vereditoJev: vereditoOfertaJev,
       mensagem,
-      temEscolhaTravada: catalogoDaConversa.escolhida !== null,
-      temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
-      estadoObjecaoAnterior: catalogoDaConversa.objecao,
-      pediuOutraMoto: false,
-      confirmouVerOpcoes: confirmouOpcoes,
-    } satisfies SinaisDeOferta);
+      nomeMotoEmFoco:
+        catalogoDaConversa.escolhida?.nome ??
+        catalogoDaConversa.motos[0]?.nome ??
+        motoAtualDaConversa?.nome ??
+        null,
+      sinais: {
+        mensagem,
+        temEscolhaTravada: catalogoDaConversa.escolhida !== null,
+        temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
+        estadoObjecaoAnterior: catalogoDaConversa.objecao,
+        pediuOutraMoto: false,
+        confirmouVerOpcoes: confirmouOpcoes,
+      } satisfies SinaisDeOferta,
+    });
   };
-  // C-107 (decisão do dono, 2026-09-29): o cliente falou de PREÇO sem citar valor
-  // (ex.: "quero uma moto barata") e não há moto atual → a ação do turno é
-  // PERGUNTAR o orçamento, NÃO apresentar catálogo. Determinístico: só a instrução
-  // de prompt não segurava — o motor apresentava por cima (medido ao vivo).
-  // ⚠️ NÃO quando é OBJEÇÃO: "achei caro" casa `pedePrecoSemValor` (tem "caro",
-  // sem número), mas é OBJEÇÃO — quem responde é a NEGOCIAÇÃO (persuadir), não a
-  // pergunta de orçamento. Sem este gate, o motor SOBRESCREVIA o texto do modelo
-  // por PERGUNTA_DE_ORCAMENTO em toda objeção de preço → respostas idênticas na 1ª
-  // e na 2ª (medido ao vivo 2026-10-07).
-  const precoSemValorTurno =
-    currentInboundText !== null &&
-    currentInboundText.trim() !== '' &&
-    motoAtualDaConversa === null &&
-    !ehObjecaoTurno &&
-    pedePrecoSemValor(currentInboundText);
-  // A Jev do `offer_motos` pode dizer que o pedido é VAGO (`perguntar`): antes de
-  // despejar o catálogo, PERGUNTAR o que falta (uso/tipo/orçamento). Mesma
-  // mecânica do C-107 — a pergunta sai no lugar do texto do modelo.
-  // D3 (decisão do dono, 2026-10-09): se o cliente JÁ deu ALGUM critério (orçamento
-  // OU um tipo/modelo de moto, ou já há moto em foco), NÃO perguntar — mostrar o
-  // catálogo. A pergunta de necessidade/orçamento só vale quando NADA foi dado.
-  const jaTemCriterioDeOferta =
-    orcamentoTurno !== null ||
-    motoAtualDaConversa !== null ||
-    catalogoDaConversa.motos.length > 0 ||
-    (currentInboundText !== null && currentInboundText.trim() !== '' && mencionaMoto(currentInboundText));
-  const perguntaDeFaltaTurno =
-    !jaTemCriterioDeOferta && (precoSemValorTurno || vereditoOfertaJev?.perguntar === true);
-  const textoPerguntaFaltaTurno = precoSemValorTurno
-    ? PERGUNTA_DE_ORCAMENTO
-    : PERGUNTA_DE_NECESSIDADE;
+  // ── G3.2 + G3.3 PROMOVIDOS (2026-10-10) ─────────────────────────────────────
+  // O motor NÃO troca mais o texto do modelo por pergunta fixa (nem orçamento nem
+  // necessidade): a IA escreve. Validado em cenário real — o bot escreveu as
+  // próprias perguntas ("Qual valor máximo…", "…ou quer que eu te mostre algumas
+  // opções?"), sem catálogo. As constantes PERGUNTA_DE_ORCAMENTO e
+  // PERGUNTA_DE_NECESSIDADE e o `perguntaDeFaltaTurno` saíram com estes itens.
+  // Quem barra o catálogo no pedido vago é a Jev (`offer_motos` = `perguntar`) +
+  // a Camada 1 (`motos` fora do schema do `send_message`).
   // C-107: o cliente citou um ANO explicitamente (ex.: "quero uma moto de 2024")?
   // Nesse caso o bloqueio do ano é suspenso SÓ neste turno — o ano vira obrigatório.
   const clienteCitouAno =
@@ -3622,7 +3653,7 @@ async function executarTurnoDoAgente(
   // Quando ligada, é ela quem escolhe QUAIS skills entram (o matcher por keyword
   // traz corpo demais/errado). O matcher segue rodando para a EXCLUSÃO
   // (`unless_keywords`) e a telemetria de near-miss. Fallback = matcher.
-  let skillMatch = !preview
+  const skillMatch = !preview
     ? await selecionarSkillsComJev(
         pool,
         tenantId,
@@ -3632,22 +3663,11 @@ async function executarTurnoDoAgente(
         escolhidas === null ? skillMatchBase : matchSkillsPorNomes(skills, escolhidas),
       )
     : skillMatchBase;
-  // ── COERÊNCIA COM A OFERTA ────────────────────────────────────────────────
-  // A Jev negou a oferta (ex.: objeção de preço)? Então a skill de CATÁLOGO não
-  // pode entrar — ela instrui a apresentar motos e fazia o modelo oferecer por
-  // cima do veredito (medido ao vivo 2026-10-03: objeção recebeu motos porque a
-  // skill `catalogo-apresentacao` foi escolhida junto de `objecao-preco`).
-  if (vereditoOfertaJev !== null && !vereditoOfertaJev.oferecer) {
-    const semCatalogo = skillMatch.matched.filter(
-      (s) => !/catalogo|apresenta|oferta|semelhant/i.test(s.name),
-    );
-    if (semCatalogo.length !== skillMatch.matched.length) {
-      runLog.info('skill de catálogo removida — a Jev negou a oferta neste turno', {
-        removidas: skillMatch.matched.filter((s) => !semCatalogo.includes(s)).map((s) => s.name),
-      });
-      skillMatch = { ...skillMatch, matched: semCatalogo };
-    }
-  }
+  // ── G3.4 PROMOVIDO (2026-10-10) ─────────────────────────────────────────────
+  // O motor DEIXOU de remover a skill de catálogo quando a Jev nega a oferta. Quem
+  // decide o que entra é o `skill_select` da Jev; e a Camada 1 (schema `motos` fora
+  // do `send_message`) garante que a oferta não sai mesmo com a skill presente.
+  // Validado em cenário real (com a flag, `skill removida`=0 e sem regressão).
   // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
   // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
   // por keyword vence, e a mesma skill não entra duas vezes. A skill da
@@ -3730,6 +3750,14 @@ async function executarTurnoDoAgente(
    * a correção depende.
    */
   const mcpToolIdsDoTurno: string[] = [];
+
+  // ── CAMADA 1: a ferramenta reflete a decisão de oferta do turno ─────────────
+  // Fonte ÚNICA: a MESMA `decidirOfertaDoTurno` que a régua usa no envio. Se a
+  // oferta NÃO está liberada (Jev negou / pediu perguntar / fluxo ativo /
+  // negociação), o `send_message` NÃO expõe `motos` — a IA não tenta enviar uma
+  // oferta que a régua bloquearia. Era daí que vinha o loop
+  // `breaker: same_tool_failure` → `agent_turn aborted` (medido ao vivo 2026-10-10).
+  const ofertaLiberada = decidirOfertaDoTurno(mensagemDoJob ?? '').pode;
 
   const rawTools: ToolSet = {
     read_skill: tool({
@@ -3977,18 +4005,33 @@ async function executarTurnoDoAgente(
         } else if (ativos.length === 1) {
           alvo = ativos[0]!;
         } else {
-          // O modelo omitiu o nome e há mais de um fluxo: tenta casar pelo ASSUNTO
-          // da mensagem (mesma régua determinística do gatilho). Sem casar, devolve
-          // a ambiguidade com a lista — e o erro diz para nomear, em vez de deixar
-          // o modelo repetir a chamada idêntica.
-          const porGatilho = await escolherFluxoPeloGatilho(pool, {
-            organizationId: tenantId,
-            texto: currentInboundText,
-            contactId: leadId,
-          });
-          if (porGatilho !== null) {
-            alvo = ativos.find((f) => f.id === porGatilho.id) ?? null;
-          }
+          // O modelo omitiu o nome e há mais de um fluxo: quem decide é a INTENÇÃO
+          // (Jev → modelo de chat), a MESMA régua da entrada principal do turno
+          // (`escolherFluxosPorIA`). O regex por palavra-gatilho é só o ÚLTIMO
+          // recurso — e só quando a IA não escolheu nada. Antes, o regex decidia
+          // sozinho, sem consultar a Jev (medido no inventário P2).
+          const porIA = await escolherFluxosPorIA(
+            pool,
+            deps.llmCfg,
+            {
+              organizationId: tenantId,
+              contactId: leadId,
+              texto: currentInboundText,
+              model: agentConfig?.model ?? '',
+              provider: agentConfig?.provider ?? null,
+              jobId: liveJob().id,
+            },
+            { log: runLog },
+          );
+          const porGatilho =
+            porIA.ok && porIA.fluxos.length > 0
+              ? null
+              : await escolherFluxoPeloGatilho(pool, {
+                  organizationId: tenantId,
+                  texto: currentInboundText,
+                  contactId: leadId,
+                });
+          alvo = escolherFluxoIniciado(ativos, porIA, porGatilho);
           if (alvo === null) {
             return {
               ok: false,
@@ -4321,6 +4364,8 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
+      // Camada 1: `motos` só existe se a decisão de oferta liberou.
+      inputSchema: inputSchemaDeEnvio(AGENT_TOOL_DEFS.send_message.inputSchema, ofertaLiberada),
       execute: async ({ body, media_url, media_urls, motos, fonte_ids }) => {
         // CONFERÊNCIA (Fase 2.2): o modelo registra QUAIS trechos da base usou. É o
         // elo auditável — a decisão de buscar é da Jev; aqui fica o que ele USOU.
@@ -4355,7 +4400,7 @@ async function executarTurnoDoAgente(
         // trim/gates. Recusar aqui devolve ao modelo para reescrever — nunca
         // manda bolha em branco.
         // C-107: preço sem valor (ou pedido vago) → o corpo é a PERGUNTA determinística; não barra.
-        if (!perguntaDeFaltaTurno && body.trim() === '' && (media_urls ?? []).length === 0 && media_url === undefined) {
+        if (body.trim() === '' && (media_urls ?? []).length === 0 && media_url === undefined) {
           return {
             ok: false,
             error: {
@@ -4405,16 +4450,14 @@ async function executarTurnoDoAgente(
         for (const m of [...catalogoDoTurno, ...catalogoDaConversa.motos]) {
           for (const f of m.fotos) fotosDoCatalogoConhecidas.add(f);
         }
-        const fotosDeclaradas = perguntaDeFaltaTurno
-          ? []
-          : [
-              ...new Set(
-                [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
-                  .flatMap((u) => String(u).split('|'))
-                  .map((s) => s.trim())
-                  .filter((s) => /^https?:\/\//i.test(s)),
-              ),
-            ].filter((s) => !fotosDoCatalogoConhecidas.has(s));
+        const fotosDeclaradas = [
+          ...new Set(
+            [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
+              .flatMap((u) => String(u).split('|'))
+              .map((s) => s.trim())
+              .filter((s) => /^https?:\/\//i.test(s)),
+          ),
+        ].filter((s) => !fotosDoCatalogoConhecidas.has(s));
         // FOTO QUE O MODELO ESQUECEU (formato do dono, 2026-09-19): se ele NÃO
         // mandou mídia mas citou no texto motos que `crm_query_external_data`
         // devolveu neste turno, o motor manda o TEXTO dele (mensagem inicial +
@@ -4469,6 +4512,7 @@ async function executarTurnoDoAgente(
                 catalogo: catalogoEfetivo,
                 jaDetalhadas: catalogoDaConversa.detalhadas,
                 textoCitado: textoCitadoDoTurno,
+                escolhidaAtual: catalogoDaConversa.escolhida,
               })
             : null;
         // O gate dos critérios é o MESMO do bloco do `planoAutomatico` (abaixo):
@@ -4536,6 +4580,7 @@ async function executarTurnoDoAgente(
                   db: pool,
                   tenantId,
                   log: runLog,
+                  escolhidaAtual: catalogoDaConversa.escolhida,
                   ...(vereditoArbitro?.porPonto.moto_escolhida !== undefined
                     ? { respostasProntas: vereditoArbitro.porPonto.moto_escolhida }
                     : {}),
@@ -4621,9 +4666,6 @@ async function executarTurnoDoAgente(
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
           // alternativas (usado para gravar a moto de referência).
           motosConsultadasPeloModelo = [...catalogoDoTurno];
-          // C-107: preço sem valor → NÃO apresentar catálogo. A ação é PERGUNTAR o
-          // orçamento (skill). Sem este gate, o motor apresentava por cima do modelo.
-          if (perguntaDeFaltaTurno) return [];
           // Campos da legenda configurados pelo dono (C-067): colunas marcadas
           // com "Mostrar", por nome, com o papel para o rótulo. Vazio = deixa o
           // motor usar o comportamento antigo (ano/cor/km/preço).
@@ -4823,6 +4865,67 @@ async function executarTurnoDoAgente(
             // Rede de segurança: leitura do banco falhou → usa o guardado da conversa
             // (comportamento antigo), em vez de ficar sem candidatos.
             if (doBanco.length === 0) candidatos = mesclarMotos(candidatos, catalogoDaConversa.motos);
+            // ── DEGRAU 1: categoria do modelo CITADO que NÃO está no estoque ──────
+            // Só em turno de CATÁLOGO (o cliente fala de motos). Se ele citou um modelo
+            // que não temos (ex.: "Lander"), buscamos a CATEGORIA na referência `modelos`
+            // e filtramos o estoque por ela — parecidas DE VERDADE (trail → XTZ/XRE),
+            // em vez de casar por cilindrada ("Lander 250" → qualquer 250).
+            if (turnoDeCatalogo && currentInboundText !== null && catalogoMapeamento !== null) {
+              const palavras = [
+                ...new Set(currentInboundText.toLowerCase().match(/[a-zà-ú]{4,}/g) ?? []),
+              ];
+              const nomesEstoque = candidatos.map((m) => m.nome.toLowerCase()).join(' ');
+              const termosCitados = palavras.filter(
+                (p) =>
+                  !nomesEstoque.includes(p) &&
+                  !STOPWORDS_DE_PEDIDO.has(p.normalize('NFD').replace(/[\u0300-\u036f]/g, '')),
+              );
+              if (termosCitados.length > 0) {
+                // DEGRAU 1: referência `modelos` (determinístico).
+                let catRef = await categoriaDoModeloNaReferencia(
+                  deps.crmCfg.supabase,
+                  tenantId,
+                  catalogoMapeamento,
+                  termosCitados,
+                );
+                let fonteCat = 'referencia';
+                // DEGRAU 2: a referência não tem o modelo → a JEV decide a categoria
+                // (escolha fechada sobre as categorias REAIS do estoque).
+                if (catRef === null) {
+                  const categorias = [
+                    ...new Set(
+                      candidatos
+                        .map((m) => (m.valores?.categoria ?? m.valores?.tipo ?? '').trim())
+                        .filter((c) => c !== ''),
+                    ),
+                  ];
+                  if (categorias.length > 0) {
+                    catRef = await categoriaDoModeloComJev(
+                      pool,
+                      tenantId,
+                      termosCitados.join(' '),
+                      categorias,
+                      runLog,
+                    );
+                    fonteCat = 'jev';
+                  }
+                }
+                if (catRef !== null) {
+                  runLog.info('catálogo: categoria do modelo citado', {
+                    termos: termosCitados,
+                    categoria: catRef,
+                    fonte: fonteCat,
+                  });
+                  // FAIXA de TEXTO na coluna `categoria` — é o caminho do filtro ESTRITO
+                  // (C-106) que casa a célula por conteúdo (ex.: "Trail, On-Off Road").
+                  faixasDoTurno = { ...faixasDoTurno, categoria: [catRef] };
+                  criteriosDoTurno['categoria'] = catRef;
+                  if (!exigidosDoTurno.includes('categoria')) {
+                    exigidosDoTurno = [...exigidosDoTurno, 'categoria'];
+                  }
+                }
+              }
+            }
             // Regra do dono (2026-09-25): MODELO que EXISTE → todas as unidades
             // que casam (toggle A `especificacao_mostra_todas`); modelo que NÃO
             // existe → N alternativas (toggle B `usar_limite_quantidade`).
@@ -4951,17 +5054,22 @@ async function executarTurnoDoAgente(
                 if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
               }
               motosOferecidasNesteTurno = [...selecao.motos];
-              temMaisOpcoesNesteTurno = selecao.temMaisOpcoes;
+              // Decisão do dono: na APRESENTAÇÃO (antes de o cliente escolher) o convite
+              // "quer ver mais opções parecidas?" aparece SEMPRE (a IA pergunta de forma
+              // natural). Com a moto de interesse já travada, NÃO convida — só se o cliente
+              // PEDIR (caminho da fila). Espelha o `escolha_travada` do `podeOferecerMotos`.
+              temMaisOpcoesNesteTurno =
+                selecao.motos.length > 0 && catalogoDaConversa.escolhida === null;
               // C-089: guarda a FILA das que casaram mas ficaram fora do teto N,
-              // para o próximo "quero ver mais opções" consumir sem repetir. O
-              // MESMO PERFIL (marca/categoria) vai primeiro; depois as demais.
-              if (selecao.temMaisOpcoes) {
+              // para o próximo "quero ver mais opções" consumir sem repetir. SÓ o MESMO
+              // PERFIL (marca/categoria) entra na fila — o "mais opções" entrega motos que
+              // CASAM (parecidas), nunca as "demais" (decisão do dono, 2026-10-11).
+              if (selecao.temMaisOpcoes || selecao.casadas.length > 0) {
                 const jaEnviadas = new Set(selecao.motos.map((m) => m.nome));
                 const perfil = selecao.perfil;
                 const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
                 // C-106: as que CASARAM e ainda não foram enviadas vão PRIMEIRO na
-                // fila do "quer ver mais?" — depois o mesmo perfil e, por fim, as
-                // demais. Sem isto, o "mais opções" mostrava moto que nem casou.
+                // fila do "quer ver mais?" — depois o mesmo perfil. NUNCA as demais.
                 const casadasNaoEnviadas = selecao.casadas.filter(
                   (m) => !jaEnviadas.has(m.nome),
                 );
@@ -4980,11 +5088,10 @@ async function executarTurnoDoAgente(
                   };
                   const restantes = pendentesBrutos.filter((m) => !casadasSet.has(m.nome));
                   const mesmoPerfil = restantes.filter((m) => casaPerfil(m, perfilSet));
-                  const demais = restantes.filter((m) => !mesmoPerfil.includes(m));
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
-                    pendentes: [...casadasNaoEnviadas, ...mesmoPerfil, ...demais],
+                    pendentes: [...casadasNaoEnviadas, ...mesmoPerfil],
                   };
                 }
               } else {
@@ -5331,9 +5438,9 @@ async function executarTurnoDoAgente(
             leadId,
             jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
-            // C-107: preço sem valor / pedido vago → o corpo enviado é a PERGUNTA
-            // (o texto do modelo, que insistia em "separei opções", é ignorado).
-            body: perguntaDeFaltaTurno ? textoPerguntaFaltaTurno : body,
+            // G3.2/G3.3 promovidos: o corpo é SEMPRE o texto do modelo (a IA
+            // escreve as perguntas de orçamento/necessidade). Sem troca pelo motor.
+            body,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -5357,7 +5464,9 @@ async function executarTurnoDoAgente(
             // aprovado pela Meta; vetá-lo devolveria ao modelo a culpa por uma frase que
             // não é dele, e a única saída seria o silêncio. O follow-up determinístico
             // idem (ver GateContext.internalVocabularyEnforced).
-            enforceInternalVocabulary: true,
+            // Narração PROMOVIDA: a regex de vocabulário interno está DESLIGADA — quem
+            // decide é a Jev (ponto `narracao`), logo abaixo, antes do envio.
+            enforceInternalVocabulary: false,
             // Fase 2 do fluxo robusto: com um fluxo de atendimento ATIVO, veta a
             // costura mecânica ("como estamos falando disso, vamos continuar").
             // Sem fluxo, o gate fica desarmado — é estilo, não dano a prevenir.
@@ -5387,10 +5496,45 @@ async function executarTurnoDoAgente(
             send: (finalBody: string) => {
               corposEnviados.push(finalBody);
               const cfg = agentConfig?.catalogConfig;
+              // FECHO DO TURNO (ponto ÚNICO de todos os caminhos): se vamos MOSTRAR
+              // motos e há fluxo com pergunta pendente, a pergunta do turno é a de
+              // VENDA (escolha), não a do fluxo. O motor GARANTE (determinístico); a
+              // pergunta do fluxo fica para o próximo turno. Medido ao vivo: sem isto o
+              // modelo troca a venda pela pergunta do roteiro e a conversa não avança.
+              let corpoFinal = finalBody;
+              const vaiMostrarMotos =
+                (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) ||
+                fotos.length > 0;
+              const pendenteFecho =
+                fluxoAtendimento !== null ? fluxoAtendimento.situacao.pendentes[0] : undefined;
+              if (vaiMostrarMotos && pendenteFecho !== undefined) {
+                const p = pendenteFecho.config;
+                const perguntaFluxo = textoDaPergunta({
+                  key: p.key,
+                  label: p.label,
+                  type: p.type,
+                  ...(p.options !== undefined ? { options: p.options } : {}),
+                  ...(p.question !== undefined ? { question: p.question } : {}),
+                });
+                const ajuste = ajustarFechoDoTurnoDeCatalogo({
+                  corpo: finalBody,
+                  perguntaDoFluxo: perguntaFluxo,
+                  variacao: pedidosDeOpcoesTurno,
+                  temEscolha: catalogoDaConversa.escolhida !== null,
+                });
+                if (ajuste.ajustado) {
+                  corpoFinal = ajuste.corpo;
+                  runLog.info('fecho do turno de catálogo ajustado (venda vence o fluxo)', {
+                    job_id: liveJob().id,
+                    antes: finalBody.slice(0, 120),
+                    depois: corpoFinal.slice(0, 120),
+                  });
+                }
+              }
               // Apresentação (motor escolheu as motos): 1 foto por moto com a
               // legenda dela (ou agrupada, se o toggle pedir).
               if (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) {
-                return enviarApresentacao(planoAutomatico, finalBody, cfg?.foto_por_moto === false);
+                return enviarApresentacao(planoAutomatico, corpoFinal, cfg?.foto_por_moto === false);
               }
               // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
               // mesmo formato — texto, depois as fotos (sem legenda), depois a
@@ -5398,11 +5542,11 @@ async function executarTurnoDoAgente(
               if (fotos.length > 0) {
                 return enviarApresentacao(
                   fotos.map((url) => ({ url, legenda: '' })),
-                  finalBody,
+                  corpoFinal,
                   false,
                 );
               }
-              return sendInBubbles(finalBody, {
+              return sendInBubbles(corpoFinal, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
@@ -5451,6 +5595,41 @@ async function executarTurnoDoAgente(
                 });
             },
           };
+          // ── TURNO DE VERIFICAÇÃO DA JEV (narração?) — PROMOVIDO ─────────────────
+          // A Jev (decisora) confere se o texto é NARRAÇÃO INTERNA (bastidor/outro
+          // idioma/relato a terceiro). Se for → ABRE UM CASO para o administrador e
+          // devolve erro-de-ensino (a IA reescreve como fala ao cliente). Senão →
+          // passa normal. A regex `internal_vocabulary` está DESLIGADA (a Jev decide).
+          if (body.trim() !== '') {
+            const ehNarracao = await verificarNarracaoComJev(pool, tenantId, body, runLog);
+            if (ehNarracao === true) {
+              await openCase(
+                pool,
+                {
+                  tenantId,
+                  conversationId: input.conversationId,
+                  agentId: agentConfig?.agentId ?? null,
+                },
+                {
+                  title: 'A IA gerou narração interna (bastidor)',
+                  summary: body,
+                  blocker:
+                    'A Jev detectou narração interna/bastidor (ou outro idioma) na resposta; a IA foi instruída a reescrever como fala ao cliente.',
+                  source: 'guardrail_autofallback',
+                  contextSnapshot: buildCaseContextSnapshot(),
+                },
+              ).catch(() => {});
+              return {
+                ok: false,
+                error: {
+                  code: 'narracao_interna',
+                  message:
+                    'Esse texto é narração de bastidor (ou outro idioma), não uma fala ao cliente. ' +
+                    'Reescreva como a vendedora falando DIRETAMENTE com o cliente (2ª pessoa, "você"), em português, sem relatar a si mesma.',
+                },
+              };
+            }
+          }
           let chain = await runBeforeSend(beforeSendArgs);
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
             // Wave 4 — fail-safe da invariante sagrada: o lead NUNCA recebe promessa-de-
@@ -6562,6 +6741,9 @@ async function executarTurnoDoAgente(
     // PRIORIDADE DA OBJEÇÃO SOBRE O FLUXO (declarado aqui para o brief e os blocos).
     const objecaoTemPrioridade =
       acaoNegociacao !== null && acaoNegociacao !== 'mostrar_opcoes' && acaoNegociacao !== 'nenhuma';
+    // A decisão de oferta DESTE turno (a MESMA usada no envio) — alimenta o brief
+    // (catálogo liberado/bloqueado) e o "turno de catálogo" (a venda fecha).
+    const decisaoDeOfertaDoTurno = decidirOfertaDoTurno(mensagemDoJob ?? currentInboundText ?? '');
     const blocoBriefDaJev = usaBriefDaJev
       ? renderBriefDoTurno({
           estagioHint: stageHintBlock,
@@ -6573,6 +6755,8 @@ async function executarTurnoDoAgente(
           descricaoDaMoto,
           fluxo: objecaoTemPrioridade ? null : fluxoAtendimento,
           finalizacao: finalizacaoDoFluxo,
+          podeOferecer: decisaoDeOfertaDoTurno.pode,
+          mostrouMotos: decisaoDeOfertaDoTurno.pode,
           ...(diretrizDoTurno !== '' ? { diretriz: diretrizDoTurno } : {}),
         })
       : '';
@@ -6587,7 +6771,7 @@ async function executarTurnoDoAgente(
     });
     const blocoFluxoCru =
       fluxoAtendimento && !objecaoTemPrioridade
-        ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo)
+        ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo, decisaoDeOfertaDoTurno.pode)
         : '';
     if (usaBriefDaJev) {
       runLog.info('brief do turno ativo (Jev)', {
@@ -6835,6 +7019,17 @@ async function executarTurnoDoAgente(
       opts?: { semNeutroSeVetado?: boolean },
     ): Promise<'sent' | 'neutro' | 'falhou'> => {
       if (preview || texto.trim() === '' || seq >= maxSendsPerTurn) return 'falhou';
+      // ── TURNO DE VERIFICAÇÃO DA JEV (narração?) — cobre TODOS os envios do motor ─
+      // Este é o ponto único por onde sai QUALQUER texto do motor (contingência,
+      // texto livre do modelo na rede nunca-mudo, reescrita). A regex antiga
+      // (`internal_vocabulary`) deixou passar "Respondido ao Vander:" (particípio);
+      // a Jev decide e, se for narração, NÃO envia.
+      if (await verificarNarracaoComJev(pool, tenantId, texto, runLog).then((v) => v === true).catch(() => false)) {
+        runLog.warn('envio do motor bloqueado — a Jev detectou narração interna', {
+          chars: texto.length,
+        });
+        return 'falhou';
+      }
       const tentar = async (corpo: string): Promise<boolean> => {
         const r = await runBeforeSend({
           pool,
@@ -6850,10 +7045,9 @@ async function executarTurnoDoAgente(
           // Texto de fechamento do motor: determinístico, não é blast.
           enforceSpinning: false,
           // O texto de contingência PODE ser o texto livre do modelo (rede "nunca
-          // terminar sem resposta"): arma a rede de vocabulário interno E de nota
-          // interna, como no `send_message`. Sem isto, um status do modelo vazava
-          // para o cliente (medido 2026-10-05).
-          enforceInternalVocabulary: true,
+          // terminar sem resposta"). A regex de vocabulário interno está DESLIGADA —
+          // quem decide narração é a Jev (no topo desta função, ponto único).
+          enforceInternalVocabulary: false,
           now: clock(),
           ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
           ...(lgpd !== undefined ? { lgpd } : {}),
@@ -7131,10 +7325,17 @@ async function executarTurnoDoAgente(
     if (runError !== null) {
       throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
     }
-    if (outcomes.some((o) => o.kind === 'failed')) {
-      // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
-      // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
+    // ⚠️ Só re-tenta (re-roda o run inteiro) quando NADA foi entregue. Com envio
+    // PARCIAL, o retry reenvia e duplica (ver `re-tentativa-de-envio.ts`).
+    if (deveReTentarTurnoPorEnvio(outcomes)) {
       throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+    }
+    const falhasO = outcomes.filter((o) => o.kind === 'failed').length;
+    if (falhasO > 0) {
+      runLog.warn('envio parcial falhou — turno NÃO re-tentado (evita duplicar mensagens)', {
+        pecas_falhas: falhasO,
+        pecas_enviadas: outcomes.length - falhasO,
+      });
     }
 
     // FASE 2 — TRAVA "A PERGUNTA SAIU?" (motor): a pergunta pendente do fluxo é
@@ -7198,6 +7399,17 @@ async function executarTurnoDoAgente(
         if (perguntaSaiuNosTextos(pergunta, textosDoTurno)) {
           eventoPergunta('modelo');
         } else {
+          // G3.7: a JEV decide se a pergunta do roteiro sai agora. Sem binding/erro
+          // (`null`) → cai no comportamento de sempre (o motor reenvia).
+          const perguntarAgora = await decidirPerguntaDoFluxoComJev(
+            pool,
+            tenantId,
+            { pergunta, falaDoCliente: currentInboundText ?? mensagemDoJob ?? '' },
+            runLog,
+          ).catch(() => null);
+          if (perguntarAgora === false) {
+            runLog.info('trava da pergunta: a Jev mandou esperar — não reenvia neste turno');
+          } else {
           try {
             const chain = await runBeforeSend({
               pool,
@@ -7240,6 +7452,7 @@ async function executarTurnoDoAgente(
             runLog.warn('trava da pergunta do fluxo falhou — o turno segue', {
               error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
             });
+          }
           }
         }
       }
@@ -7675,46 +7888,101 @@ async function executarTurnoDoAgente(
       }
     }
 
-    // ── TEXTO AVULSO → JUNTA E REESCREVE (decisão do dono, 2026-10-09) ────────
-    // O modelo às vezes usa `send_message` E ainda escreve um TEXTO AVULSO. NÃO
-    // descartar: juntar (mensagem do modelo + avulso) e mandar de NOVO ao LLM para
-    // REESCREVER numa única mensagem coesa — chamada SIMPLES, só com o conteúdo + as
-    // regras inegociáveis (sem skill/RAG). A reescrita passa pela régua e é enviada.
-    if (
-      !preview &&
-      liveJob().kind === 'inbound_turn' &&
-      outcomes.length > 0 &&
-      seq < maxSendsPerTurn
-    ) {
-      const rascunho = (turn.result.text ?? '').trim();
-      if (rascunho.length >= 12) {
-        const reescrita = await reescreverMensagemJuntada({
+    // ── TEXTO AVULSO (Camada 2-B PROMOVIDA 2026-10-11) ────────────────────────
+    // A junção/reescrita do texto avulso foi REMOVIDA: ela gerava uma 2ª bolha
+    // (duplicação ou amontoamento de venda+fluxo). Regra do dono: UMA mensagem por
+    // turno. O texto avulso do modelo (fora do `send_message`) é descartado — quem
+    // responde ao cliente é o `send_message` (com o fluxo entrando por ele).
+
+    // ── TURNO DE JUNÇÃO (flag `TURNO_JUNCAO=1`) — libera a fila do canal ──────
+    // O canal guardou TODOS os envios do turno (modelo + trava da pergunta + motor).
+    // Se houver mais de uma PEÇA DE TEXTO (ex.: resposta + pergunta do fluxo), uma
+    // 2ª chamada UNIFICA tudo numa só mensagem — a regra do dono: UMA mensagem por
+    // turno.
+    //
+    // ⚠️ NÃO junta quando há MÍDIA (fotos do catálogo): a apresentação tem formato
+    // PRÓPRIO — intro (texto) → fotos → pergunta final (texto) — e fundir o texto
+    // jogaria a pergunta para ANTES das fotos (medido ao vivo 2026-10-13: ficou
+    // estranho e ainda engoliu as fotos). Nesses turnos, a fila sai como produzida.
+    if (canalComBuffer !== null) {
+      const pecas = canalComBuffer.pecas();
+      const textos = canalComBuffer.pecasDeTexto();
+      const temMidia = pecas.some((p) => p.media !== undefined || p.template !== undefined);
+      let finais: readonly ChannelSendInput[] = pecas;
+      if (textos.length >= 2 && !temMidia) {
+        // A pergunta PENDENTE do roteiro (a que a junção deve preservar e as outras descartar).
+        const pendenteDoTurno = atendimento?.situacao.pendentes[0];
+        const pendenteTexto =
+          pendenteDoTurno !== undefined &&
+          valoresDoFluxo !== null &&
+          !valoresDoFluxo.has(pendenteDoTurno.config.key)
+            ? textoDaPergunta({
+                key: pendenteDoTurno.config.key,
+                label: pendenteDoTurno.config.label,
+                type: pendenteDoTurno.config.type,
+                ...(pendenteDoTurno.config.options !== undefined
+                  ? { options: pendenteDoTurno.config.options }
+                  : {}),
+                ...(pendenteDoTurno.config.question !== undefined
+                  ? { question: pendenteDoTurno.config.question }
+                  : {}),
+              })
+            : null;
+        const unificado = await unificarPecasDoTurno(
           pool,
-          llmCfg: deps.llmCfg,
-          log: runLog,
-          tenantId,
-          leadId: leadId || null,
-          jobId: liveJob().id,
-          ...(agentConfig !== null
-            ? {
-                model: agentConfig.model,
-                llmOverride: {
-                  provider: agentConfig.provider,
-                  credentialId: agentConfig.credentialId,
-                },
-              }
-            : {}),
-          enviadas: corposEnviados,
-          rascunho,
-          ...(deps.registry !== undefined ? { registry: deps.registry } : {}),
-        });
-        if (reescrita !== null && reescrita !== '' && seq < maxSendsPerTurn) {
-          const desfecho = await enviarTextoDoMotor(reescrita, { semNeutroSeVetado: true });
-          runLog.info('texto avulso junto e reescrito (revisor)', {
-            desfecho,
-            chars: reescrita.length,
+          deps.llmCfg,
+          { tenantId, leadId, jobId: liveJob().id },
+          { pecas: textos.map((p) => p.body), pendente: pendenteTexto },
+          { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+        );
+        if (unificado !== null) {
+          // FECHO DO TURNO DE CATÁLOGO — ponto FINAL, DEPOIS da junção: se o turno
+          // MOSTROU FOTOS de moto e há pergunta do fluxo pendente, o fecho do turno é
+          // a de VENDA (escolha) — a do fluxo fica para o próximo turno. É AQUI, e não
+          // antes, porque a junção reescreve o texto e desfaria um ajuste anterior.
+          const mostrouFotos = pecas.some((p) => p.media !== undefined);
+          const corpoFinalUnificado =
+            mostrouFotos && pendenteTexto !== null
+              ? ajustarFechoDoTurnoDeCatalogo({
+                  corpo: unificado,
+                  perguntaDoFluxo: pendenteTexto,
+                  variacao: pedidosDeOpcoesTurno,
+                  temEscolha: catalogoDaConversa.escolhida !== null,
+                }).corpo
+              : unificado;
+          const primeira = textos[0]!;
+          const montadas: ChannelSendInput[] = [];
+          let inseriu = false;
+          for (const p of pecas) {
+            if (p.media !== undefined || p.template !== undefined) {
+              montadas.push(p);
+              continue;
+            }
+            if (!inseriu) {
+              montadas.push({ ...primeira, body: corpoFinalUnificado });
+              inseriu = true;
+            }
+          }
+          finais = montadas;
+          runLog.info('turno de junção: peças unificadas numa só', {
+            pecas_texto: textos.length,
+            bolhas_finais: montadas.length,
+            fecho_catalogo: mostrouFotos && pendenteTexto !== null,
           });
         }
+      }
+      const desfechosReais = await canalComBuffer.liberar(finais);
+      // ⚠️ Só re-tenta quando NADA foi entregue (ver `re-tentativa-de-envio.ts`):
+      // re-rodar o modelo reenvia e DUPLICA (medido ao vivo 2026-10-14).
+      if (deveReTentarTurnoPorEnvio(desfechosReais)) {
+        throw new Error('envio marcado como failed pelo CRM (liberação da junção) — run re-tentado');
+      }
+      const falhas = desfechosReais.filter((o) => o.kind === 'failed').length;
+      if (falhas > 0) {
+        runLog.warn('envio parcial falhou — turno NÃO re-tentado (evita duplicar mensagens)', {
+          pecas_falhas: falhas,
+          pecas_enviadas: desfechosReais.length - falhas,
+        });
       }
     }
 

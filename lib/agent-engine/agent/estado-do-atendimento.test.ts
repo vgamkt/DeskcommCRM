@@ -63,7 +63,7 @@ describe('renderBlocoDeEstado', () => {
     expect(comEscolha).not.toContain('Moto em foco nesta conversa');
   });
 
-  it('declara a descrição da moto em foco (apresentação/objeção) — e some sem ela', () => {
+  it('declara a descrição da moto em foco como REFERÊNCIA (só sob pergunta/objeção) — e some sem ela', () => {
     const comDescricao = renderBlocoDeEstado({
       contact: { name: 'Vander', custom_fields: {} },
       escolhida: TWISTER,
@@ -74,6 +74,9 @@ describe('renderBlocoDeEstado', () => {
     });
     expect(comDescricao).toContain('Descrição da moto EM FOCO');
     expect(comDescricao).toContain('Única dona, revisões em dia, pneus novos.');
+    // 2026-10-14: NÃO convidar a um "pitch" espontâneo de especificações.
+    expect(comDescricao).toMatch(/NÃO ofereça especificações\/ficha técnica por conta/);
+    expect(comDescricao).toMatch(/SÓ quando o cliente PERGUNTAR/);
 
     const semDescricao = renderBlocoDeEstado({
       contact: { name: null, custom_fields: {} },

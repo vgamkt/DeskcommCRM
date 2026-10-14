@@ -284,21 +284,33 @@ export async function validarRespostaDoFluxo(
     // Jev indisponível → segue no caminho do chat (comportamento de antes).
   }
 
-  // TENDA JEV: tudo o que ela já resolveu (discretos E textos com candidata) é a
-  // resposta. O chat só entra no que ela NÃO conseguiu (tipicamente texto/número/
-  // data SEM candidata extraível) — assim, no caso comum, TUDO passa só pela Jev.
-  {
-    const respostas = Object.entries(valoresJev).map(([campo, valor]) => ({ campo, valor }));
-    if (respostas.length > 0) return { resultado: 'respondeu', respostas };
-    // Nada resolvido pela Jev: ela já disse se algo foi respondido. Se disse
-    // NÃO, `respondidos` já é [] (tratado acima com retorno). Se disse SIM mas
-    // sem valor (texto sem candidata), segue para o fallback de chat.
+  // ── O QUE SOBROU PARA O CHAT ───────────────────────────────────────────────
+  // A Jev marca QUAIS campos foram respondidos; para TEXTO/NÚMERO/DATA ela NÃO
+  // escreve o valor — quem escreve é o extrator (chat), restrito aos campos que
+  // ela marcou. Logo o chat SÓ pode ser pulado quando NÃO sobrou nenhum desses.
+  //
+  // ⚠️ DEFEITO CORRIGIDO (2026-10-13): antes, um `return` antecipado devolvia
+  // APENAS os DISCRETOS que a Jev resolveu e DESCARTava os TEXTO/NÚMERO/DATA que
+  // ela marcou no MESMO turno. "moro em São José dos Campos e tenho CNH" gravava a
+  // CNH e PERDIA a cidade — que era reperguntada até esgotar (`contact_flow_data`
+  // da cidade: value NULL, attempts 3). É a causa do P1 ("Qualificação pergunta
+  // cidade repetidamente").
+  const restantes = restantesParaChat(args, respondidos);
+  const discretos = Object.entries(valoresJev).map(([campo, valor]) => ({ campo, valor }));
+  const sobrouParaChat =
+    restantes.perguntas.length > 0 ||
+    restantes.preenchidos.length > 0 ||
+    restantes.esgotados.length > 0;
+  if (!sobrouParaChat) {
+    // Nada para o chat: o que a Jev resolveu é a resposta. Sem discricto algum,
+    // `respondidos` vazio já retornou `nao_respondeu` acima.
+    return discretos.length > 0
+      ? { resultado: 'respondeu', respostas: discretos }
+      : { resultado: 'nao_respondeu' };
   }
 
   // ── FALLBACK: só os campos que a Jev NÃO resolveu ──────────────────────────
-  // A escolha é da Jev; o chat cobre o resto (texto/número/data sem candidata, e
-  // o caso em que a própria Jev está fora do ar).
-  const restantes = restantesParaChat(args, respondidos);
+  // A escolha é da Jev; o chat cobre o resto (texto/número/data sem valor pronto).
   let texto: string;
   try {
     const call = await runModelCall(
@@ -325,11 +337,19 @@ export async function validarRespostaDoFluxo(
     );
     texto = call.result.text;
   } catch {
-    return { resultado: 'indefinido' };
+    // Falha do chat NÃO pode jogar fora o que a Jev JÁ resolveu neste turno
+    // (ex.: a CNH), senão um campo de texto pendente derruba o discreto junto.
+    return discretos.length > 0
+      ? { resultado: 'respondeu', respostas: discretos }
+      : { resultado: 'indefinido' };
   }
 
   const leitura = parseLeituraDoValidador(texto);
-  if (leitura === null) return { resultado: 'indefinido' };
+  if (leitura === null) {
+    return discretos.length > 0
+      ? { resultado: 'respondeu', respostas: discretos }
+      : { resultado: 'indefinido' };
+  }
 
   const validas: RespostaDoFluxo[] = [];
   const vistas = new Set<string>();

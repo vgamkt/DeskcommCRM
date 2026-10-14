@@ -51,7 +51,7 @@ import { normalizarNomeDeMoto } from './fotos-do-catalogo';
 export function fluxoBloqueiaOferta(pendentesDoFluxo: number): boolean {
   return pendentesDoFluxo > 0;
 }
-import { pedeMotoExplicito, querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
+import { mencionaMoto, pedeMotoExplicito, querAlternativa, querMaisOpcoes, querMoto } from './selecao-por-intencao';
 
 /** O que a objeção pede para atacar — vira o critério da busca. */
 export type CriterioDaOferta = 'preco' | 'km' | 'ano' | null;
@@ -148,6 +148,123 @@ function decisao(pode: boolean, motivo: string, criterio: CriterioDaOferta = nul
  */
 export function pedidoExplicitoDeMaisOpcoes(mensagem: string): DecisaoDeOferta | null {
   return querMaisOpcoes(mensagem) ? decisao(true, 'cliente_pediu_mais_opcoes') : null;
+}
+
+/** Validação/opinião sobre uma moto JÁ em foco — NÃO é pedido de catálogo. */
+const RE_VALIDACAO_DE_MOTO =
+  /\b(presta|serve|vale a pena|e boa|e bom|recomenda\w*|confiav\w*|manutencao|economica|roda bem|aguenta|da problema|tem problema|defeito|melhor que|pior que|durabilidade|satisfeit\w*)\b/;
+
+/** Pedido de uma moto DIFERENTE ("tem outra?", "mostra outras", "quero diferente"). */
+const RE_OUTRA_MOTO =
+  /\b(tem|tens|teria|tinha|mostra|manda|ver|quero|queria|gostaria)\b[^.!?]*\b(outra|outras|outro|outros|diferente|parecid\w*)\b/;
+
+/**
+ * O cliente está falando da PRÓPRIA moto (a troca), NÃO pedindo catálogo. Sem esta
+ * exclusão, "minha moto é uma CG 150 2012" casava o termo "CG 150" e DISPARAVA
+ * motos (medido ao vivo 2026-10-13: o bot mostrou catálogo ao anotar a troca).
+ */
+const RE_MOTO_DO_CLIENTE =
+  /\b(minha moto|minha atual|a minha|meu veiculo|meu veículo|vou dar|quero dar|dou de|de entrada|na troca|em troca|pra troca|para troca|troco|trocar|a troca)\b/i;
+
+/**
+ * G3.11 — FAIXA/ORÇAMENTO de preço SOZINHO ("até 15 mil", "no máximo 20 mil",
+ * "uns 12 mil"). É um critério CLARO de catálogo — o cliente está dizendo quanto
+ * quer gastar. Sem isto, o motor perguntava o valor DE NOVO e não mostrava nada
+ * (medido ao vivo 2026-10-13: "ate 15 mil" → "deixei registrado pro responsável").
+ */
+const RE_FAIXA_DE_PRECO =
+  /\b(ate|no maximo|maximo|em torno de|por volta de|uns|umas|faixa de|entre|gastar|investir|pagar|tenho|disponho)\b[^.!?]*\b(\d{2,}|\d+\s*(mil|k))\b/;
+
+/**
+ * G3.10 — REDE DE PROTEÇÃO: o cliente fez um PEDIDO INEQUÍVOCO de catálogo?
+ *
+ * A Jev é a autoridade da oferta — mas ela NÃO pode NEGAR um pedido claro do
+ * cliente (mesmo padrão de `pedidoExplicitoDeMaisOpcoes`). Medido ao vivo
+ * (2026-10-12): em "e uma lander?" a Jev devolveu `oferecer:false` (`jev_negou`)
+ * e o bot PROMETEU opções sem mostrar nenhuma. Aqui a régua determinística VENCE.
+ *
+ * FORÇA quando: pede mais opções; verbo+termo ("quero uma moto"); OU cita um
+ * modelo/categoria ("e uma lander?", "tem uma XRE?") — DESDE QUE não seja uma
+ * VALIDAÇÃO de moto já em foco ("essa presta?"), nem pedido de PROCESSO
+ * (financiar/trocar), nem só o nome da moto que já está em foco.
+ *
+ * `null` = sem pedido inequívoco (a Jev decide normalmente). Puro.
+ */
+/**
+ * A2 — a mensagem fala da moto QUE JÁ ESTÁ EM FOCO (escolhida/referência)? Então
+ * NÃO é pedido de OUTRA moto. Compara pela LINHA do modelo (token significativo
+ * não numérico) e, se o nome em foco tem número (cilindrada/ano), exige que a
+ * mensagem NÃO cite um número diferente:
+ *   - "ver a Factor 150" (foco "YAMAHA Factor 150 ED") → MESMA moto → não força;
+ *   - "tem uma CB 300?" (foco "HONDA CB 160 Fan") → nº 300 ≠ 160 → OUTRA → força.
+ * Defeito corrigido (medido ao vivo 2026-10-13): "…ver ela de perto?" reabria a
+ * oferta com a moto já escolhida. Puro.
+ */
+function citaMotoEmFoco(mensagemNorm: string, nomeEmFoco: string): boolean {
+  const foco = normalizarNomeDeMoto(nomeEmFoco);
+  if (foco === '' || mensagemNorm === '') return false;
+  const tokens = foco.split(/\s+/).filter((t) => t.length >= 3);
+  const linhas = tokens.filter((t) => !/^\d+$/.test(t));
+  if (linhas.length === 0) return false;
+  if (!linhas.some((t) => mensagemNorm.includes(t))) return false;
+  const numeros = tokens.filter((t) => /^\d+$/.test(t));
+  if (numeros.length > 0 && !numeros.some((t) => mensagemNorm.includes(t))) {
+    // Citou a LINHA mas nenhum número do foco; se citou OUTRO número, é outra moto.
+    if (/\b\d{2,4}\b/.test(mensagemNorm)) return false;
+  }
+  return true;
+}
+
+export function pedidoDeCatalogoInequivoco(
+  mensagem: string,
+  opcoes: { nomeMotoEmFoco?: string | null } = {},
+): DecisaoDeOferta | null {
+  const marcar = (motivo: string): DecisaoDeOferta => decisao(true, motivo);
+  if (ehIntencaoDeProcesso(mensagem)) return null;
+  // O cliente descrevendo a PRÓPRIA moto (troca) NÃO é pedido de catálogo.
+  if (RE_MOTO_DO_CLIENTE.test(normalizarNomeDeMoto(mensagem))) return null;
+  if (querMaisOpcoes(mensagem)) return marcar('cliente_pediu_mais_opcoes');
+  if (RE_OUTRA_MOTO.test(normalizarNomeDeMoto(mensagem))) return marcar('cliente_pediu_diferente');
+  if (RE_FAIXA_DE_PRECO.test(normalizarNomeDeMoto(mensagem))) return marcar('cliente_citou_faixa');
+  const n = normalizarNomeDeMoto(mensagem);
+  // A2: se a mensagem fala da moto QUE JÁ ESTÁ EM FOCO, NÃO é pedido de catálogo.
+  if (citaMotoEmFoco(n, opcoes.nomeMotoEmFoco ?? '')) return null;
+  if (pedeMotoExplicito(mensagem)) return marcar('cliente_pediu_catalogo');
+  if (n === '' || !mencionaMoto(mensagem)) return null;
+  if (RE_VALIDACAO_DE_MOTO.test(n)) return null;
+  return marcar('cliente_citou_modelo');
+}
+
+/**
+ * B1 (2026-10-13) — AUTORIDADE DA OFERTA: a Jev decide; a rede determinística é
+ * FALLBACK. Ordem (doutrina `jev-decide-sempre`):
+ *   1. veredito da Jev (se houver) — inclusive NEGATIVO (negativa é decisão);
+ *   2. só quando o veredito é `null` (Jev desligada/indisponível) → `pedidoDeCatalogoInequivoco`
+ *      (rede de proteção) → `pedidoExplicitoDeMaisOpcoes` → `podeOferecerMotos`.
+ *
+ * ⚠️ ANTES, a rede rodava ANTES e VENCIA a Jev: medido ao vivo (2026-10-13), a Jev
+ * negou (`veredito_jev:false`) e a régua forçou a oferta mesmo com a moto já
+ * escolhida (turnos 3 e 6). Puro.
+ */
+export function decidirOfertaComAutoridadeDaJev(args: {
+  vereditoJev: { oferecer: boolean; motivo: string; criterio: 'preco' | 'km' | 'ano' | 'nenhum' } | null;
+  mensagem: string;
+  nomeMotoEmFoco: string | null;
+  sinais: SinaisDeOferta;
+}): DecisaoDeOferta {
+  if (args.vereditoJev !== null) {
+    return {
+      pode: args.vereditoJev.oferecer,
+      motivo: args.vereditoJev.motivo,
+      criterio: args.vereditoJev.criterio === 'nenhum' ? null : args.vereditoJev.criterio,
+    };
+  }
+  // Jev indisponível → rede de proteção determinística (fallback).
+  const forcado = pedidoDeCatalogoInequivoco(args.mensagem, { nomeMotoEmFoco: args.nomeMotoEmFoco });
+  if (forcado !== null) return forcado;
+  const explicito = pedidoExplicitoDeMaisOpcoes(args.mensagem);
+  if (explicito !== null) return explicito;
+  return podeOferecerMotos(args.sinais);
 }
 
 export function podeOferecerMotos(s: SinaisDeOferta): DecisaoDeOferta {

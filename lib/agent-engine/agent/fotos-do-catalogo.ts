@@ -220,10 +220,15 @@ export function extrairMotosDoResultado(
     const imagemBruta = valorDe(registro, colunas, 'imagem', ['imagem_url', 'imagem', 'foto', 'fotos']);
     if (nomeBruto === undefined || imagemBruta === undefined) continue;
 
+    // MEDIA 2026-10-14: o WhatsApp SÓ baixa mídia por **HTTPS** — URL `http://`
+    // dá `131053 Media upload error` e a foto não chega (medido ao vivo: o
+    // catálogo entrega as imagens em `http://loja.vgasistemas.app/...`, que
+    // responde 200 em https). Normaliza para https. Sem isto, as fotos falham.
     const fotos = imagemBruta
       .split('|')
       .map((u) => u.trim())
-      .filter((u) => /^https?:\/\//i.test(u));
+      .filter((u) => /^https?:\/\//i.test(u))
+      .map((u) => u.replace(/^http:\/\//i, 'https://'));
     if (fotos.length === 0) continue;
 
     const ano = valorDe(registro, colunas, 'ano', ['ano']);

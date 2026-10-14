@@ -100,6 +100,32 @@ export function parseFlowIntents(text: string, fluxos: readonly FluxoParaIA[]): 
   return saida;
 }
 
+/**
+ * Resolve QUAL fluxo iniciar quando o modelo chamou `flow_start` SEM nome e há
+ * mais de um fluxo ativo. A INTENÇÃO decide primeiro (`escolherFluxosPorIA`:
+ * Jev → modelo de chat); o regex por palavra-gatilho (`porGatilho`) é só o
+ * ÚLTIMO recurso — e só quando a IA não escolheu nada (veredito ausente, falhou
+ * ou veio vazio). Antes o regex decidia sozinho, sem a Jev. Puro.
+ */
+export function escolherFluxoIniciado(
+  ativos: readonly { id: string; nome: string }[],
+  decisaoIA: EscolhaDeFluxosPorIA | null,
+  porGatilho: { id: string; nome: string } | null,
+): { id: string; nome: string } | null {
+  // 1) IA/Jev primeiro: o primeiro fluxo que ela escolheu E que está ativo.
+  if (decisaoIA !== null && decisaoIA.ok) {
+    for (const f of decisaoIA.fluxos) {
+      const ativo = ativos.find((a) => a.id === f.id);
+      if (ativo !== undefined) return ativo;
+    }
+  }
+  // 2) Fallback: só quando a IA não decidiu.
+  if (porGatilho !== null) {
+    return ativos.find((a) => a.id === porGatilho.id) ?? null;
+  }
+  return null;
+}
+
 async function carregarFluxosAtivos(
   db: pg.Pool,
   organizationId: string,

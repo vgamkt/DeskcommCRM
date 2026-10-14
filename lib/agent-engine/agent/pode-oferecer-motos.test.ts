@@ -4,6 +4,7 @@ import type { EstadoObjecao } from './objecao-de-valor';
 import {
   clienteRejeitouMoto,
   criterioDaObjecao,
+  decidirOfertaComAutoridadeDaJev,
   fluxoBloqueiaOferta,
   pedidoExplicitoDeMaisOpcoes,
   podeOferecerMotos,
@@ -215,5 +216,25 @@ describe('podeOferecerMotos — a régua única', () => {
     expect(
       podeOferecerMotos(s({ mensagem: 'quero uma moto ate 20 mil', temMotoEmFoco: true })).pode,
     ).toBe(true);
+  });
+});
+
+describe('B1 — decidirOfertaComAutoridadeDaJev (a Jev decide; rede é fallback)', () => {
+  const JEV_NAO = { oferecer: false, motivo: 'jev_negou', criterio: 'nenhum' as const };
+  const JEV_SIM = { oferecer: true, motivo: 'jev_liberou_preco', criterio: 'preco' as const };
+  const call = (vereditoJev: typeof JEV_NAO | typeof JEV_SIM | null, mensagem: string, nomeMotoEmFoco: string | null = null) =>
+    decidirOfertaComAutoridadeDaJev({ vereditoJev, mensagem, nomeMotoEmFoco, sinais: s({ mensagem }) });
+
+  it('veredito NEGATIVO da Jev VENCE a rede (mesmo com pedido que a rede forçaria)', () => {
+    expect(call(JEV_NAO, 'e uma lander?')).toMatchObject({ pode: false, motivo: 'jev_negou' });
+    expect(call(JEV_NAO, 'quero ver mais opções')).toMatchObject({ pode: false });
+  });
+  it('veredito POSITIVO da Jev manda (com o critério)', () => {
+    expect(call(JEV_SIM, 'qualquer coisa')).toMatchObject({ pode: true, motivo: 'jev_liberou_preco', criterio: 'preco' });
+  });
+  it('veredito null → a rede de proteção decide (fallback)', () => {
+    expect(call(null, 'e uma lander?')).toMatchObject({ pode: true, motivo: 'cliente_citou_modelo' });
+    expect(call(null, 'quero ver mais opções')).toMatchObject({ pode: true, motivo: 'cliente_pediu_mais_opcoes' });
+    expect(call(null, 'obrigado')).toMatchObject({ pode: false, motivo: 'sem_pedido_do_cliente' });
   });
 });

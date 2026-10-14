@@ -58,6 +58,17 @@ export interface BriefDoTurnoInput {
   finalizacao?: EndFinish;
   /** Diretriz de ação do turno (da Jev) — entra PRIMEIRO no brief. */
   diretriz?: string;
+  /**
+   * A régua de oferta liberou motos NESTE turno? Quando `false`, o sistema NÃO
+   * envia motos — o modelo NÃO pode anunciar opções (evita "separei opções" sem
+   * mostrar nada). Ausente = não opina.
+   */
+  podeOferecer?: boolean;
+  /**
+   * O turno MOSTROU/ vai mostrar motos? Se sim, o fluxo CEDE: a pergunta do turno
+   * é a de VENDA (escolha) e a pergunta do fluxo fica para o próximo turno.
+   */
+  mostrouMotos?: boolean;
 }
 
 function linhaDaPendente(n: EstadoDeAtendimento['situacao']['pendentes'][number]): string {
@@ -72,7 +83,11 @@ function linhaDaPendente(n: EstadoDeAtendimento['situacao']['pendentes'][number]
 }
 
 /** Bloco do fluxo em forma compacta — mesmos fatos de `renderBlocoDeAtendimento`. */
-function blocoDoFluxoCompacto(estado: EstadoDeAtendimento, finalizacao?: EndFinish): string {
+function blocoDoFluxoCompacto(
+  estado: EstadoDeAtendimento,
+  finalizacao?: EndFinish,
+  mostrouMotos = false,
+): string {
   const contexto =
     estado.notaAnterior !== undefined && estado.notaAnterior.length > 0
       ? `Contexto do atendimento anterior: ${estado.notaAnterior}\n`
@@ -88,8 +103,22 @@ function blocoDoFluxoCompacto(estado: EstadoDeAtendimento, finalizacao?: EndFini
 
   const linhas = estado.situacao.pendentes.map(linhaDaPendente);
   const primeira = estado.situacao.pendentes[0]!;
+  // ── TURNO DE CATÁLOGO: a VENDA fecha (a pergunta do fluxo fica próxima) ──────
+  // Decisão do dono (2026-10-13): quando o turno MOSTROU MOTOS, a pergunta do
+  // turno é a de VENDA ("qual delas?" / "quer ver mais?"); a pergunta do fluxo
+  // NÃO entra agora — o campo segue pendente e vira a pergunta do próximo turno.
+  // Sem isto, o "uma pergunta por vez" do fluxo trocava a venda pela do roteiro e
+  // a conversa parava de avançar (medido ao vivo). Vale para TODOS os fluxos.
+  if (mostrouMotos) {
+    return [
+      `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo, mas você ACABOU DE MOSTRAR MOTOS. Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?"). NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
+      'Pendentes (só para REGISTRAR se o cliente informar — NÃO pergunte agora):',
+      ...linhas,
+    ].join('\n');
+  }
+
   return [
-    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o e atenda o cliente PRIMEIRO. Responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE (abaixo). Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem. NÃO abra OUTRA pergunta (visita, detalhes, fechamento). Só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
+    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o e atenda o cliente PRIMEIRO. Responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE (abaixo). Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem. Faça UMA pergunta por vez (não despeje o roteiro) e conduza a venda normalmente. Só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
     ...linhas,
     `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(campoParaPergunta(primeira))}"`,
     `Se o cliente não responder o campo em até ${estado.maxTentativas} tentativa(s), pare de perguntá-lo e SIGA a venda normalmente — NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.`,
@@ -198,10 +227,50 @@ export function renderBriefDoTurno(input: BriefDoTurnoInput): string {
   const estagio = input.estagioHint.trim();
   if (estagio !== '') partes.push(estagio);
   if (input.objecaoBloco.trim() !== '') partes.push(input.objecaoBloco.trim());
-  if (input.fluxo !== null) partes.push(blocoDoFluxoCompacto(input.fluxo, input.finalizacao));
+  // CATÁLOGO BLOQUEADO: a régua negou a oferta — o modelo não pode anunciar motos.
+  if (input.podeOferecer === false) {
+    partes.push(
+      '## Catálogo BLOQUEADO neste turno\n' +
+        'O sistema NÃO vai enviar motos agora. NÃO anuncie nem prometa opções (nada de "separei ' +
+        'opções", "vou te mostrar motos", "dá uma olhada"); responda o que o cliente perguntou e ' +
+        'siga o atendimento. Se ele pediu uma moto específica, diga que vai verificar.',
+    );
+  }
+  // CATÁLOGO LIBERADO: o sistema vai MOSTRAR motos — o modelo ANUNCIA a exibição.
+  // Sem isto, o modelo respondia como negociação ("deixa eu ver com o responsável")
+  // e o motor mostrava as motos logo depois — texto e ação se contradiziam (medido
+  // ao vivo 2026-10-13).
+  if (input.podeOferecer === true) {
+    partes.push(
+      '## Motos LIBERADAS neste turno\n' +
+        'O sistema vai MOSTRAR motos agora (as fotos e as legendas vão junto). Anuncie isso de ' +
+        'forma natural ("deixa eu te mostrar umas opções", "olha o que separei pra você") — NÃO ' +
+        'diga que vai verificar, conferir ou falar com o responsável antes de mostrar.',
+    );
+  }
+  if (input.fluxo !== null) {
+    partes.push(blocoDoFluxoCompacto(input.fluxo, input.finalizacao, input.mostrouMotos === true));
+  }
   const estado = blocoDeEstadoCompacto(input);
   if (estado !== '') partes.push(estado);
 
   if (partes.length === 0) return '';
+  // B3/F (2026-10-13): o modelo REPETIA a mesma promessa em turnos seguidos ("vou
+  // confirmar o horário com o responsável" saiu 3–9× numa jornada real). Regra curta
+  // no fim do brief (só quando já há brief — preserva o contrato "vazio ⇒ ''").
+  partes.push(
+    '## Não se repita\n' +
+      'Se você JÁ disse ou prometeu algo nos turnos anteriores (ex.: "vou confirmar o horário com o ' +
+      'responsável"), NÃO repita a mesma frase agora. Avance com o PRÓXIMO passo concreto, dê uma ' +
+      'informação NOVA ou pergunte outra coisa. Repetir a mesma promessa em turnos seguidos soa robótico.',
+    // B3b (2026-10-14): o modelo emendava um "pitch" de especificações fora de
+    // contexto ("vale saber: faz 40 km/l, tanque 13,5 L, partida elétrica") quando
+    // o cliente só queria fechar. As specs vêm da `motos.descricao` E da base de
+    // conhecimento — a regra cobre os DOIS caminhos.
+    '## Não faça "pitch" não solicitado\n' +
+      'NÃO cite especificações/ficha técnica (consumo km/l, litros, potência, cilindrada, tanque) nem fatos ' +
+      'da base de conhecimento por conta própria. Use-os SÓ quando o cliente PERGUNTAR sobre a moto ou ao ' +
+      'contornar uma objeção. Elogios à escolha devem ser curtos e SEM números.',
+  );
   return ['## Brief do turno', ...partes].join('\n');
 }

@@ -144,15 +144,22 @@ function tokensDoNome(nome: string): Set<string> {
   );
 }
 
-/** A moto compartilha algum token significativo com o nome das hipóteses? (linha) */
+/** A moto compartilha algum token SIGNIFICATIVO com o nome das hipóteses? (linha) */
 function compartilhaLinhaDoModelo(
   nome: string,
   hipoteses: readonly HipoteseDeMoto[],
 ): boolean {
-  const alvo = tokensDoNome(nome);
+  // FURO CORRIGIDO (2026-10-11): a comparação usava QUALQUER token — e a CILINDRADA
+  // ("250", "160") é um token. Então "YS Fazer 250" casava com QUALQUER "250"
+  // (XMax 250, CBX 250 Twister) e essas motos alheias entravam na apresentação.
+  // Agora tokens puramente NUMÉRICOS (cilindrada/ano) são ignorados: a "linha" é o
+  // NOME do modelo (fazer, xmax, cbx…), não o número.
+  const significativos = (s: string): Set<string> =>
+    new Set([...tokensDoNome(s)].filter((t) => !/^\d+$/.test(t)));
+  const alvo = significativos(nome);
   for (const h of hipoteses) {
     if (typeof h.nome !== 'string' || h.nome.trim() === '') continue;
-    for (const t of tokensDoNome(h.nome)) if (alvo.has(t)) return true;
+    for (const t of significativos(h.nome)) if (alvo.has(t)) return true;
   }
   return false;
 }
@@ -233,6 +240,48 @@ function valorNumerico(valor: string | undefined): number | null {
   return numeroDaCelula(valor);
 }
 
+/** Sinônimos de categoria (o catálogo mistura PT/EN: "Trail" e "Trilha"). */
+const SINONIMOS_CATEGORIA: Record<string, string> = {
+  trilha: 'trail',
+  trail: 'trail',
+  adventure: 'trail',
+  aventureiro: 'trail',
+  scooter: 'scooter',
+  street: 'street',
+  rua: 'street',
+  city: 'street',
+  naked: 'naked',
+  esportiva: 'esportiva',
+  esportivas: 'esportiva',
+  sport: 'esportiva',
+  custom: 'custom',
+};
+
+/** Tokens significativos de uma categoria, com sinônimos e sem pontuação. */
+function tokensCategoria(s: string): Set<string> {
+  const base = s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !['com', 'off', 'road', 'para', 'and'].includes(t));
+  return new Set(base.map((t) => SINONIMOS_CATEGORIA[t] ?? t));
+}
+
+/**
+ * A CATEGORIA da moto casa o alvo? Por TOKEN + sinônimos — o catálogo é
+ * inconsistente ("Adventure / Trilha" × "Trail, On-Off Road" × "Trail / On-Off
+ * Road"). Basta UM token significativo em comum (trail ≡ trilha).
+ */
+function casaCategoria(celula: string, alvo: string): boolean {
+  const a = tokensCategoria(celula);
+  const b = tokensCategoria(alvo);
+  if (a.size === 0 || b.size === 0) return false;
+  for (const t of b) if (a.has(t)) return true;
+  return false;
+}
+
 /**
  * C-096: a moto casa UMA coluna contra o alvo? Número → dentro de ±tolerância;
  * texto → contém (normalizado). Base da pontuação do OR.
@@ -240,6 +289,8 @@ function valorNumerico(valor: string | undefined): number | null {
 function casaColuna(moto: MotoDoCatalogo, coluna: string, alvo: string, toleranciaPct: number): boolean {
   const celula = moto.valores?.[coluna];
   if (celula === undefined || celula === '') return false;
+  // CATEGORIA/TIPO/ESTILO: casamento por TOKEN + sinônimos (catálogo inconsistente).
+  if (/categoria|tipo|estilo/i.test(coluna)) return casaCategoria(celula, alvo);
   const alvoNum = valorNumerico(alvo);
   const celulaNum = valorNumerico(celula);
   if (alvoNum !== null && celulaNum !== null) {
@@ -805,9 +856,16 @@ export function pedePrecoSemValor(mensagem: string): boolean {
 const VERBO_DE_PEDIDO =
   /\b(quero|queria|quer|procur\w*|preciso|busc\w*|buscar|tem|tens|teria|mostr\w*|ver|ve|gostaria|interess\w*|indic\w*|suger\w*|opcoes|opcao|disponivel|disponiveis|comprar|adquirir)\b/;
 
-/** Termo de moto / atributo / categoria presente na mensagem. */
+/**
+ * Termo de moto presente na mensagem (produto, "modelo(s)", categoria de moto,
+ * marca, modelo). NÃO inclui os qualificadores GENÉRICOS/ambíguos `categoria`,
+ * `cc` e `cilindrada`: eles casavam texto que NÃO é pedido de moto — medido ao
+ * vivo (2026-10-13), "Tenho sim, CNH **categoria** A" forçava a oferta de catálogo
+ * (`cliente_citou_modelo`). A categoria de moto continua valendo pelos nomes
+ * concretos (naked/street/trail/…) e a cilindrada pelo "moto"/modelo que a acompanha.
+ */
 const TERMO_DE_MOTO =
-  /\b(moto|motos|modelo|modelos|cilindrada|cc|categoria|naked|street|scooter|trail|adventure|trilha|sport|esportiv\w*|custom|roadster|touring|seminova\w*|honda|yamaha|suzuki|bajaj|bmw|kawasaki|biz|factor|titan|fan|cg|cb|cbx|xre|xtz|crosser|fazer|dominar|v-?strom|boulevard|xmax|neo|twister|tener\w*)\b/;
+  /\b(moto|motos|modelo|modelos|naked|street|scooter|trail|adventure|trilha|sport|esportiv\w*|custom|roadster|touring|seminova\w*|honda|yamaha|suzuki|bajaj|bmw|kawasaki|royal|enfield|biz|factor|titan|fan|cg|cb|cbx|xre|xtz|crosser|fazer|dominar|v-?strom|boulevard|xmax|neo|twister|tener\w*|lander|himalayan|tornado|bros|pcx|nmax|adv|elite|burgman|intruder|shineray|haojue|dafra|mottu|urban|mma)\b/;
 
 /**
  * A mensagem CITA/CONSULTA uma moto (termo concreto: marca, modelo, categoria…)?

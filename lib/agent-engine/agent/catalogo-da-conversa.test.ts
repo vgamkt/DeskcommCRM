@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 import {
   carregarCatalogoDaConversa,
+  montarPedidoDeEscolha,
   motoEscolhidaPeloCliente,
   salvarCatalogoDaConversa,
 } from './catalogo-da-conversa';
@@ -20,6 +21,27 @@ const TWISTER: MotoDoCatalogo = {
   fotos: ['https://x/tw-1.jpg', 'https://x/tw-2.jpg', 'https://x/tw-3.jpg'],
 };
 const CATALOGO = [CB300, TWISTER];
+
+describe('A3 — montarPedidoDeEscolha inclui a moto JÁ ESCOLHIDA (2026-10-13)', () => {
+  const F150: MotoDoCatalogo = { nome: 'YAMAHA Factor 150 ED', ano: '2018', cor: 'Vermelho', fotos: ['https://x/f150.jpg'] };
+  const F125: MotoDoCatalogo = { nome: 'YAMAHA Factor 125 K', ano: '2015', cor: 'Vermelho', fotos: ['https://x/f125.jpg'] };
+  const CAT = [F150, F125];
+  const args = {
+    textoDoModelo: '',
+    textoDoCliente: 'quero fechar a Factor vermelha',
+    catalogo: CAT,
+    jaDetalhadas: ['YAMAHA Factor 150 ED'],
+  };
+  it('sem `escolhidaAtual`, a já-detalhada SOME das candidatas (o defeito)', () => {
+    const p = montarPedidoDeEscolha(args);
+    expect(p?.rotulos.some((r) => r.includes('Factor 150'))).toBe(false);
+    expect(p?.rotulos.some((r) => r.includes('Factor 125'))).toBe(true);
+  });
+  it('com `escolhidaAtual`, a escolhida ENTRA (reconhece a referência ambígua)', () => {
+    const p = montarPedidoDeEscolha({ ...args, escolhidaAtual: F150 });
+    expect(p?.rotulos.some((r) => r.includes('Factor 150'))).toBe(true);
+  });
+});
 
 describe('motoEscolhidaPeloCliente', () => {
   it('usa a moto que o MODELO citou, resolvendo nome aninhado ("CB 300" ⊂ Twister)', () => {

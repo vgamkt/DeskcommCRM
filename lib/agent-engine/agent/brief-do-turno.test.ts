@@ -229,3 +229,61 @@ describe('renderDiretrizDoTurno', () => {
     expect(d).toContain('NÃO ofereça desconto');
   });
 });
+
+describe('turno de CATÁLOGO — a venda fecha (mostrouMotos)', () => {
+  const comPendente = estado({
+    situacao: {
+      pendentes: [
+        pendente({ key: 'cidade', label: 'Cidade', type: 'text', required: false, permite_correcao: true, question: 'De qual cidade você fala?' }),
+      ],
+      obrigatoriosPendentes: [],
+      esgotadas: [],
+      skills: [],
+      completo: false,
+    },
+  });
+  const base = {
+    estagioHint: '',
+    objecaoBloco: '',
+    contact: { name: null, custom_fields: {} },
+    escolhida: null,
+  };
+
+  it('mostrouMotos=true → manda fechar a VENDA e NÃO faz a pergunta do fluxo', () => {
+    const t = renderBriefDoTurno({ ...base, fluxo: comPendente, mostrouMotos: true });
+    expect(t).toContain('VENDA');
+    expect(t).not.toContain('COPIADA EXATAMENTE');
+  });
+
+  it('mostrouMotos ausente/false → inclui a pergunta do fluxo (comportamento atual)', () => {
+    expect(renderBriefDoTurno({ ...base, fluxo: comPendente })).toContain('COPIADA EXATAMENTE');
+    expect(renderBriefDoTurno({ ...base, fluxo: comPendente, mostrouMotos: false })).toContain('COPIADA EXATAMENTE');
+  });
+});
+
+describe('catálogo liberado/bloqueado no brief', () => {
+  const base2 = { estagioHint: '', objecaoBloco: '', contact: { name: null, custom_fields: {} }, escolhida: null, fluxo: null };
+  it('podeOferecer=true → manda ANUNCIAR a exibição', () => {
+    expect(renderBriefDoTurno({ ...base2, podeOferecer: true })).toContain('Motos LIBERADAS');
+  });
+  it('podeOferecer=false → manda NÃO prometer', () => {
+    expect(renderBriefDoTurno({ ...base2, podeOferecer: false })).toContain('Catálogo BLOQUEADO');
+  });
+});
+
+describe('F/B3 — o brief manda NÃO se repetir entre turnos (2026-10-13)', () => {
+  const base3 = { estagioHint: '', objecaoBloco: '', contact: { name: null, custom_fields: {} }, escolhida: null, fluxo: null };
+  it('contém a regra de não repetir a promessa já feita (quando há brief)', () => {
+    const brief = renderBriefDoTurno({ ...base3, podeOferecer: true });
+    expect(brief).toContain('Não se repita');
+    expect(brief).toMatch(/NÃO repita a mesma frase/);
+  });
+  it('contém a regra de NÃO fazer pitch de specs não solicitado', () => {
+    const brief = renderBriefDoTurno({ ...base3, podeOferecer: true });
+    expect(brief).toContain('Não faça "pitch" não solicitado');
+    expect(brief).toMatch(/SÓ quando o cliente PERGUNTAR/);
+  });
+  it('mantém o contrato "vazio ⇒ \'\'" (sem brief, nada a declarar)', () => {
+    expect(renderBriefDoTurno(base3)).toBe('');
+  });
+});

@@ -39,3 +39,43 @@ export function perguntaDeMaisOpcoes(args: {
   ];
   return opcoes[v % opcoes.length]!;
 }
+
+/**
+ * PERGUNTA DE ESCOLHA — "qual delas te interessou?".
+ *
+ * POR QUE EXISTE: quando o motor ACABOU de mostrar motos, a pergunta do turno é a
+ * de VENDA (convidar a ESCOLHA) — NÃO a do fluxo. O modelo varia (medido ao vivo:
+ * uns turnos inclui, outros não), então o motor GARANTE a pergunta. Variada como a
+ * de mais opções. Módulo PURO.
+ */
+export function perguntaDeEscolha(args: { variacao?: number } = {}): string {
+  const v = Math.abs(Math.floor(args.variacao ?? 0));
+  const opcoes = [
+    'Qual delas chamou mais a sua atenção?',
+    'Qual delas te interessou mais?',
+    'Gostou de alguma? Me diz qual chamou mais a sua atenção.',
+    'Qual dessas te agradou mais?',
+    'Alguma delas te interessou?',
+  ];
+  return opcoes[v % opcoes.length]!;
+}
+
+/**
+ * PERGUNTA DE AQUISIÇÃO — "como você pretende levar?".
+ *
+ * POR QUE EXISTE: quando o cliente JÁ ESCOLHEU uma moto (escolha travada), o fecho
+ * do turno NÃO é "qual delas?" (não há mais o que escolher) — é o **próximo passo da
+ * VENDA**: como ele pretende adquirir (à vista / financiado / na troca). Isso INDUZ o
+ * fluxo de pagamento. Antes, o fecho forçava "Gostou de alguma?" mesmo com UMA moto
+ * (a já escolhida) na tela (medido ao vivo 2026-10-14). Pura.
+ */
+export function perguntaDeAquisicao(args: { variacao?: number } = {}): string {
+  const v = Math.abs(Math.floor(args.variacao ?? 0));
+  const opcoes = [
+    'Como você pretende levar? À vista, financiado ou dando sua moto na troca?',
+    'Pra eu já seguir com tudo: você pensa em pagar à vista, financiar ou dar uma moto na troca?',
+    'Me diz como fica melhor pra você: à vista, financiado ou com a sua moto na troca?',
+    'Como prefere acertar? À vista, no financiamento ou com a sua moto na troca?',
+  ];
+  return opcoes[v % opcoes.length]!;
+}

@@ -85,6 +85,19 @@ export async function resolverAlertaDeFalha(
   }
 }
 
+/**
+ * O destino do aviso é o PRÓPRIO número do cliente? Então o aviso VOLTA como
+ * mensagem recebida e entra na conversa (medido ao vivo 2026-10-14: o aviso
+ * "vou passar seu atendimento para o responsável" e o alerta "NÃO consegui
+ * ENTREGAR" viraram mensagens do cliente e dispararam turnos). Pura.
+ * Compara os últimos 11 dígitos (DDD + número no BR).
+ */
+export function avisoVoltariaAoCliente(destino: string | null, clientePhone: string | null): boolean {
+  const d = (destino ?? '').replace(/\D/g, '').slice(-11);
+  const c = (clientePhone ?? '').replace(/\D/g, '').slice(-11);
+  return d.length === 11 && c.length === 11 && d === c;
+}
+
 export async function enviarHandoffPorLentidao(
   _pool: unknown,
   args: {
@@ -198,6 +211,14 @@ export async function enviarHandoffPorLentidao(
       nome && telefone
         ? `${nome} (${telefone})`
         : nome || telefone || 'cliente sem identificação';
+    // GUARDA anti-loop (2026-10-14): se o destino é o PRÓPRIO cliente, o aviso
+    // voltaria como mensagem recebida e entraria na conversa. Não avisa.
+    if (avisoVoltariaAoCliente(digits, telefone)) {
+      args.log.warn('handoff por lentidão: destino do aviso é o próprio cliente — não avisei (anti-loop)', {
+        conversation_id: args.conversationId,
+      });
+      return;
+    }
     const causa = explicarCausa(args.causa);
 
     const texto =

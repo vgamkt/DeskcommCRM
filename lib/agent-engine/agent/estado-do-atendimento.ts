@@ -74,13 +74,20 @@ export function renderBlocoDeEstado(input: EstadoDoAtendimentoInput): string {
     );
   }
 
-  // Descrição da moto em foco: dados REAIS para falar das qualidades dela na
-  // apresentação e em objeções — sem listar a descrição de outras motos.
+  // Descrição da moto em foco: dados REAIS para RESPONDER o que o cliente perguntar
+  // sobre ela e para defender em OBJEÇÃO — sem listar a descrição de outras motos.
+  // ⚠️ NÃO convidar a um "pitch" espontâneo: antes a instrução dizia "use as
+  // QUALIDADES ao falar/defender" e o modelo emendava especificações fora de
+  // contexto (medido ao vivo 2026-10-14: no fecho do agendamento ele emendou "vale
+  // saber: faz 40 km/l, tanque 13,5 L, partida elétrica" — specs da `motos.descricao`
+  // que o cliente NÃO pediu).
   const descricao = input.descricaoDaMoto;
   if (descricao !== null && descricao !== undefined && descricao.texto.trim() !== '') {
     linhas.push(
-      `- Descrição da moto EM FOCO (${descricao.nome}) — use as QUALIDADES reais dela ao falar/defender ` +
-        `ESTA moto (apresentação e objeções); nunca aplique a outras motos nem invente: ${descricao.texto.trim()}`,
+      `- Descrição da moto EM FOCO (${descricao.nome}) — REFERÊNCIA para RESPONDER o que o cliente ` +
+        `perguntar sobre ELA e para defender em OBJEÇÃO. NÃO ofereça especificações/ficha técnica por conta ` +
+        `própria (nada de "vale saber", "é bom saber"); use-as SÓ quando o cliente PERGUNTAR ou ao contornar ` +
+        `uma objeção. Nunca aplique a outras motos nem invente: ${descricao.texto.trim()}`,
     );
   }
 

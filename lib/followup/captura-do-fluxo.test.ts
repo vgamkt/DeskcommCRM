@@ -222,11 +222,11 @@ describe("validador como fonte única da gravação (auditoria 2026-09-19)", () 
 describe("send_message nunca manda bolha em branco (achado 2026-09-19)", () => {
   it("o execute recusa corpo vazio antes de enviar", () => {
     const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
-    // C-107: quando o cliente fala de preço sem valor (ou faz pedido vago), o corpo
-    // é a PERGUNTA determinística e a recusa de corpo vazio não se aplica — daí o
-    // `!perguntaDeFaltaTurno &&` à frente.
+    // G3.2/G3.3 promovidos (2026-10-10): o motor não troca mais o corpo pela
+    // pergunta fixa (orçamento/necessidade) — a IA escreve. Então a recusa de
+    // corpo vazio vale sempre (sem o antigo `!perguntaDeFaltaTurno &&`).
     expect(src).toMatch(
-      /if \(!perguntaDeFaltaTurno && body\.trim\(\) === '' && \(media_urls \?\? \[\]\)\.length === 0 && media_url === undefined\) \{/,
+      /if \(body\.trim\(\) === '' && \(media_urls \?\? \[\]\)\.length === 0 && media_url === undefined\) \{/,
     );
     expect(src).toMatch(/code: 'corpo_vazio'/);
   });

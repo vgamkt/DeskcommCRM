@@ -2,11 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import type pg from "pg";
 
 vi.mock("../edge/llm/run-model-call", () => ({ runModelCall: vi.fn() }));
-// Este arquivo testa o validador de CHAT. A Jev fica DESLIGADA (sem alvos), senão
-// o `.env` de produção (JEV_ENABLED=1) faria o teste tentar a rede.
-vi.mock("../../ai/jev/resolver", () => ({ alvosDeJevDaOrg: async () => [] }));
+// Este arquivo testa o validador de CHAT. A Jev fica DESLIGADA por padrão (sem
+// alvos), senão o `.env` de produção (JEV_ENABLED=1) faria o teste tentar a rede.
+// Alguns testes LIGAM a Jev de propósito (mockam `alvosDeJevDaOrg` + `decidir`).
+vi.mock("../../ai/jev/resolver", () => ({ alvosDeJevDaOrg: vi.fn(async () => []) }));
+vi.mock("../../ai/jev", () => ({ decidir: vi.fn() }));
 vi.mock("../../ai/jev/outbox", () => ({ enfileirarDecisaoJev: async () => {} }));
 
+import { decidir } from "../../ai/jev";
+import { alvosDeJevDaOrg } from "../../ai/jev/resolver";
 import { runModelCall } from "../edge/llm/run-model-call";
 import {
   montarMensagemDoValidador,
@@ -16,6 +20,8 @@ import {
 } from "./flow-validate";
 
 const runModelCallMock = vi.mocked(runModelCall);
+const alvosMock = vi.mocked(alvosDeJevDaOrg);
+const decidirMock = vi.mocked(decidir);
 const logger = { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } as never;
 const db = {} as pg.Pool;
 const cfg = {} as never;
@@ -281,5 +287,89 @@ describe("validarRespostaDoFluxo", () => {
       { log: logger },
     );
     expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cpf", valor: "12345678900" }] });
+  });
+
+  /**
+   * REGRESSÃO P1 (2026-10-13): no turno MISTO — a Jev resolve um DISCRETO (CNH) e
+   * TAMBÉM marca um TEXTO (cidade) — o valor do texto é escrito pelo chat e NÃO
+   * pode ser descartado. Antes, um `return` antecipado devolvia só a CNH e a cidade
+   * se perdia (reperguntada até esgotar: `value NULL, attempts 3`).
+   */
+  const MISTO = {
+    perguntas: [
+      { key: "cidade", label: "Cidade", type: "text", question: "De qual cidade você fala?" },
+      { key: "cnh", label: "CNH", type: "boolean" },
+    ] as readonly PerguntaDoFluxo[],
+    preenchidos: [] as readonly { key: string; label: string; valor: string }[],
+    mensagens: [{ de: "cliente" as const, texto: "moro em São José dos Campos e tenho CNH" }],
+  };
+  const JEV_MISTO = {
+    respostas: {
+      respondeu_cidade: { type: "noul", noul: 0.98 },
+      respondeu_cnh: { type: "noul", noul: 0.97 },
+      valor_cnh: { type: "choice", choice: "sim" },
+    },
+  };
+  const ALVO = [{ provider: "typesafe", apiKey: "x", model: "jev-latest" }] as never;
+
+  it("MISTO: preserva o TEXTO marcado pela Jev mesmo com um DISCRETO já resolvido", async () => {
+    alvosMock.mockResolvedValueOnce(ALVO);
+    decidirMock.mockResolvedValueOnce(JEV_MISTO as never);
+    runModelCallMock.mockResolvedValue({
+      result: { text: '{"respostas":[{"campo":"cidade","valor":"São José dos Campos"}]}' },
+    } as never);
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      MISTO,
+      { log: logger },
+    );
+    expect(r.resultado).toBe("respondeu");
+    const respostas = r.resultado === "respondeu" ? r.respostas : [];
+    expect(respostas).toEqual(
+      expect.arrayContaining([
+        { campo: "cnh", valor: "sim" },
+        { campo: "cidade", valor: "São José dos Campos" },
+      ]),
+    );
+  });
+
+  it("MISTO: se o chat falhar, ainda devolve o DISCRETO que a Jev resolveu (não perde a CNH)", async () => {
+    alvosMock.mockResolvedValueOnce(ALVO);
+    decidirMock.mockResolvedValueOnce(JEV_MISTO as never);
+    runModelCallMock.mockRejectedValue(new Error("sem chave"));
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      MISTO,
+      { log: logger },
+    );
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cnh", valor: "sim" }] });
+  });
+
+  it("só DISCRETO respondido → não sobra nada para o chat (não o chama)", async () => {
+    alvosMock.mockResolvedValueOnce(ALVO);
+    decidirMock.mockResolvedValueOnce({
+      respostas: {
+        respondeu_cnh: { type: "noul", noul: 0.97 },
+        valor_cnh: { type: "choice", choice: "nao" },
+      },
+    } as never);
+    runModelCallMock.mockReset();
+    const r = await validarRespostaDoFluxo(
+      db,
+      cfg,
+      { tenantId: "o", leadId: "l", jobId: "j" },
+      {
+        perguntas: [{ key: "cnh", label: "CNH", type: "boolean" }],
+        preenchidos: [],
+        mensagens: [{ de: "cliente", texto: "não tenho" }],
+      },
+      { log: logger },
+    );
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cnh", valor: "nao" }] });
+    expect(runModelCallMock).not.toHaveBeenCalled();
   });
 });
