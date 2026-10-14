@@ -119,6 +119,15 @@ moto escolhida por `pedeMotoExplicito` (`:3387`). **Justificados (não migrar):*
 ---
 
 ## §6) LOG DE MUDANÇAS (mais recente no topo)
+- **2026-10-14** — **F11 (modelo FORA do estoque → oferta pela CATEGORIA, sem estreitar pela "linha") — FEITO e
+  VALIDADO.** **Defeito:** "Vocês têm uma **Lander**?" (não temos) trazia **1 moto** (CB 500 X). **Causa:** a Jev
+  chutou a hipótese "CB 500"; o motor estreitava a oferta pela **"linha" dessa hipótese**
+  (`compartilhaLinhaDoModelo`, via `nomeiaModelo`) → sobrava só a CB 500 X, embora houvesse **8 trail** no
+  estoque. **Correção:** quando o cliente cita um modelo que **NÃO está no estoque** (`citouModeloForaDoEstoque`,
+  detectado no bloco da categoria-da-referência), `nomeiaModelo=false` — a oferta é pela CATEGORIA, sem estreitar
+  pela linha. **DEPOIS (WAHA real):** "têm uma Lander?" → **5 motos** (XTZ Crosser, Crosser S, Hymalayan 400, CB
+  500 X, G 310 GS). Suíte **1448/1448**, typecheck ✓, lint 0. **Nota:** o teto é `similares_qtd=5` (schema máx 8);
+  as demais saem no "quer ver mais?".
 - **2026-10-14** — **F10b (a JEV decide a CONTINUAÇÃO do convite — princípio geral) — FEITO e VALIDADO.** Diretriz
   do dono: *"o 'sim' vem de várias formas, em qualquer situação; a decisão primária é a Jev"*. Em vez de a
   regex `clienteConfirmouVer` decidir, o ponto `offer_motos` (`lib/ai/jev/pontos/oferta.ts`) ganhou a pergunta

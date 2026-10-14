@@ -4880,6 +4880,11 @@ async function executarTurnoDoAgente(
             // que não temos (ex.: "Lander"), buscamos a CATEGORIA na referência `modelos`
             // e filtramos o estoque por ela — parecidas DE VERDADE (trail → XTZ/XRE),
             // em vez de casar por cilindrada ("Lander 250" → qualquer 250).
+            // O cliente citou um MODELO que NÃO está no estoque (ex.: "Lander")? Nesse
+            // caso NÃO estreitamos a oferta pela "linha" de uma hipótese (a Jev pode
+            // chutar a linha errada — "Lander" → hipótese "CB 500" → só a CB 500 X).
+            // Mostramos as motos da CATEGORIA (trail) que casam. Medido ao vivo 2026-10-14.
+            let citouModeloForaDoEstoque = false;
             if (turnoDeCatalogo && currentInboundText !== null && catalogoMapeamento !== null) {
               const palavras = [
                 ...new Set(currentInboundText.toLowerCase().match(/[a-zà-ú]{4,}/g) ?? []),
@@ -4891,6 +4896,7 @@ async function executarTurnoDoAgente(
                   !STOPWORDS_DE_PEDIDO.has(p.normalize('NFD').replace(/[\u0300-\u036f]/g, '')),
               );
               if (termosCitados.length > 0) {
+                citouModeloForaDoEstoque = true;
                 // DEGRAU 1: referência `modelos` (determinístico).
                 let catRef = await categoriaDoModeloNaReferencia(
                   deps.crmCfg.supabase,
@@ -5040,11 +5046,14 @@ async function executarTurnoDoAgente(
               exigidos: exigidosDoTurno,
               // C-106: interruptor do agente (desligado = OR antigo).
               criteriosDinamicos,
-              // O cliente NOMEOU um modelo ("CB 250")? O complemento fica na
-              // mesma LINHA do modelo — não completa com qualquer marca.
+              // O cliente NOMEOU um modelo que EXISTE ("CB 250")? O complemento fica
+              // na mesma LINHA do modelo — não completa com qualquer marca. Se o
+              // modelo citado NÃO está no estoque (ex.: "Lander"), a oferta é pela
+              // CATEGORIA — NÃO se estreita pela linha de uma hipótese da Jev.
               nomeiaModelo:
-                pedeMotoExplicito(mensagemDoJob ?? '') ||
-                motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0,
+                !citouModeloForaDoEstoque &&
+                (pedeMotoExplicito(mensagemDoJob ?? '') ||
+                  motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0),
             });
             // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
             // motor EXECUTA (filtra/ordena). Registra os dois lados.
