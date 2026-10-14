@@ -34,8 +34,20 @@ describe('offer_motos Jev', () => {
       oferecer: true,
       perguntar: false,
       criterio: 'preco',
+      continuacao: false,
       motivo: 'jev_liberou_preco',
     });
+  });
+
+  it('a Jev decide a CONTINUAÇÃO da fila ("mostrar_mais") quando há opções pendentes', () => {
+    const p = perguntaDeOfertaJev({ ...ctx, temOpcoesPendentes: true });
+    expect(p.continuacao?.type).toBe('choice');
+    expect(
+      vereditoDeOfertaDaJev({
+        oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} },
+        continuacao: { type: 'choice', choice: 'mostrar_mais', confidence: 1, probabilities: {} },
+      }).continuacao,
+    ).toBe(true);
   });
 
   it('o prompt traz "opções pendentes" + a regra de confirmar o "ver mais?"', () => {
@@ -53,6 +65,7 @@ describe('offer_motos Jev', () => {
       oferecer: false,
       perguntar: false,
       criterio: 'nenhum',
+      continuacao: false,
       motivo: 'jev_negou',
     });
   });
@@ -65,6 +78,7 @@ describe('offer_motos Jev', () => {
       oferecer: false,
       perguntar: true,
       criterio: 'nenhum',
+      continuacao: false,
       motivo: 'jev_perguntar',
     });
     // A pergunta da Jev oferece a opção "perguntar".

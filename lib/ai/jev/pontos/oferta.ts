@@ -51,6 +51,13 @@ export interface VereditoDeOferta {
   /** O pedido está VAGO: antes de mostrar, PERGUNTAR o que falta (orçamento/tipo/uso). */
   perguntar: boolean;
   criterio: CriterioDeOfertaJev;
+  /**
+   * Há opções pendentes (já perguntamos "quer ver mais?") e o cliente CONFIRMOU o
+   * convite, de QUALQUER forma ("sim", "pode", "quero", "manda", "claro", "isso"…).
+   * A JEV decide isto — entende a intenção, não a palavra (doutrina `jev-decide-sempre`).
+   * `true` = continuar a fila (mostrar as próximas); a regex é só fallback.
+   */
+  continuacao: boolean;
   /** Frase curta do porquê — para LOG, nunca para o cliente. */
   motivo: string;
 }
@@ -105,6 +112,25 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         ano: 'o cliente reclamou do ANO / quer mais nova',
       },
     },
+    // Só quando HÁ opções pendentes (já perguntamos "quer ver mais?"): a Jev decide
+    // se o cliente quer CONTINUAR a lista ou pediu algo diferente. Ela lê a intenção
+    // — QUALQUER forma de confirmar conta (não é regex de palavra).
+    ...(ctx.temOpcoesPendentes
+      ? {
+          continuacao: {
+            type: 'choice' as const,
+            instructions:
+              'Já mostramos motos e perguntamos "quer ver mais?". O cliente quer ver MAIS dessas opções ' +
+              '(continuar a lista) ou pediu algo DIFERENTE / mudou de assunto? Marque "mostrar_mais" para ' +
+              'QUALQUER forma de confirmar o convite (sim, pode, quero, manda, claro, bora, isso, etc.) — ' +
+              'entenda a INTENÇÃO, não a palavra exata.',
+            criteria: {
+              mostrar_mais: 'o cliente quer ver MAIS opções (confirmou o convite, de qualquer forma)',
+              novo_pedido: 'o cliente pediu algo diferente ou mudou de assunto',
+            },
+          },
+        }
+      : {}),
   };
 }
 
@@ -119,10 +145,13 @@ export function vereditoDeOfertaDaJev(respostas: RespostasDeJev): VereditoDeOfer
     oferecer && c?.type === 'choice' && (c.choice === 'preco' || c.choice === 'km' || c.choice === 'ano')
       ? c.choice
       : 'nenhum';
+  const cont = respostas.continuacao;
+  const continuacao = cont?.type === 'choice' && cont.choice === 'mostrar_mais';
   return {
     oferecer,
     perguntar,
     criterio,
+    continuacao,
     motivo: perguntar ? 'jev_perguntar' : oferecer ? `jev_liberou_${criterio}` : 'jev_negou',
   };
 }

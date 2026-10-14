@@ -4717,11 +4717,15 @@ async function executarTurnoDoAgente(
             // C-089: o cliente pediu "mais opções"? Consome a FILA pendente do
             // pedido atual (as que casaram o filtro mas ficaram fora do teto N).
             // Não repete; se a fila acabou, segue o fluxo normal (ranking).
-            // ⚠️ Também quando o cliente CONFIRMA o convite "quer ver mais?" que o
-            // bot fez ("sim", "pode", "quero") — antes só `querMaisOpcoes` disparava
-            // e um "Sim" fazia o bot PROMETER sem mostrar (medido ao vivo 2026-10-14).
+            // ⚠️ A JEV decide a CONTINUAÇÃO (`vereditoOfertaJev.continuacao`): ela lê a
+            // intenção e entende QUALQUER forma de confirmar ("sim"/"pode"/"quero"/
+            // "manda"/"claro"/…). `querMaisOpcoes`/`clienteConfirmouVer` são só o
+            // FALLBACK (Jev desligada). Antes só `querMaisOpcoes` disparava e um "Sim"
+            // fazia o bot PROMETER sem mostrar (medido ao vivo 2026-10-14).
             if (
-              (querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente)) &&
+              (vereditoOfertaJev?.continuacao === true ||
+                querMaisOpcoes(msgCliente) ||
+                clienteConfirmouVer(msgCliente)) &&
               catalogoDaConversa.opcoes !== null &&
               catalogoDaConversa.opcoes.pendentes.length > 0
             ) {

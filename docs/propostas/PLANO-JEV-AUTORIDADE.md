@@ -119,6 +119,16 @@ moto escolhida por `pedeMotoExplicito` (`:3387`). **Justificados (não migrar):*
 ---
 
 ## §6) LOG DE MUDANÇAS (mais recente no topo)
+- **2026-10-14** — **F10b (a JEV decide a CONTINUAÇÃO do convite — princípio geral) — FEITO e VALIDADO.** Diretriz
+  do dono: *"o 'sim' vem de várias formas, em qualquer situação; a decisão primária é a Jev"*. Em vez de a
+  regex `clienteConfirmouVer` decidir, o ponto `offer_motos` (`lib/ai/jev/pontos/oferta.ts`) ganhou a pergunta
+  **`continuacao`** (`mostrar_mais` / `novo_pedido`), feita **só quando há opções pendentes** (já perguntamos
+  "quer ver mais?"). A Jev lê a INTENÇÃO — **qualquer forma** de confirmar conta (sim/pode/quero/manda/claro/…).
+  `vereditoDeOfertaDaJev` devolve `continuacao`; a fila (`inbound-turn.ts`) usa **`vereditoOfertaJev.continuacao`
+  primeiro**, com `querMaisOpcoes`/`clienteConfirmouVer` só como FALLBACK (Jev desligada). **DEPOIS (WAHA real):**
+  "têm uma Honda?" → 5 motos + "Quer ver mais?"; **"Pode mandar sim, quero ver as outras"** → 4 motos + "Claro!
+  Separei mais algumas Hondas…". Suíte **1448/1448**, typecheck ✓, lint 0. **Princípio** (vale para os outros
+  pontos da Jev): quem entende a intenção é a Jev; regex só fallback.
 - **2026-10-14** — **F10 ("Sim" ao "quer ver mais?" agora MOSTRA) — FEITO e VALIDADO.** **Defeito (WhatsApp
   real):** o bot mostrou 5 Honda, perguntou "Quer ver mais algumas?", o cliente respondeu **"Sim"** e o bot
   disse *"Vou verificar aqui as outras Honda… e já te falo"* — **não mostrou**. **Causa-raiz:** a **Jev negava a
