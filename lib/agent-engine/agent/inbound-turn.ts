@@ -230,7 +230,7 @@ import { unificarPecasDoTurno } from './juncao-do-turno';
 import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
-import { casaPerfil, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, filtrarPorHipoteses, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   decidirOfertaComAutoridadeDaJev,
   preferenciaDoCriterio,
@@ -5073,12 +5073,8 @@ async function executarTurnoDoAgente(
                 if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
               }
               motosOferecidasNesteTurno = [...selecao.motos];
-              // Decisão do dono: na APRESENTAÇÃO (antes de o cliente escolher) o convite
-              // "quer ver mais opções parecidas?" aparece SEMPRE (a IA pergunta de forma
-              // natural). Com a moto de interesse já travada, NÃO convida — só se o cliente
-              // PEDIR (caminho da fila). Espelha o `escolha_travada` do `podeOferecerMotos`.
-              temMaisOpcoesNesteTurno =
-                selecao.motos.length > 0 && catalogoDaConversa.escolhida === null;
+              // O convite "quer ver mais?" é definido DEPOIS de montar a fila (abaixo):
+              // só convida quando a fila tem o que mostrar.
               // C-089: guarda a FILA das que casaram mas ficaram fora do teto N,
               // para o próximo "quero ver mais opções" consumir sem repetir. SÓ o MESMO
               // PERFIL (marca/categoria) entra na fila — o "mais opções" entrega motos que
@@ -5093,11 +5089,23 @@ async function executarTurnoDoAgente(
                   (m) => !jaEnviadas.has(m.nome),
                 );
                 if (modoEstrito) {
-                  // C-106: no estrito, o "mais opções" são SÓ as casadas restantes.
+                  // C-106 + decisão do dono (2026-10-14): a 1ª oferta são as que CASAM
+                  // (até N, sem encher com coisa infundada); o "ver mais" continua por
+                  // ORDEM DE CASAMENTO — depois das casadas restantes, as PARECIDAS que
+                  // casam só em parte (`filtrarPorHipoteses` = OR pontuado).
+                  const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
+                  const parciais = filtrarPorHipoteses(
+                    candidatos,
+                    hipotesesDoTurno,
+                    faixasDoTurno,
+                    cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                    principalDoTurno,
+                    termoBase,
+                  ).filter((m) => !casadasSet.has(m.nome) && !jaEnviadas.has(m.nome));
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
-                    pendentes: casadasNaoEnviadas,
+                    pendentes: [...casadasNaoEnviadas, ...parciais],
                   };
                 } else {
                   const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
@@ -5116,6 +5124,14 @@ async function executarTurnoDoAgente(
               } else {
                 opcoesParaSalvar = null;
               }
+              // Decisão do dono (2026-10-14): o convite "quer ver mais?" sai SEMPRE que
+              // a FILA tem o que mostrar — mesmo quando casaram POUCAS (ex.: 2): manda
+              // as 2 e PERGUNTA, porque há parecidas para o "ver mais". Com a moto de
+              // interesse já travada, NÃO convida (só se o cliente PEDIR).
+              temMaisOpcoesNesteTurno =
+                selecao.motos.length > 0 &&
+                catalogoDaConversa.escolhida === null &&
+                (opcoesParaSalvar?.pendentes.length ?? 0) > 0;
               // Apresentação de SEMELHANTES: 1 foto por moto. Só quando o cliente
               // pediu um MODELO que EXISTE (e veio 1 unidade) faz sentido mandar
               // todas as fotos dela — como na escolha. Sem isto, um filtro que

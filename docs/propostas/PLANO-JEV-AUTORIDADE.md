@@ -119,6 +119,15 @@ moto escolhida por `pedeMotoExplicito` (`:3387`). **Justificados (não migrar):*
 ---
 
 ## §6) LOG DE MUDANÇAS (mais recente no topo)
+- **2026-10-14** — **F12 (oferta: 1ª = as que CASAM; "ver mais" = por ordem de casamento) — FEITO e VALIDADO.**
+  Decisão do dono: **não encher a 1ª oferta com coisa infundada** — a primeira leva são as que CASAM (até
+  `similares_qtd=5`); o **"ver mais"** continua por **ordem de casamento** (as casadas restantes e, se faltar,
+  as **parecidas** que casam só em parte — `filtrarPorHipoteses`, OR pontuado). Quando casam **poucas** (ex.: 2),
+  manda as 2 e **pergunta** — porque há parecidas para o "ver mais". **Correção:** no modo estrito, a fila
+  (`inbound-turn.ts`) passou a ser `[...casadasNaoEnviadas, ...parciais]`; e o convite "quer ver mais?" só sai
+  quando a fila tem o que mostrar. **DEPOIS (WAHA real):** "têm uma Lander?" → **5 motos** + "Quer ver mais
+  algumas?"; **"Pode mandar mais, quero ver outras"** → **3 motos** (BMW G 310 GS, XRE 190, V-Strom). Suíte
+  **1448/1448**, typecheck ✓, lint 0.
 - **2026-10-14** — **F11 (modelo FORA do estoque → oferta pela CATEGORIA, sem estreitar pela "linha") — FEITO e
   VALIDADO.** **Defeito:** "Vocês têm uma **Lander**?" (não temos) trazia **1 moto** (CB 500 X). **Causa:** a Jev
   chutou a hipótese "CB 500"; o motor estreitava a oferta pela **"linha" dessa hipótese**
