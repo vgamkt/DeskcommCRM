@@ -3293,6 +3293,9 @@ async function executarTurnoDoAgente(
     // Estimativa determinística: a Jev refina isto na ação da negociação (mesma chamada).
     clienteConfirmouOpcoes: (negociacaoAnterior?.attempts ?? 0) >= 3 && confirmouVerAberto,
     motivoObjecaoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
+    // Já perguntamos "quer ver mais?" e há opções na fila — a Jev decide OFERECER
+    // quando o cliente confirma o convite ("sim"/"pode"/"quero").
+    temOpcoesPendentes: (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0,
   };
   const decidirTrio = !preview && mensagemDoJob.trim() !== '';
   const vereditoTrio = decidirTrio
@@ -4714,8 +4717,11 @@ async function executarTurnoDoAgente(
             // C-089: o cliente pediu "mais opções"? Consome a FILA pendente do
             // pedido atual (as que casaram o filtro mas ficaram fora do teto N).
             // Não repete; se a fila acabou, segue o fluxo normal (ranking).
+            // ⚠️ Também quando o cliente CONFIRMA o convite "quer ver mais?" que o
+            // bot fez ("sim", "pode", "quero") — antes só `querMaisOpcoes` disparava
+            // e um "Sim" fazia o bot PROMETER sem mostrar (medido ao vivo 2026-10-14).
             if (
-              querMaisOpcoes(msgCliente) &&
+              (querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente)) &&
               catalogoDaConversa.opcoes !== null &&
               catalogoDaConversa.opcoes.pendentes.length > 0
             ) {

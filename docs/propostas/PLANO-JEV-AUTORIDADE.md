@@ -119,6 +119,15 @@ moto escolhida por `pedeMotoExplicito` (`:3387`). **Justificados (não migrar):*
 ---
 
 ## §6) LOG DE MUDANÇAS (mais recente no topo)
+- **2026-10-14** — **F10 ("Sim" ao "quer ver mais?" agora MOSTRA) — FEITO e VALIDADO.** **Defeito (WhatsApp
+  real):** o bot mostrou 5 Honda, perguntou "Quer ver mais algumas?", o cliente respondeu **"Sim"** e o bot
+  disse *"Vou verificar aqui as outras Honda… e já te falo"* — **não mostrou**. **Causa-raiz:** a **Jev negava a
+  oferta** (`veredito_jev:false`) porque **não sabia que o bot havia perguntado "quer ver mais?"**; e a fila de
+  opções só era consumida por `querMaisOpcoes("Sim")` (falso). **Correção:** (1) `temOpcoesPendentes` no
+  `ContextoDeOferta` (`lib/ai/jev/pontos/oferta.ts`) + regra "se há opções pendentes E o cliente CONFIRMA o
+  convite (sim/pode/quero/manda/mostra) → oferecer"; (2) a fila (`inbound-turn.ts`) também é consumida com
+  `clienteConfirmouVer`. **DEPOIS (WAHA real):** "têm uma Honda?" → 5 motos + "Quer ver mais?"; **"Sim"** → 4
+  motos + "Perfeito! Separei mais algumas opções pra você:". Suíte **1447/1447**, typecheck ✓, lint 0.
 - **2026-10-14** — **F9 (pergunta de aquisição educada, com nome e todas as formas) — FEITO e VALIDADO.**
   `perguntaDeAquisicao` (`mais-opcoes.ts`) reescrita: chama o cliente pelo **nome** e oferece **todas** as formas
   (à vista, financiado, **no cartão**, ou **moto na troca** como parte do pagamento), em tom educado ("só pra eu

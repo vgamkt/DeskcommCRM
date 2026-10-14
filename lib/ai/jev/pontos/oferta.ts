@@ -33,6 +33,13 @@ export interface ContextoDeOferta {
   temMotoEmFoco: boolean;
   /** O pedido citou uma moto que NÃO está no catálogo (equivale a "não temos"). */
   pedidoSemCorrespondencia: boolean;
+  /**
+   * Há OPÇÕES PENDENTES: nós já mostramos motos e perguntamos "quer ver mais?"
+   * (o motor guardou as que ficaram fora do teto). Se o cliente CONFIRMA esse
+   * convite ("sim", "pode", "quero", "manda"), a resposta é OFERECER. Sem este
+   * sinal, a Jev via só um "sim" solto e negava (medido ao vivo 2026-10-14).
+   */
+  temOpcoesPendentes: boolean;
   /** Estamos na 3ª+ objeção e o cliente JÁ confirmou que quer ver opções. */
   clienteConfirmouOpcoes: boolean;
   /** Tipo da objeção anterior, se houver (contexto para a Jev). */
@@ -59,7 +66,10 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         `OU se a moto que ele pediu NÃO existe no estoque (aí mostre equivalentes). Contexto: ` +
         `moto em foco=${ctx.temMotoEmFoco}, escolha travada=${ctx.temEscolhaTravada}, ` +
         `pedido sem correspondência no estoque=${ctx.pedidoSemCorrespondencia}, ` +
-        `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}. ` +
+        `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}, ` +
+        `temos opções pendentes (já perguntamos "quer ver mais?")=${ctx.temOpcoesPendentes}. ` +
+        'REGRA: se "temos opções pendentes" for verdadeiro E o cliente CONFIRMA o convite ("sim", ' +
+        '"pode", "quero", "manda", "mostra"), a resposta é "sim, mostrar motos agora". ' +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +
         'ou se uma objeção ainda está sendo contornada. ' +
         'REGRA INEGOCIÁVEL: se o cliente PERGUNTA se temos uma moto/modelo específico ' +

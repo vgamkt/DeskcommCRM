@@ -18,6 +18,7 @@ const ctx: ContextoDeOferta = {
   pedidoSemCorrespondencia: false,
   clienteConfirmouOpcoes: false,
   motivoObjecaoAnterior: null,
+  temOpcoesPendentes: false,
 };
 
 describe('offer_motos Jev', () => {
@@ -35,6 +36,12 @@ describe('offer_motos Jev', () => {
       criterio: 'preco',
       motivo: 'jev_liberou_preco',
     });
+  });
+
+  it('o prompt traz "opções pendentes" + a regra de confirmar o "ver mais?"', () => {
+    const p = perguntaDeOfertaJev({ ...ctx, temOpcoesPendentes: true });
+    expect(p.oferta?.instructions).toContain('opções pendentes');
+    expect(p.oferta?.instructions).toMatch(/CONFIRMA o convite/);
   });
 
   it('não oferecer → criterio nenhum', () => {
