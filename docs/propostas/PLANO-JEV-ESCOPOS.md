@@ -186,6 +186,25 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — ANTI-LOOP: o bot lia as PRÓPRIAS imagens (ingest) — FEITO E VALIDADO AO VIVO.**
+  - **DIAGNÓSTICO:** a org tem vários números como `channel_sessions`. O **principal** (`…2501`, `ai_gate:open`)
+    ENVIA as mensagens; o **apoio** (`…0101`, `ai_isolado:true`) é um número de teste. O envio do principal
+    chega na OUTRA sessão como `fromMe=false` (inbound) — e era ingerido como se fosse um **lead**: criava
+    **contato com o PRÓPRIO número do bot** (medido: **905 inbound / 195 outbound** — o bot falando consigo
+    mesmo), rodava turno e **DERIVAVA (lia) as imagens do bot** → `media-derive` → binding
+    `visao_de_imagem=google/gemini-3.7-flash` → Google sem crédito → `failed permanently`.
+  - **CORREÇÃO estrutural (`lib/waha/ingest.ts`, `handleInbound`):** inbound cujo **REMETENTE é o BOT
+    PRINCIPAL** (sessão da org **não-isolada**) é ENVIO NOSSO → **ignorado** antes de criar contato/conversa e
+    de derivar mídia. O número de **APOIO (isolado)** NÃO é filtrado — ele pode enviar imagens e o principal
+    as lê (desenho do dono). A ponte **LID↔telefone** (`contacts.wa_lid`) cobre o principal enviando como
+    `…@lid`. Duplicatas de sessão (STOPPED sem a marca) são tratadas por NÚMERO (isolado = QUALQUER linha).
+  - **DEPOIS (ao vivo):** contato do bot parou de crescer (1116→1117 num turno, antes crescia ~8/turno) e o
+    bot SEGUE respondendo (7 bolhas). Log: `inbound do número do BOT PRINCIPAL — ignorado (anti-loop)`;
+    sem novos `media-derive failed`. `tsc` 0; `lib/waha` 128/128.
+  - **Observações:** (a) as **sessões duplicadas** (WORKING+STOPPED por número) são config a arrumar na tela;
+    (b) o **Google** (visão) sem crédito continua valendo para imagens REAIS de clientes — dar crédito ou
+    trocar o binding `visao_de_imagem`.
+
 - **2026-10-15 — ESCOPO 12 (o TEXTO tem que casar com as motos enviadas) — FEITO.**
   - **DIAGNÓSTICO (onde estava o erro):** no caminho da apresentação AUTOMÁTICA, o MOTOR escolhe as
     motos, mas o modelo escreve o texto (`send_message.body`) ANTES — sem saber QUAIS/QUANTAS vão. Ele

@@ -20,6 +20,7 @@ import {
   pausarIaPorAtendimentoManual,
 } from "@/lib/escalacao/atendimento-manual";
 import { configDeComandosDoAgente, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
+import { canalIsolado } from "@/lib/escalacao/canal-isolado";
 import {
   configDeLimpezaDoAgente,
   lerComandoDeLimpeza,
@@ -643,6 +644,79 @@ async function resolverMensagemCitada(
   return data?.id ?? null;
 }
 
+/**
+ * ANTI-LOOP — o remetente é o BOT PRINCIPAL (uma sessão NOSSA NÃO-isolada)?
+ *
+ * A instalação pode ter MAIS de um número. O PRINCIPAL (sessão comercial, sem
+ * `ai_isolado`) é quem ENVIA as mensagens do bot; um número de APOIO/teste pode
+ * ter `ai_isolado: true`. Quando dois números nossos conversam, o ENVIO do
+ * PRINCIPAL chega na OUTRA sessão como `fromMe=false` (inbound) — e era ingerido
+ * como se fosse um LEAD: criava contato com o PRÓPRIO número do bot, rodava turno
+ * e DERIVAVA (lia) as imagens do bot. Medido ao vivo: contato do próprio número
+ * com 905 inbound / 195 outbound (o bot falando consigo mesmo) e a visão
+ * falhando. Um número que é sessão NOSSA e NÃO é isolada é o próprio bot: a
+ * mensagem dele é ENVIO nosso, nunca do cliente.
+ *
+ * O número de APOIO (isolado) NÃO é filtrado: ele pode enviar imagens e o
+ * PRINCIPAL as lê (desenho do dono). Cache de 60s por org (o inbound é o caminho
+ * de maior volume; não pode pagar um SELECT por mensagem).
+ */
+let cacheDeSessoesDoBot: { org: string; em: number; ids: Set<string> } | null = null;
+export async function remetenteEhBotPrincipal(
+  admin: Admin,
+  orgId: string,
+  ident: { phone: string | null; lid: string | null },
+): Promise<boolean> {
+  const somenteDigitos = (s: string | null | undefined): string => String(s ?? "").replace(/[^0-9]/g, "");
+  const phone = somenteDigitos(ident.phone);
+  const lid = somenteDigitos(ident.lid);
+  if (phone === "" && lid === "") return false;
+  if (
+    cacheDeSessoesDoBot === null ||
+    cacheDeSessoesDoBot.org !== orgId ||
+    Date.now() - cacheDeSessoesDoBot.em > 60_000
+  ) {
+    const { data } = await admin
+      .from("channel_sessions")
+      .select("phone_number, metadata")
+      .eq("organization_id", orgId);
+    // Isolado = o NÚMERO tem QUALQUER linha marcada `ai_isolado` (a instalação pode
+    // ter sessão DUPLICADA — uma WORKING isolada e uma STOPPED sem a marca; olhar
+    // linha a linha trataria o apoio como bot). Só quem NUNCA é isolado é o bot.
+    const isolados = new Set<string>();
+    for (const r of data ?? []) {
+      if (!canalIsolado((r as { metadata?: unknown }).metadata)) continue;
+      const n = somenteDigitos((r as { phone_number?: string }).phone_number);
+      if (n !== "") isolados.add(n);
+    }
+    const ids = new Set<string>();
+    const phonesDaI = new Set<string>();
+    for (const r of data ?? []) {
+      const n = somenteDigitos((r as { phone_number?: string }).phone_number);
+      if (n === "" || isolados.has(n)) continue;
+      ids.add(n);
+      phonesDaI.add(n);
+    }
+    // O bot pode ENVIAR como LID (`…@lid`) e o telefone vem como `+55…`: a ponte
+    // LID↔telefone vive em `contacts.wa_lid`. Sem isto, o envio do bot chegando
+    // como LID escaparia do anti-loop (medido: mensagens vinham `false_…@lid_…`).
+    if (phonesDaI.size > 0) {
+      const variantes = [...phonesDaI].flatMap((p) => [p, `+${p}`]);
+      const { data: cts } = await admin
+        .from("contacts")
+        .select("phone_number, wa_lid")
+        .eq("organization_id", orgId)
+        .in("phone_number", variantes);
+      for (const ct of cts ?? []) {
+        const l = somenteDigitos((ct as { wa_lid?: string | null }).wa_lid);
+        if (l !== "") ids.add(l);
+      }
+    }
+    cacheDeSessoesDoBot = { org: orgId, em: Date.now(), ids };
+  }
+  return cacheDeSessoesDoBot.ids.has(phone) || (lid !== "" && cacheDeSessoesDoBot.ids.has(lid));
+}
+
 async function handleInbound(
   admin: Admin,
   session: Session,
@@ -662,6 +736,22 @@ async function handleInbound(
   // um registro, e log que enche sozinho é log que ninguém lê.
   if (!ehEnderecavel(parsed)) {
     await avisarChatNaoReconhecido(admin, session.organization_id, session.id, chatId, "inbound");
+    return;
+  }
+
+  // ANTI-LOOP: remetente é o BOT PRINCIPAL (nossa sessão NÃO-isolada) → é ENVIO
+  // nosso, não um lead. Ignora ANTES de criar contato/conversa e de derivar mídia.
+  // (O número de APOIO/isolado continua passando — o principal lê o que ele manda.)
+  if (
+    await remetenteEhBotPrincipal(admin, session.organization_id, {
+      phone: parsed.phone,
+      lid: parsed.lid,
+    })
+  ) {
+    logger.warn("waha.ingest: inbound do número do BOT PRINCIPAL — ignorado (anti-loop)", {
+      organization_id: session.organization_id,
+      session_id: session.id,
+    });
     return;
   }
 
