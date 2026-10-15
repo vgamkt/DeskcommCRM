@@ -230,7 +230,7 @@ import { unificarPecasDoTurno } from './juncao-do-turno';
 import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
-import { casaPerfil, filtrarPorHipoteses, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, filtrarPorExigencias, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   decidirOfertaComAutoridadeDaJev,
   preferenciaDoCriterio,
@@ -5092,18 +5092,17 @@ async function executarTurnoDoAgente(
                   (m) => !jaEnviadas.has(m.nome),
                 );
                 if (modoEstrito) {
-                  // C-106 + decisão do dono (2026-10-14): a 1ª oferta são as que CASAM
-                  // (até N, sem encher com coisa infundada); o "ver mais" continua por
-                  // ORDEM DE CASAMENTO — depois das casadas restantes, as PARECIDAS que
-                  // casam só em parte (`filtrarPorHipoteses` = OR pontuado).
+                  // C-106 + decisão do dono (2026-10-14 + Escopo 7 2026-10-15): a 1ª oferta
+                  // são as que CASAM (até N); o "ver mais" continua por ORDEM DE CASAMENTO.
+                  // As PARCIAIS têm de RESPEITAR o filtro RÍGIDO (exigidos/faixas): nunca uma
+                  // Bajaj num pedido de Honda, nem 19k num "até 15 mil" (medido ao vivo).
                   const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
-                  const parciais = filtrarPorHipoteses(
+                  const parciais = filtrarPorExigencias(
                     candidatos,
+                    exigidosDoTurno,
                     hipotesesDoTurno,
                     faixasDoTurno,
                     cfgCatalogo?.tolerancia_preco_pct ?? 30,
-                    principalDoTurno,
-                    termoBase,
                   ).filter((m) => !casadasSet.has(m.nome) && !jaEnviadas.has(m.nome));
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,

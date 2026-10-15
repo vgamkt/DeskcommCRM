@@ -263,7 +263,12 @@ function modoDe(respostas: RespostasDeJev, chave: string): string | undefined {
 /** Margem de ±30% na busca por NÚMERO (regra do dono): aceita um pouco acima e abaixo. */
 export const MARGEM_NUMERICA_PCT = 30;
 
-/** Alarga a faixa em ±`pct`% (para cima e para baixo), arredondando. */
+/**
+ * Alarga a faixa em ±`pct`% (para cima e para baixo), arredondando. O teto
+ * ("até X") MANTÉM a margem (dono, 2026-10-15): "até 15 mil" busca até ~19.500,
+ * mas ORDENA pela mais próxima de 15.000 primeiro — o que fica acima do teto
+ * entra depois, por proximidade. A margem é decisão do dono.
+ */
 function aplicarMargem(
   f: { min?: number; max?: number } | null,
   pct: number,
