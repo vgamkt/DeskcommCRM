@@ -5524,7 +5524,10 @@ async function executarTurnoDoAgente(
             let introducao: string;
             let final = '';
             if (motorEscolheuMotos) {
-              introducao = introducaoFactualDaApresentacao(itens.length);
+              introducao = introducaoFactualDaApresentacao(itens.length, {
+                nome: effectiveContext.contact.name,
+                variacao: pedidosDeOpcoesTurno,
+              });
               final = perguntaDeEscolha({ variacao: pedidosDeOpcoesTurno });
             } else if (cfg?.abertura_sem_citar === false) {
               introducao = textoDoModelo;

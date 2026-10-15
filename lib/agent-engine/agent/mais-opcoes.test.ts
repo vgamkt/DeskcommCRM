@@ -31,15 +31,27 @@ describe('perguntaDeMaisOpcoes', () => {
 
 describe('introducaoFactualDaApresentacao (ESCOPO 12)', () => {
   it('conta a quantidade REAL de opções que vão sair', () => {
-    expect(introducaoFactualDaApresentacao(1)).toMatch(/essa opção/i);
-    expect(introducaoFactualDaApresentacao(1)).not.toMatch(/\bopções\b/);
-    expect(introducaoFactualDaApresentacao(2)).toContain('2 opções');
-    expect(introducaoFactualDaApresentacao(5)).toContain('5 opções');
+    expect(introducaoFactualDaApresentacao(1, { variacao: 0 })).toMatch(/essa/i);
+    expect(introducaoFactualDaApresentacao(2, { variacao: 0 })).toContain('2 opções');
+    expect(introducaoFactualDaApresentacao(3, { variacao: 0 })).toContain('3 opções');
+  });
+
+  it('personaliza com o nome do cliente', () => {
+    expect(introducaoFactualDaApresentacao(2, { nome: 'Vander', variacao: 0 })).toContain('Vander');
+    expect(introducaoFactualDaApresentacao(1, { nome: 'Vander', variacao: 0 })).toContain('Vander');
+  });
+
+  it('VARIA (não repete a mesma abertura)', () => {
+    const a = introducaoFactualDaApresentacao(3, { variacao: 0 });
+    const b = introducaoFactualDaApresentacao(3, { variacao: 1 });
+    const c = introducaoFactualDaApresentacao(3, { variacao: 2 });
+    expect(new Set([a, b, c]).size).toBe(3);
   });
 
   it('não afirma faixa/valores (só a contagem)', () => {
-    const t = introducaoFactualDaApresentacao(3);
-    expect(t).not.toMatch(/R\$|mil|faixa|valor/i);
+    for (let i = 0; i < 5; i++) {
+      expect(introducaoFactualDaApresentacao(3, { variacao: i })).not.toMatch(/R\$|mil|faixa|valor/i);
+    }
   });
 });
 

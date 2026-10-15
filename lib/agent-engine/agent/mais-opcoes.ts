@@ -49,10 +49,32 @@ export function perguntaDeMaisOpcoes(args: {
  * (medido ao vivo). Aqui a contagem vem da PRÓPRIA lista que vai sair — verdade
  * por construção. Módulo PURO.
  */
-export function introducaoFactualDaApresentacao(quantidade: number): string {
+export function introducaoFactualDaApresentacao(
+  quantidade: number,
+  opts: { nome?: string | null; variacao?: number } = {},
+): string {
   const n = Math.max(0, Math.floor(quantidade));
-  if (n === 1) return 'Olha essa opção que separei pra você:';
-  return `Separei ${n} opções pra você:`;
+  const nome = (opts.nome ?? '').trim();
+  const v = Math.abs(Math.floor(opts.variacao ?? 0));
+  const trata = nome !== '' ? `${nome}, ` : '';
+  // Variantes NATURAIS (não uma frase cravada), e o cliente pelo nome — mantendo
+  // a CONTAGEM real. A `variacao` gira para não repetir sempre a mesma abertura.
+  const opcoes =
+    n === 1
+      ? [
+          `${trata}olha essa que separei pra você:`,
+          `${trata}dá uma olhada nessa que achei pra você:`,
+          `${trata}separei essa aqui que combina com o que você disse:`,
+          `${trata}essa aqui pode te interessar:`,
+        ]
+      : [
+          `${trata}separei ${n} opções pra você dar uma olhada:`,
+          `${trata}olha essas ${n} que separei pra você:`,
+          `${trata}dá uma olhada nessas ${n} que combinam com o que você procura:`,
+          `${trata}achei ${n} que podem te interessar:`,
+          `${trata}separei ${n} aqui pra você ver:`,
+        ];
+  return opcoes[v % opcoes.length]!;
 }
 
 /**
