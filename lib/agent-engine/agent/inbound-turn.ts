@@ -197,7 +197,12 @@ import {
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
-import { perguntaDeEscolha, perguntaDeMaisOpcoes, perguntaDeOutrosNoValor } from './mais-opcoes';
+import {
+  introducaoFactualDaApresentacao,
+  perguntaDeEscolha,
+  perguntaDeMaisOpcoes,
+  perguntaDeOutrosNoValor,
+} from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
 import { perguntaDeObjecaoJev, vereditoDeObjecaoDaJev } from '../../ai/jev/pontos/objecao';
@@ -2037,6 +2042,8 @@ function precoNumericoDaMoto(m: MotoDoCatalogo): number | null {
   const v = parseFloat(raw.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.'));
   return Number.isFinite(v) ? v : null;
 }
+
+
 
 export async function runAgentTurn(
   deps: InboundTurnDeps,
@@ -5495,6 +5502,13 @@ async function executarTurnoDoAgente(
             itens: readonly { url: string; legenda: string }[],
             textoDoModelo: string,
             agrupar: boolean,
+            // ESCOPO 12: quando o MOTOR escolheu as motos (apresentação automática),
+            // o modelo escreveu o texto ANTES de saber QUAIS/QUANTAS vão — e "chuta"
+            // ("vou mandar duas", "não encontrei dentro do valor") enquanto o motor
+            // envia outra coisa. Nesse caminho a INTRO é determinística e FACTUAL
+            // (contagem real); o texto do modelo fica só nos turnos sem apresentação
+            // automática. É o "formar o contexto antes de enviar".
+            motorEscolheuMotos = false,
           ): Promise<ChannelSendResult> => {
             // Reset do contador do bloco: a MESMA apresentação gera os MESMOS seqs
             // em qualquer chamada/re-run (dedupe pelo ledger). Ver o bloco acima.
@@ -5502,7 +5516,10 @@ async function executarTurnoDoAgente(
             const cfg = agentConfig?.catalogConfig;
             let introducao: string;
             let final = '';
-            if (cfg?.abertura_sem_citar === false) {
+            if (motorEscolheuMotos) {
+              introducao = introducaoFactualDaApresentacao(itens.length);
+              final = perguntaDeEscolha({ variacao: pedidosDeOpcoesTurno });
+            } else if (cfg?.abertura_sem_citar === false) {
               introducao = textoDoModelo;
             } else {
               const sep = separarTextoApresentacao(textoDoModelo, catalogoDoTurno);
@@ -5670,7 +5687,13 @@ async function executarTurnoDoAgente(
               // Apresentação (motor escolheu as motos): 1 foto por moto com a
               // legenda dela (ou agrupada, se o toggle pedir).
               if (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) {
-                return enviarApresentacao(planoAutomatico, corpoFinal, cfg?.foto_por_moto === false);
+                // ESCOPO 12: motor escolheu as motos → introdução determinística/factual.
+                return enviarApresentacao(
+                  planoAutomatico,
+                  corpoFinal,
+                  cfg?.foto_por_moto === false,
+                  true,
+                );
               }
               // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
               // mesmo formato — texto, depois as fotos (sem legenda), depois a
@@ -7094,7 +7117,7 @@ async function executarTurnoDoAgente(
       // família e CONVIDE a ver OUTROS MODELOS nesse valor (sem despejar o catálogo
       // nem trazer motos muito acima do teto).
       outrosNoValorNesteTurno
-        ? '## A família em foco não preencheu esse valor\nO cliente tinha um modelo em foco e adicionou um valor/critério. Mostre as motos DESSA família/linha que caibam no valor; se não houver nenhuma, mostre as que caibam no valor. Feche o turno perguntando se ele quer ver OUTROS MODELOS nesse valor (ex.: "Quer que eu te mostre outros modelos nesse valor?"). NUNCA traga motos muito acima do valor que ele citou.'
+        ? '## Outros modelos nesse valor\nO cliente adicionou um valor/critério a uma moto em foco. Apresente SOMENTE as que caibam no valor (o motor já escolheu — não invente nem afirme que não há opções no valor). Feche o turno perguntando se ele quer ver outros modelos nesse valor (ex.: "Quer que eu te mostre outros modelos nesse valor?"). NUNCA traga motos muito acima do valor que ele citou.'
         : '',
       // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
       // convidado a ver as demais. Determinístico (motor), por-lead.

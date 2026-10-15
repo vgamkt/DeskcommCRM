@@ -47,6 +47,12 @@ describe('offer_motos Jev', () => {
     expect(instr).toContain('HONDA XRE 190');
   });
 
+  it('USO/TERRENO e estilo contam como critério (não perguntar vago)', () => {
+    const instr = perguntaDeOfertaJev(ctx).oferta?.instructions ?? '';
+    expect(instr).toMatch(/USO\/TERRENO/i);
+    expect(instr).toMatch(/pra trilha/i);
+  });
+
   it('pedido por CILINDRADA/cc com moto em foco é pedido claro (não "falar dela")', () => {
     // Regressão medida ao vivo: "Quero uma 250" com moto em foco era negado.
     const p = perguntaDeOfertaJev({ ...ctx, temMotoEmFoco: true, mensagem: 'Quero uma 250.' });

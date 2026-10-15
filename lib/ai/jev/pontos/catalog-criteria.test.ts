@@ -165,6 +165,14 @@ describe("estilo/categoria por si (ESCOPO 11)", () => {
     const q = perguntaDeCriteriosDeJev(entradaCat);
     expect(String(q["exigidos_categoria"]?.instructions)).toMatch(/MANTER esse estilo/i);
   });
+
+  it("KM e POTÊNCIA só exigem se o cliente falar delas (na dúvida, NÃO)", () => {
+    const q = perguntaDeCriteriosDeJev({ colunas: ["quilometragem", "potencia"], estoque: [] });
+    expect(String(q["exigidos_quilometragem"]?.instructions)).toMatch(/QUILOMETRAGEM/);
+    expect(String(q["exigidos_quilometragem"]?.instructions)).toMatch(/DÚVIDA, responda NÃO/);
+    expect(String(q["exigidos_potencia"]?.instructions)).toMatch(/POTÊNCIA/);
+    expect(String(q["exigidos_potencia"]?.instructions)).toMatch(/DÚVIDA, responda NÃO/);
+  });
 });
 
 describe("ESCOPO 9 — moto em foco (interesse ∩ critério)", () => {

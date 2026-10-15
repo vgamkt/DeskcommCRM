@@ -186,6 +186,24 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — ESCOPO 12 (o TEXTO tem que casar com as motos enviadas) — FEITO.**
+  - **DIAGNÓSTICO (onde estava o erro):** no caminho da apresentação AUTOMÁTICA, o MOTOR escolhe as
+    motos, mas o modelo escreve o texto (`send_message.body`) ANTES — sem saber QUAIS/QUANTAS vão. Ele
+    então "chuta" ("vou te mandar duas", "não encontrei dentro do valor") e o motor envia outra coisa →
+    **divergência texto × motos**. O mecanismo que daria a lista ao modelo (prefetch `JEV_PREFETCH_ENABLED`)
+    está DESLIGADO, e testá-lo ligado **piorou** (passou a perguntar em vez de mostrar) — não promover.
+  - **CORREÇÃO estrutural:** na apresentação automática (`enviarApresentacao(..., motorEscolheuMotos=true)`)
+    a INTRO passa a ser **determinística e factual** (`introducaoFactualDaApresentacao(N)` = conta as
+    motos REAIS que vão sair) + a pergunta de escolha determinística. O texto do modelo fica só nos turnos
+    sem apresentação automática. Também: (a) `perguntaDeOutrosNoValor` ganhou frases NEUTRAS (não afirmam
+    "não encontrei dentro do valor"); (b) o hint de "outros nesse valor" não afirma mais que não há opções;
+    (c) `exigidos_quilometragem`/`exigidos_potencia` só exigem se o cliente FALAR delas (a Jev marcava km
+    sozinha → excluía motos boas); (d) `offer_motos`: USO/TERRENO conta como critério (não perguntar).
+  - **DEPOIS (ao vivo):** texto e fotos CASAM ("Separei 2 opções" + 2 fotos; "até 20 mil" → 2 fotos ≤20k).
+    `tsc` 0; suíte **1484/1484**.
+  - **Pendência observada:** um turno com `categoria_alvo` trouxe só 2 motos onde o filtro isolado traz 6 —
+    investigar os CANDIDATOS (leitura do banco / consulta do modelo), não o filtro.
+
 - **2026-10-15 — ESCOPO 11 (separar MATCH de SIMILAR; estilo por texto) — FEITO E VALIDADO AO VIVO.**
   - **ANTES (medido ao vivo):** (a) "pra cidade e umas **trilhas**" → a Jev NÃO marcava `categoria` →
     sem filtro de estilo → vinha **CB 300 F (seminova)** entre as trail; (b) "gostei dessas trail. tem

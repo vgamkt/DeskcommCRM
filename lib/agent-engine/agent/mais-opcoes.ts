@@ -41,6 +41,21 @@ export function perguntaDeMaisOpcoes(args: {
 }
 
 /**
+ * ABERTURA FACTUAL da apresentação quando o MOTOR escolheu as motos (ESCOPO 12).
+ *
+ * POR QUE EXISTE: no caminho da apresentação automática, o modelo escreve o texto
+ * ANTES de saber QUAIS/QUANTAS motos vão sair — então "chutava" ("vou te mandar
+ * duas", "não encontrei dentro do valor") enquanto o motor enviava outra coisa
+ * (medido ao vivo). Aqui a contagem vem da PRÓPRIA lista que vai sair — verdade
+ * por construção. Módulo PURO.
+ */
+export function introducaoFactualDaApresentacao(quantidade: number): string {
+  const n = Math.max(0, Math.floor(quantidade));
+  if (n === 1) return 'Olha essa opção que separei pra você:';
+  return `Separei ${n} opções pra você:`;
+}
+
+/**
  * PERGUNTA DE "OUTROS MODELOS NESSE VALOR" (ESCOPO 9).
  *
  * POR QUE EXISTE: o cliente tinha uma moto em FOCO (ex.: uma CB) e ADICIONOU um
@@ -59,11 +74,15 @@ export function perguntaDeOutrosNoValor(args: {
   const modelo = (args.modelo ?? '').trim();
   const v = Math.abs(Math.floor(args.variacao ?? 0));
   const foco = modelo !== '' ? ` de ${modelo}` : '';
+  // Frases NEUTRAS: NÃO afirmam "não encontrei nenhuma dentro do valor" (falso quando
+  // acabamos de mostrar motos no valor) — apenas CONVIDAM a ver outros modelos na
+  // mesma faixa. Asserção de fato só quando o motor garante (medido ao vivo: o bot
+  // dizia "não encontrei outras dentro desse valor" E mostrava motos na faixa).
   const opcoes = [
-    `Nesse valor eu não tenho mais opções${foco}, mas tenho outros modelos nessa mesma faixa. Quer que eu te mostre?`,
-    `Não encontrei outras${foco} dentro desse valor, mas posso te mostrar outros modelos nesse valor. Quer ver?`,
-    `Essas foram as que achei${foco} nesse valor. Quer que eu procure outros modelos nesse mesmo valor?`,
-    `Se quiser, eu te mostro outros modelos nessa faixa de valor também. Quer que eu veja?`,
+    `Quer que eu te mostre outros modelos nesse valor também${foco ? `, além dessas${foco}` : ''}?`,
+    `Se quiser, eu te mostro outros modelos nessa mesma faixa de valor também. Quer que eu veja?`,
+    `Posso procurar outros modelos nesse valor pra você também, se quiser.`,
+    `Quer que eu veja mais modelos nesse valor também?`,
   ];
   return opcoes[v % opcoes.length]!;
 }

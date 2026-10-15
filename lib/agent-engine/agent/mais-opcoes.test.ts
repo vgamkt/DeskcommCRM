@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { perguntaDeMaisOpcoes, perguntaDeOutrosNoValor } from './mais-opcoes';
+import {
+  introducaoFactualDaApresentacao,
+  perguntaDeMaisOpcoes,
+  perguntaDeOutrosNoValor,
+} from './mais-opcoes';
 
 describe('perguntaDeMaisOpcoes', () => {
   it('sem modelo: convite a mais opções, variando', () => {
@@ -22,6 +26,20 @@ describe('perguntaDeMaisOpcoes', () => {
       expect(perguntaDeMaisOpcoes({ variacao: i })).not.toBe('');
       expect(perguntaDeMaisOpcoes({ modeloCitado: 'XRE 190', variacao: i })).toContain('XRE 190');
     }
+  });
+});
+
+describe('introducaoFactualDaApresentacao (ESCOPO 12)', () => {
+  it('conta a quantidade REAL de opções que vão sair', () => {
+    expect(introducaoFactualDaApresentacao(1)).toMatch(/essa opção/i);
+    expect(introducaoFactualDaApresentacao(1)).not.toMatch(/\bopções\b/);
+    expect(introducaoFactualDaApresentacao(2)).toContain('2 opções');
+    expect(introducaoFactualDaApresentacao(5)).toContain('5 opções');
+  });
+
+  it('não afirma faixa/valores (só a contagem)', () => {
+    const t = introducaoFactualDaApresentacao(3);
+    expect(t).not.toMatch(/R\$|mil|faixa|valor/i);
   });
 });
 

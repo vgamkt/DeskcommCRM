@@ -211,7 +211,11 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
           ? 'O cliente pediu CILINDRADA por si (ex.: "quero uma 250", "250cc", "motos de 300", "entre 150 e 300")? Se o número apareceu apenas DENTRO do nome do MODELO (ex.: "CB 250", "Fazer 250"), responda NÃO — o número faz parte do nome, não é filtro.'
           : detectarPapelColuna(col) === 'tipo'
             ? 'O cliente mencionou um ESTILO/CATEGORIA por si como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha". Quando ele descreve o USO/TERRENO (trilha, terra, estrada, cidade), marque SIM — o motor vai MANTER esse estilo (não completar com outros). Se ele citou o estilo apenas DENTRO de um modelo, responda NÃO.'
-            : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
+            : detectarPapelColuna(col) === 'km'
+              ? 'O cliente FALOU de QUILOMETRAGEM/rodagem/km por si (ex.: "com pouca km", "menos rodada", "até 30 mil km")? Na DÚVIDA, responda NÃO — marcar km sem o cliente pedir EXCLUI motos boas (medido ao vivo).'
+              : ehColunaDePotencia(col)
+                ? 'O cliente FALOU de POTÊNCIA/cavalos/cv por si (ex.: "uma mais potente", "acima de 30 cavalos")? Na DÚVIDA, responda NÃO — marcar potência sem o cliente pedir EXCLUI motos boas.'
+                : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
     };
   }
 
