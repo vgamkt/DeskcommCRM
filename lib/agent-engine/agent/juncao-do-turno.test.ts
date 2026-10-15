@@ -29,4 +29,9 @@ describe('SYSTEM_DA_JUNCAO', () => {
     expect(SYSTEM_DA_JUNCAO).toContain('IA');
     expect(SYSTEM_DA_JUNCAO.toLowerCase()).toContain('prometa');
   });
+
+  it('manda explicações/frases PRIMEIRO e as perguntas no FINAL', () => {
+    expect(SYSTEM_DA_JUNCAO).toMatch(/EXPLICAÇÕES\/FRASES/);
+    expect(SYSTEM_DA_JUNCAO).toMatch(/PERGUNTAS no FINAL/);
+  });
 });
