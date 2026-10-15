@@ -4435,6 +4435,31 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // ANTI-DUPLICAÇÃO (2026-10-15): o modelo lite às vezes chama send_message
+        // DUAS vezes no mesmo turno depois de o motor já ter enviado a apresentação
+        // automática das motos + a pergunta — a 2ª vira bolha REPETIDA (medido ao
+        // vivo: "Lander 250" saiu com a intro duplicada). A apresentação automática
+        // já inclui texto e pergunta; uma 2ª mensagem SEM mídia/motos novas é
+        // redundante. Recusa com instrução para encerrar (não repete a bolha).
+        if (
+          jaApresentouAutomatico &&
+          (media_urls ?? []).length === 0 &&
+          media_url === undefined &&
+          (motos ?? []).length === 0
+        ) {
+          runLog.info('send_message após apresentação automática — recusado (anti-duplicação)', {
+            job_id: liveJob().id,
+          });
+          return {
+            ok: false,
+            error: {
+              code: 'apresentacao_ja_enviada',
+              message:
+                'O sistema já enviou a apresentação das motos e a pergunta de venda neste turno. ' +
+                'NÃO envie outra mensagem de texto agora — encerre o turno e aguarde a resposta do cliente.',
+            },
+          };
+        }
         // ─── A RÉGUA ÚNICA no envio ───────────────────────────────────────────
         // O modelo NÃO pode OFERECER motos do catálogo (argumento `motos`) por
         // conta própria: sem sinal do cliente, a régua barra. É o 2º caminho de
@@ -5064,7 +5089,18 @@ async function executarTurnoDoAgente(
               // alternativas parecidas (N), nunca o catálogo inteiro.
               hipoteses: hipotesesDoTurno,
               faixas: faixasDoTurno,
-              filtrarPorComparacao: !pedidoDeModeloExistente && intencaoDoTurno !== 'alternativa',
+              // LIGAÇÃO (o "esquecer de ligar"): o que a JEV separou — `exigidos`
+              // e faixas — SEMPRE filtra, mesmo com intenção "alternativa". Antes,
+              // `intencaoDoTurno !== 'alternativa'` DESLIGAVA o filtro e a
+              // categoria/marca/faixa era calculada e DESCARTADA (medido ao vivo:
+              // "Lander 250" → categoria Trail virava filtro morto e vinham 250
+              // aleatórias). Alternativa só desliga o filtro quando a Jev NÃO
+              // declarou nada explícito (objeção pura: "achei caro"/"outra cor").
+              filtrarPorComparacao:
+                !pedidoDeModeloExistente &&
+                (intencaoDoTurno !== 'alternativa' ||
+                  exigidosDoTurno.length > 0 ||
+                  Object.keys(faixasDoTurno).length > 0),
               toleranciaPct: cfgCatalogo?.tolerancia_preco_pct ?? 30,
               // C-090: interruptor "enviar todas as motos que casam" (config do
               // agente). Ligado → manda tudo que casou, sem teto/paginação. C-106:
@@ -6762,7 +6798,11 @@ async function executarTurnoDoAgente(
             exigidos: extraidosPrefetch.exigidos,
             // ESCOPO 9: combina interesse ∩ critério também no caminho de prefetch.
             motoEmFoco: motosEmFoco,
-            filtrarPorComparacao: extraidosPrefetch.intencao !== 'alternativa',
+            // Mesma LIGAÇÃO do caminho principal: exigidos/faixas da Jev sempre filtram.
+            filtrarPorComparacao:
+              extraidosPrefetch.intencao !== 'alternativa' ||
+              extraidosPrefetch.exigidos.length > 0 ||
+              Object.keys(extraidosPrefetch.faixas).length > 0,
             toleranciaPct: agentConfig?.catalogConfig?.tolerancia_preco_pct ?? 30,
             criteriosDinamicos: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
             nomeiaModelo:

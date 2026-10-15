@@ -186,6 +186,47 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — ORDEM NUMÉRICA + anti-duplicação de apresentação — FEITO E VALIDADO AO VIVO.**
+  - **ORDEM NUMÉRICA (dono):** quando o cliente pede um NÚMERO (ex.: "quero uma 250") e a Jev marca a
+    coluna principal (`principal=cilindrada`), as motos mais PRÓXIMAS do número têm que vir primeiro
+    (exata antes da aproximada), para QUALQUER coluna numérica (cilindrada/preço/ano/potência).
+    **ANTES:** a ordem final era a NOTA da Jev (que podia pôr uma scooter 250 à frente, ou um ~300 antes
+    do 250). **DURANTE:** `filtrarPorHipoteses` ganhou o critério PRIMÁRIO de proximidade ao número do
+    pedido (alvo derivado do termo; a coluna vem do `principal` da Jev = Jev-first); a nota da Jev
+    desempata. **DEPOIS (ao vivo):** "Quero uma 250." → CBX 250 (249), XMax 250 (249), depois CB 300s.
+  - **ANTI-DUPLICAÇÃO (apresentação):** investigação do "Lander 250" (intro repetida) → o modelo lite
+    chama `send_message` DUAS vezes na mesma job (steps 2 e 3); a 1ª dispara a apresentação automática
+    (texto+fotos+pergunta, fotos já deduplicadas por `jaApresentouAutomatico`), a 2ª vira bolha de texto
+    repetida. **DURANTE:** `send_message` recusa (determinístico, sem fuzzy) uma 2ª mensagem SEM
+    mídia/motos depois de a apresentação automática já ter saído, com instrução para encerrar.
+    **DEPOIS (ao vivo):** "Lander 250" saiu com UMA intro + a pergunta + as 5 fotos trail.
+  - `tsc` 0; `lint` 0; suíte **1475/1475**; deploy `8acab534`.
+
+- **2026-10-15 — CORREÇÃO da regressão de SEGMENTAÇÃO (Lander/250/Honda) — FEITO E VALIDADO AO VIVO.**
+  - **ANTES (medido ao vivo):** "Vocês têm uma Lander 250?" (com foco de CB na conversa) → a Jev vinha
+    `intencao=alternativa`; e no motor `alternativa` **desligava** `filtrarPorComparacao` → o filtro de
+    `categoria` (Trail, resolvido da referência `modelos`) era **calculado e descartado** → vinham 250
+    aleatórias (CBX 250, XMax 250, YS Fazer 250). Provado por sonda: a MESMA mensagem dava `pedido` sem
+    foco e `alternativa` com foco (efeito do contexto `motoEmFoco` do Escopo 9). Segundo defeito medido:
+    "Quero uma 250." → ponto `offer_motos` negava (`jev_negou`, sem fotos).
+  - **DURANTE (correção em 2 lugares, JEV PRIMEIRO):**
+    (1) `catalog-criteria.ts` — a instrução de foco separa 3 casos: **pedido de MODELO por nome** →
+    `pedido` (mesmo de outro estilo); **critério adicionado ao foco** → `pedido` (refino); só **reações**
+    ("achei caro"/"outra cor") → `alternativa`.
+    (2) **LIGAÇÃO** (`inbound-turn.ts` ×2 + `selecao-por-intencao.ts`): o que a Jev SEPAROU
+    (`exigidos`/faixas) **SEMPRE filtra** — `alternativa` só desliga o filtro quando a Jev não declarou
+    nada explícito. Era o "esquecer de ligar": categoria/marca/faixa virava filtro morto.
+    (3) `oferta.ts` — pedido por **CILINDRADA/cc** ("quero uma 250"/"300cc") com moto em foco agora é
+    pedido claro → `oferecer` (antes negava).
+  - **DEPOIS (ao vivo, versão `8acab534`):** "CB 300" → "Lander 250" → **só trail** (XTZ 150 Crosser S
+    FLEX, Himalayan, CB 500 X, BMW G 310 GS, XRE 190) + narração "não tenho a Lander, mas separei trail";
+    "Tem alguma Honda?" → **só Hondas**; "Quero uma 250." → **mostra fotos** (250s + 300 próximos);
+    Escopo 9 "CB 300" → "e tem alguma até 17 mil?" → 3 CB ≤17 mil + convite "outros nesse valor".
+    Sonda `offer_motos`: "Quero uma 250"→oferecer, "essa moto é boa?"→nao_oferecer (Escopo 2 preservado).
+    `tsc` 0; `lint` 0; suíte **1473/1473**.
+  - **Pendências observadas:** (a) narração de apresentação saiu DUPLICADA numa bolha (intro repetida);
+    (b) "Quero uma 250" traz XMax 250 (scooter R$31.9k) primeiro — ordem pela NOTA da Jev (decisão de produto).
+
 - **2026-10-15 — ESCOPO 9 (combinar interesse + critério novo) — FEITO E VALIDADO AO VIVO.**
   - **ANTES (sonda ao vivo, binding `typesafe`/`jev-latest`):** "e tem alguma até 17 mil?" com o
     estoque completo e o estado ATUAL (`{mensagem, estoque}`):

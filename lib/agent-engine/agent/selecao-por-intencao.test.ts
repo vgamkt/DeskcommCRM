@@ -624,6 +624,47 @@ describe('selecionarPorIntencao com hipóteses/faixas (C-089)', () => {
   });
 });
 
+describe('ORDEM NUMÉRICA quando o cliente pede um número (dono, 2026-10-15)', () => {
+  const CAT = [
+    moto('HONDA CB 300 R', { categoria: 'Street', cilindrada: '293.5', marca: 'HONDA', preco: '12500' }),
+    moto('HONDA CBX 250 Twister', { categoria: 'Naked, Street', cilindrada: '249', marca: 'HONDA', preco: '9990' }),
+    moto('YAMAHA XMax 250', { categoria: 'Scooter', cilindrada: '249', marca: 'YAMAHA', preco: '31900' }),
+  ];
+
+  it('filtrarPorHipoteses: a mais PRÓXIMA do número vem antes (mesmo com nota da Jev maior na distante)', () => {
+    const passou = filtrarPorHipoteses(
+      CAT,
+      [{ nome: 'CB 300 R', cilindrada: '293.5', score: 0.99 }],
+      {},
+      30,
+      'cilindrada',
+      'quero uma 250',
+    );
+    // O CB 300 R tem a MAIOR nota da Jev, mas 293.5 está mais longe de 250 que os
+    // 249 → a proximidade ordena: os 249 (exatos) vêm primeiro.
+    expect(passou[0]!.valores?.cilindrada).toBe('249');
+    expect(passou[1]!.valores?.cilindrada).toBe('249');
+    expect(passou[2]!.valores?.cilindrada).toBe('293.5');
+  });
+
+  it('selecionarPorIntencao: "quero uma 250" (principal cilindrada) traz os 250 antes dos ~300', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'quero uma 250',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: CAT,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      principal: 'cilindrada',
+      hipoteses: [{ cilindrada: '250' }, { nome: 'CB 300 R', score: 0.99 }],
+      faixas: { cilindrada: { min: 113, max: 325 } },
+    });
+    expect(r.motos.map((m) => m.valores?.cilindrada)).toEqual(['249', '249', '293.5']);
+  });
+});
+
 describe('categoria composta (ex.: "Adventure / Trilha") casa por CONTEÚDO', () => {
   const XRE = moto('HONDA XRE 190', {
     categoria: 'Adventure / Trilha',
@@ -898,6 +939,33 @@ describe('selecionarPorIntencao — ESCOPO 9 (interesse ∩ critério)', () => {
     });
     expect(r.interesse).toEqual([]);
     expect(r.outrosNoValor).toBe(false);
+  });
+
+  it('SEGMENTAÇÃO: alternativa COM exigidos (categoria da referência) FILTRA mesmo assim', () => {
+    // Regressão medida ao vivo: "Lander 250" caía como alternativa e o filtro de
+    // categoria era descartado. Agora, exigência explícita da Jev sempre filtra.
+    const CAT: MotoDoCatalogo[] = [
+      moto('HONDA XRE 190', { categoria: 'Adventure / Trilha', cilindrada: '184', marca: 'HONDA', preco: '22500' }),
+      moto('YAMAHA XTZ 150 Crosser S FLEX', { categoria: 'Trail, On-Off Road', cilindrada: '149', marca: 'YAMAHA', preco: '19990' }),
+      moto('HONDA CBX 250 Twister', { categoria: 'Naked, Street', cilindrada: '249', marca: 'HONDA', preco: '9990' }),
+    ];
+    const r = selecionarPorIntencao({
+      termoBase: 'Vocês têm uma Lander 250?',
+      criterios: {},
+      intencao: 'alternativa',
+      motoAtual: ATUAL,
+      candidatos: CAT,
+      mapeamento: MAPEAMENTO,
+      quantidade: 5,
+      filtrarPorComparacao: true,
+      exigidos: ['categoria'],
+      hipoteses: [{ categoria: 'Trail' }],
+      faixas: { categoria: ['Trail'] },
+    });
+    const nomes = r.motos.map((m) => m.nome);
+    expect(nomes).toContain('HONDA XRE 190');
+    expect(nomes).toContain('YAMAHA XTZ 150 Crosser S FLEX');
+    expect(nomes).not.toContain('HONDA CBX 250 Twister');
   });
 
   it('interesse preenche o pedido → NÃO sinaliza outros no valor', () => {

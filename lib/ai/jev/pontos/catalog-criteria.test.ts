@@ -141,6 +141,15 @@ describe("ESCOPO 9 — moto em foco (interesse ∩ critério)", () => {
     expect(String(q["parecida_0"]?.instructions)).toMatch(/INTERESSE EM FOCO/i);
   });
 
+  it("com motoEmFoco, pedido de MODELO por nome NÃO é lido como alternativa", () => {
+    const q = perguntaDeCriteriosDeJev({ ...entrada, motoEmFoco: ["HONDA CB 300"] });
+    const instr = String(q.intencao?.instructions);
+    // Regra que impede a regressão: pedir um modelo (mesmo de outro estilo) = "pedido".
+    expect(instr).toMatch(/MODELO por NOME/i);
+    expect(instr).toMatch(/PEDIDO NOVO/i);
+    expect(instr).toMatch(/NUNCA responda "alternativa"/i);
+  });
+
   it("sem motoEmFoco, NÃO injeta a regra de refino", () => {
     const q = perguntaDeCriteriosDeJev(entrada);
     expect(String(q.intencao?.instructions)).not.toMatch(/REFINO/i);

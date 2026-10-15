@@ -82,16 +82,22 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}, ` +
         `temos opções pendentes (já perguntamos "quer ver mais?")=${ctx.temOpcoesPendentes}. ` +
         // Escopo 2: distinguir "fala DELA" de "pede OUTRA" (evita re-ofertar com moto em foco).
-        'REGRA DA MOTO EM FOCO: se há uma moto EM FOCO e o cliente está falando DELA (elogio, dúvida, ' +
-        '"ver de perto", negociação, "essa moto é boa?") → responda "não mostrar"; só mostre outra se ele ' +
-        'pedir EXPLICITAMENTE uma moto diferente/nova ("tem uma XRE?", "quero ver outra"). ' +
+        // Correção (medida ao vivo): um PEDIDO por CILINDRADA ("quero uma 250") era lido como
+        // "falar da moto em foco" e negava — mesmo sendo pedido claro. Pedido por critério
+        // (modelo/marca/cc/categoria/preço) SEMPRE mostra, MESMO com moto em foco.
+        'REGRA DA MOTO EM FOCO: se há uma moto EM FOCO e o cliente está falando DELA SEM pedir nada novo ' +
+        '(elogio, dúvida, "ver de perto", negociação, "essa moto é boa?") → responda "não mostrar". ' +
+        'MAS se a mensagem tem um PEDIDO de moto — MESMO com moto em foco — (por MODELO, MARCA, ' +
+        'CILINDRADA/cc — ex.: "quero uma 250", "quero uma 300cc" —, CATEGORIA/estilo, faixa de preço, ' +
+        '"tem uma XRE?", "quero ver outra") → responda "sim, mostrar motos agora". ' +
         'REGRA: se "temos opções pendentes" for verdadeiro E o cliente CONFIRMA o convite ("sim", ' +
         '"pode", "quero", "manda", "mostra"), a resposta é "sim, mostrar motos agora". ' +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +
         'ou se uma objeção ainda está sendo contornada. ' +
         'REGRA INEGOCIÁVEL: se o cliente PERGUNTA se temos uma moto/modelo específico ' +
-        '("tem a CB 300?", "vocês têm X?", "quanto custa a X?") ou PEDE para ver o catálogo, a ' +
-        'resposta é SEMPRE "sim, mostrar motos agora". ' +
+        '("tem a CB 300?", "vocês têm X?", "quanto custa a X?") OU PEDE uma moto por um critério ' +
+        'claro — marca, CILINDRADA/cc ("quero uma 250", "quero uma 300cc"), categoria/estilo ou faixa ' +
+        'de preço — ou PEDE para ver o catálogo, a resposta é SEMPRE "sim, mostrar motos agora". ' +
         'REGRA INEGOCIÁVEL: se "cliente pediu mais opções" for verdadeiro, a resposta é SEMPRE ' +
         '"sim, mostrar motos agora" (com o criterio que ataca o motivo). NUNCA negue um pedido ' +
         'explícito do cliente. ' +

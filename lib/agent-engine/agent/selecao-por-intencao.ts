@@ -28,7 +28,7 @@ import {
 
 import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
-import { numeroDaCelula } from './similaridade';
+import { extrairCilindrada, extrairPrecoDoPedido, numeroDaCelula } from './similaridade';
 import { escolherComReferencia } from './similaridade-referencia';
 
 /**
@@ -510,6 +510,20 @@ const TOKENS_DE_MODELO = new Set([
   'twister', 'tener', 'bros', 'pcx', 'pop', 'adv',
 ]);
 
+/**
+ * O NÚMERO que o cliente pediu, para a coluna que a Jev marcou como `principal`.
+ * "quero uma 250" → cilindrada 250; "até 17 mil" → preço 17000; "de 2024" → 2024.
+ */
+function alvoNumericoDaColuna(termo: string, coluna: string): number | null {
+  const papel = detectarPapelColuna(coluna);
+  if (papel === 'preco') return extrairPrecoDoPedido(termo);
+  if (papel === 'ano') {
+    const m = termo.match(/\b(19|20)\d{2}\b/);
+    return m ? Number(m[0]) : null;
+  }
+  return extrairCilindrada(termo);
+}
+
 export function filtrarPorHipoteses(
   candidatos: readonly MotoDoCatalogo[],
   hipoteses: readonly HipoteseDeMoto[],
@@ -523,6 +537,17 @@ export function filtrarPorHipoteses(
   );
   const temFaixas = Object.keys(faixas).length > 0;
   if (!temHipoteses && !temFaixas) return [];
+  // ORDEM NUMÉRICA (dono, 2026-10-15): quando o cliente pediu um NÚMERO e a Jev
+  // marcou a coluna principal (ex.: cilindrada em "quero uma 250"), as motos mais
+  // PRÓXIMAS do número vêm primeiro — a EXATA antes da aproximada. A Jev diz QUAL
+  // coluna importa (`principal`); o motor ORDENA por proximidade a ela. Vale para
+  // qualquer coluna numérica (cilindrada, preço, ano, potência).
+  const alvo = principal !== null ? alvoNumericoDaColuna(termo, principal) : null;
+  const dist = (m: MotoDoCatalogo): number => {
+    if (principal === null || alvo === null) return 0;
+    const v = numeroDaCelula(m.valores?.[principal] ?? '');
+    return v === null ? Number.MAX_SAFE_INTEGER : Math.abs(v - alvo);
+  };
   const avaliados = candidatos
     .map((moto, i) => ({
       moto,
@@ -540,9 +565,13 @@ export function filtrarPorHipoteses(
   const dentro = avaliados.filter((x) => !x.fora);
   const usar = dentro.length > 0 ? dentro : avaliados;
   return usar
-    // PASSO EXTRA (dono, 2026-10-06): a ORDEM é a NOTA da Jev (ela assimila o
-    // conjunto, sem cor); os pontos determinísticos desempatam.
-    .sort((a, b) => b.nota - a.nota || b.pontos - a.pontos || a.i - b.i)
+    // ORDEM: primeiro a PROXIMIDADE ao número pedido (quando há principal
+    // numérico); depois a NOTA da Jev (ela assimila o conjunto, sem cor); os
+    // pontos determinísticos desempatam.
+    .sort(
+      (a, b) =>
+        dist(a.moto) - dist(b.moto) || b.nota - a.nota || b.pontos - a.pontos || a.i - b.i,
+    )
     .map((x) => x.moto);
 }
 
@@ -671,9 +700,14 @@ export function selecionarPorIntencao(
   // `estrito` = havia exigência E ela casou algo. Diferente de "caiu no genérico
   // porque o estrito zerou" — só no primeiro não se completa com perfil alheio.
   let estrito = false;
+  // LIGAÇÃO: o filtro que a JEV separou (`exigencias`) SEMPRE roda — inclusive no
+  // modo alternativa, quando há exigência explícita (ex.: categoria da referência
+  // para um modelo que não temos). Antes, `!alternativo` descartava o filtro e a
+  // categoria virava filtro morto. Sem exigência, a alternativa segue no modo
+  // âncora (comportamento antigo: objeção "achei caro"/"outra cor").
   if (
     input.filtrarPorComparacao === true &&
-    !alternativo &&
+    (exigencias.length > 0 || !alternativo) &&
     (exigencias.length > 0 ||
       (input.hipoteses?.length ?? 0) > 0 ||
       Object.keys(input.faixas ?? {}).length > 0)

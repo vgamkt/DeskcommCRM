@@ -47,6 +47,15 @@ describe('offer_motos Jev', () => {
     expect(instr).toContain('HONDA XRE 190');
   });
 
+  it('pedido por CILINDRADA/cc com moto em foco é pedido claro (não "falar dela")', () => {
+    // Regressão medida ao vivo: "Quero uma 250" com moto em foco era negado.
+    const p = perguntaDeOfertaJev({ ...ctx, temMotoEmFoco: true, mensagem: 'Quero uma 250.' });
+    const instr = p.oferta?.type === 'choice' ? p.oferta.instructions : '';
+    expect(instr).toMatch(/CILINDRADA\/cc/);
+    expect(instr).toMatch(/quero uma 250/);
+    expect(instr).toMatch(/MESMO com moto em foco/);
+  });
+
   it('a Jev decide a CONTINUAÇÃO da fila ("mostrar_mais") quando há opções pendentes', () => {
     const p = perguntaDeOfertaJev({ ...ctx, temOpcoesPendentes: true });
     expect(p.continuacao?.type).toBe('choice');

@@ -114,13 +114,16 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
 
   const foco = e.motoEmFoco ?? [];
   const temFoco = foco.length > 0;
-  // ESCOPO 9: com uma moto em FOCO, "e tem alguma até 17 mil?" é REFINO do
-  // interesse (a MESMA linha, agora com um teto) — não um pedido novo nem uma
-  // alternativa ("algo diferente"). A intenção segue "pedido" (ele continua
-  // querendo AQUELA linha) e as hipóteses ficam na família da moto em foco.
+  // ESCOPO 9 + segmentação: definir a intenção SEM deixar pedido de modelo virar
+  // "alternativa" (que no motor desliga o filtro). Casos, nesta ordem:
+  //   (1) pede um MODELO por nome (mesmo de outro estilo) → "pedido";
+  //   (2) ADICIONA um critério às motos em foco ("e tem alguma até 17 mil?") → "pedido" (REFINO);
+  //   (3) só REAGE à moto em foco SEM pedir modelo novo (caro/cor/ano/barata/rodada) → "alternativa".
   const instrucaoIntencao = temFoco
-    ? `O cliente JÁ tem estas motos em FOCO na conversa (interesse demonstrado): ${listaDeFoco(foco)}. ` +
-      'Se a mensagem ADICIONA um critério (preço, cilindrada, ano, cor) a essas motos — ex.: "e tem alguma até 17 mil?" — NÃO é pedido de outro modelo nem "outra moto": ele continua querendo a MESMA família/linha, agora com o critério (é um REFINO). Nesse caso responda "pedido" e marque em "parecida" as motos do ESTOQUE da MESMA família/linha. Só responda "alternativa" se ele quiser algo DIFERENTE dessas motos por si (outra marca/estilo, achou caro A PONTO de trocar de linha).'
+    ? `O cliente JÁ tem estas motos em FOCO na conversa (interesse demonstrado): ${listaDeFoco(foco)}. REGRAS: ` +
+      '(1) Se a mensagem PEDE/PERGUNTA por um MODELO por NOME (ex.: "tem uma Lander 250?", "queria uma XRE 190") → responda "pedido": é um PEDIDO NOVO, MESMO que o modelo seja de outro estilo/marca que o foco. NUNCA responda "alternativa" só porque o modelo pedido é diferente do foco. ' +
+      '(2) Se a mensagem ADICIONA um critério (preço, cilindrada, ano, cor) às motos em foco — ex.: "e tem alguma até 17 mil?" → responda "pedido" também (é REFINO: continua querendo a MESMA família/linha, agora com o critério) e marque em "parecida" as motos da MESMA família/linha. ' +
+      '(3) Só responda "alternativa" se o cliente REAGIR à moto em foco SEM pedir um modelo novo: achou caro, quer outra cor/ano, quer mais barata, está muito rodada (ex.: "achei caro", "quero outra cor", "tem mais barata?").'
     : 'O cliente está PEDINDO uma moto, ou falando de uma e quer algo DIFERENTE dela (alternativa)?';
   const perguntas: PerguntasDeJev = {
     intencao: {
