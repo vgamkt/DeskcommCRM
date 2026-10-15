@@ -15,6 +15,7 @@ const ctx: ContextoDeOferta = {
   pediuMaisOpcoes: false,
   temEscolhaTravada: false,
   temMotoEmFoco: false,
+  nomeMotoEmFoco: null,
   pedidoSemCorrespondencia: false,
   clienteConfirmouOpcoes: false,
   motivoObjecaoAnterior: null,
@@ -37,6 +38,13 @@ describe('offer_motos Jev', () => {
       continuacao: false,
       motivo: 'jev_liberou_preco',
     });
+  });
+
+  it('traz a REGRA DA MOTO EM FOCO e o nome da moto no contexto (Escopo 2)', () => {
+    const p = perguntaDeOfertaJev({ ...ctx, temMotoEmFoco: true, nomeMotoEmFoco: 'HONDA XRE 190' });
+    const instr = p.oferta?.type === 'choice' ? p.oferta.instructions : '';
+    expect(instr).toContain('REGRA DA MOTO EM FOCO');
+    expect(instr).toContain('HONDA XRE 190');
   });
 
   it('a Jev decide a CONTINUAÇÃO da fila ("mostrar_mais") quando há opções pendentes', () => {

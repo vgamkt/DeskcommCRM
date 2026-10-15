@@ -31,6 +31,11 @@ export interface ContextoDeOferta {
   temEscolhaTravada: boolean;
   /** Há QUALQUER moto em foco (escolhida/referência/apresentada). */
   temMotoEmFoco: boolean;
+  /**
+   * NOME da moto em foco (escolhida/referência/única apresentada), quando houver.
+   * Permite a Jev distinguir "o cliente está falando DELA" de "pede OUTRA moto".
+   */
+  nomeMotoEmFoco: string | null;
   /** O pedido citou uma moto que NÃO está no catálogo (equivale a "não temos"). */
   pedidoSemCorrespondencia: boolean;
   /**
@@ -69,12 +74,17 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
       type: 'choice',
       instructions:
         'O sistema deve MOSTRAR/ENVIAR motos ao cliente NESTE turno? Regra: SÓ mostre motos se o ' +
-        'cliente PEDIU para ver motos (catálogo, uma moto específica, mais opções, algo diferente) ' +
+        'cliente PEDIU para ver motos (catálogo, uma moto específica NOVA, mais opções, algo diferente) ' +
         `OU se a moto que ele pediu NÃO existe no estoque (aí mostre equivalentes). Contexto: ` +
-        `moto em foco=${ctx.temMotoEmFoco}, escolha travada=${ctx.temEscolhaTravada}, ` +
+        `moto em foco=${ctx.temMotoEmFoco}${ctx.nomeMotoEmFoco ? ` ("${ctx.nomeMotoEmFoco}")` : ''}, ` +
+        `escolha travada=${ctx.temEscolhaTravada}, ` +
         `pedido sem correspondência no estoque=${ctx.pedidoSemCorrespondencia}, ` +
         `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}, ` +
         `temos opções pendentes (já perguntamos "quer ver mais?")=${ctx.temOpcoesPendentes}. ` +
+        // Escopo 2: distinguir "fala DELA" de "pede OUTRA" (evita re-ofertar com moto em foco).
+        'REGRA DA MOTO EM FOCO: se há uma moto EM FOCO e o cliente está falando DELA (elogio, dúvida, ' +
+        '"ver de perto", negociação, "essa moto é boa?") → responda "não mostrar"; só mostre outra se ele ' +
+        'pedir EXPLICITAMENTE uma moto diferente/nova ("tem uma XRE?", "quero ver outra"). ' +
         'REGRA: se "temos opções pendentes" for verdadeiro E o cliente CONFIRMA o convite ("sim", ' +
         '"pode", "quero", "manda", "mostra"), a resposta é "sim, mostrar motos agora". ' +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +

@@ -3287,6 +3287,7 @@ async function executarTurnoDoAgente(
     pediuMaisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
     temEscolhaTravada: catalogoDaConversa.escolhida !== null,
     temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
+    nomeMotoEmFoco: motoAtualDaConversa?.nome ?? null,
     pedidoSemCorrespondencia:
       catalogoDoTurno.length > 0 &&
       motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno).length === 0,
@@ -4726,10 +4727,17 @@ async function executarTurnoDoAgente(
             // "manda"/"claro"/…). `querMaisOpcoes`/`clienteConfirmouVer` são só o
             // FALLBACK (Jev desligada). Antes só `querMaisOpcoes` disparava e um "Sim"
             // fazia o bot PROMETER sem mostrar (medido ao vivo 2026-10-14).
+            // Doutrina `jev-decide-sempre` (Escopo 2): a CONTINUAÇÃO é decisão da Jev
+            // (`vereditoOfertaJev.continuacao`); `querMaisOpcoes`/`clienteConfirmouVer`
+            // são FALLBACK, usados SÓ quando a Jev não respondeu (`null`). Antes, um OR
+            // deixava o regex vencer o veredito NEGATIVO (`continuacao:false`) e a fila
+            // era consumida mesmo com a Jev dizendo "novo_pedido".
+            const continuarFila =
+              vereditoOfertaJev !== null
+                ? vereditoOfertaJev.continuacao === true
+                : querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente);
             if (
-              (vereditoOfertaJev?.continuacao === true ||
-                querMaisOpcoes(msgCliente) ||
-                clienteConfirmouVer(msgCliente)) &&
+              continuarFila &&
               catalogoDaConversa.opcoes !== null &&
               catalogoDaConversa.opcoes.pendentes.length > 0
             ) {

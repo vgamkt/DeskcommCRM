@@ -186,6 +186,18 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FASE 2 · ESCOPO 2 (`offer_motos`) — FEITO (aguarda deploy).**
+  - **ANTES:** `inbound-turn.ts:4725` consumia a fila com
+    `vereditoOfertaJev?.continuacao===true || querMaisOpcoes(...) || clienteConfirmouVer(...)` — OR que
+    deixava o regex vencer o veredito NEGATIVO (`continuacao:false`). O prompt não distinguia "fala DELA"
+    de "pede OUTRA".
+  - **DURANTE:** (1) a continuação passou a ser `vereditoOfertaJev.continuacao` (Jev); regex só sob `null`;
+    (2) `oferta.ts` ganhou `nomeMotoEmFoco` no contexto + a **"REGRA DA MOTO EM FOCO"**. 1 teste novo.
+  - **DEPOIS (sonda, prompt novo):** fala dela → `nao_oferecer`; pede nova → `oferecer`; confirma ver mais
+    → `oferecer`+`mostrar_mais`; ver de perto → `nao_oferecer`; quer ver outra → `oferecer`.
+    typecheck 0; suíte **1454/1454**.
+  - **Pendente:** deploy + validação ao vivo.
+
 - **2026-10-15 — FASE 2 · ESCOPO 1 (`moto_escolhida`) — FEITO (aguarda DEPOIS ao vivo).**
   - **ANTES:** `montarPedidoDeEscolha` barrava a Jev com `bloqueiaEscolha`/`temReferenciaAMoto`
     (`return null`, `catalogo-da-conversa.ts`); `inbound-turn.ts` barrava com `!pediuOutraMoto`. Sonda:
