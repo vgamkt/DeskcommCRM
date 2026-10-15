@@ -18,16 +18,17 @@ import type { Logger } from '../obs/logger';
 export async function decidirPerguntaDoFluxoComJev(
   db: pg.Pool,
   tenantId: string,
-  entrada: { pergunta: string; falaDoCliente: string },
+  entrada: { pergunta: string; falaDoCliente: string; emNegociacao?: boolean },
   log: Logger,
 ): Promise<boolean | null> {
   try {
     const alvos = await alvosDeJevDaOrg(db, tenantId, 'pergunta_do_fluxo');
     if (alvos.length === 0) return null;
+    const emNegociacao = entrada.emNegociacao === true;
     const decisao = await decidir({
       alvos,
-      state: { pergunta: entrada.pergunta, falaDoCliente: entrada.falaDoCliente },
-      questions: perguntaDaPerguntaDoFluxoJev(entrada.pergunta, entrada.falaDoCliente),
+      state: { pergunta: entrada.pergunta, falaDoCliente: entrada.falaDoCliente, emNegociacao },
+      questions: perguntaDaPerguntaDoFluxoJev(entrada.pergunta, entrada.falaDoCliente, emNegociacao),
       perguntasObrigatorias: ['pergunta_do_fluxo'],
       opcoes: {
         aoTentar: (info) =>

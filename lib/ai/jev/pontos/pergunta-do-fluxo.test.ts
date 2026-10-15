@@ -35,4 +35,9 @@ describe('perguntaDaPerguntaDoFluxoJev', () => {
     expect(q.pergunta_do_fluxo?.instructions).toContain('De qual cidade você fala?');
     expect(q.pergunta_do_fluxo?.instructions).toContain('achei caro');
   });
+
+  it('traz o contexto de OBJEÇÃO/negociação (Escopo 6 — contexto, não gate)', () => {
+    const q = perguntaDaPerguntaDoFluxoJev('De qual cidade você fala?', 'achei caro', true);
+    expect(q.pergunta_do_fluxo?.instructions).toContain('OBJEÇÃO/negociação de preço agora=true');
+  });
 });

@@ -13,17 +13,24 @@ export const AGORA = 'agora';
 export const ESPERAR = 'esperar';
 
 /** Pergunta `choice` da Jev: a pergunta do roteiro sai agora ou espera? */
-export function perguntaDaPerguntaDoFluxoJev(pergunta: string, falaDoCliente: string): PerguntasDeJev {
+export function perguntaDaPerguntaDoFluxoJev(
+  pergunta: string,
+  falaDoCliente: string,
+  emNegociacao = false,
+): PerguntasDeJev {
   return {
     pergunta_do_fluxo: {
       type: 'choice',
       instructions:
         `O roteiro de atendimento tem uma pergunta pendente: "${pergunta}". ` +
         `A última fala do cliente foi: "${falaDoCliente}". ` +
+        // Escopo 6: a negociação é CONTEXTO para a Jev (antes era um gate de regex que a barrava).
+        `O cliente está em OBJEÇÃO/negociação de preço agora=${emNegociacao}. ` +
         `Responda "${AGORA}" se a pergunta do roteiro deve ser feita NESTE turno — quando é natural, ` +
         `o cliente está no fluxo, ou a conversa está parada. ` +
         `Responda "${ESPERAR}" só quando a pergunta soaria FORA DE HORA: o cliente acabou de fazer ` +
-        `outra pergunta e ainda não foi respondido, ou está reclamando/negociando preço. ` +
+        `outra pergunta e ainda não foi respondido, ou está reclamando/negociando preço (nesse caso, ` +
+        `com "em OBJEÇÃO/negociação=true", prefira "${ESPERAR}"). ` +
         `Na dúvida, responda "${AGORA}" — a pergunta é um compromisso do atendimento.`,
       criteria: {
         [AGORA]: 'fazer a pergunta do roteiro neste turno',

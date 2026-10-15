@@ -186,6 +186,16 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FASE 2 · ESCOPO 6 (`pergunta_do_fluxo`) — FEITO (aguarda deploy). CONCLUI os 7 [A].**
+  - **ANTES:** `inbound-turn.ts` tinha `motivoNegociacao === null` no gate — durante uma objeção/negociação a
+    Jev era BARRADA e o regex decidia `esperar` sozinho.
+  - **DURANTE:** removido o gate; `emNegociacao` vai como **CONTEXTO** para a Jev (ponto + bridge + call site).
+    1 teste novo.
+  - **DEPOIS:** typecheck 0; lint 0 erros; suíte **1455/1455**.
+  - **Pendente:** deploy + validação ao vivo.
+  - **Status:** os **7 escopos [A]** da §2 estão corrigidos (1–7). Falta a Fase 3 (amarrar a âncora) e a Fase 4
+    (prova ao vivo + atualizar a doutrina).
+
 - **2026-10-15 — FASE 2 · ESCOPO 5 (`flow_intent`) — FEITO (aguarda deploy).**
   - **ANTES:** (a) `escolherFluxoIniciado` deixava o regex `porGatilho` vencer o veredito NEGATIVO da Jev
     (`ok:true` + `[]`); (b) `escolherFluxosPorIA` retornava `{ok:false}` quando o modelo de CHAT estava

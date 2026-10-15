@@ -7389,16 +7389,16 @@ async function executarTurnoDoAgente(
     // cadeia de guardrails (nada sai por baixo dela). Best-effort: falhar aqui
     // não derruba o turno que já respondeu ao cliente.
     //
-    // MAS: durante uma OBJEÇÃO/negociação em curso (`motivoNegociacao !== null`)
-    // a objeção tem PRIORIDADE — forçar a pergunta do fluxo no meio dela fazia o
-    // bot repetir "Para o financiamento, pode me passar seu CPF?" a cada turno
-    // (medido ao vivo 2026-10-05) enquanto o cliente só reclamava de preço.
+    // Escopo 6 (doutrina `jev-decide-sempre`): a OBJEÇÃO/negociação NÃO é mais um gate
+    // de regex que barra a Jev. O estado vai como CONTEXTO (`emNegociacao`) e a JEV
+    // decide `esperar`/`agora` — o mesmo veredito que o regex tomava sozinho. (Antes,
+    // `motivoNegociacao === null` impedia a Jev e repetia "pode me passar seu CPF?"
+    // durante uma reclamação de preço — medido 2026-10-05.)
     if (
       !preview &&
       liveJob().kind === 'inbound_turn' &&
       atendimento !== null &&
       valoresDoFluxo !== null &&
-      motivoNegociacao === null &&
       seq < maxSendsPerTurn
     ) {
       const estadoDoFluxo = atendimento;
@@ -7449,7 +7449,12 @@ async function executarTurnoDoAgente(
           const perguntarAgora = await decidirPerguntaDoFluxoComJev(
             pool,
             tenantId,
-            { pergunta, falaDoCliente: currentInboundText ?? mensagemDoJob ?? '' },
+            {
+              pergunta,
+              falaDoCliente: currentInboundText ?? mensagemDoJob ?? '',
+              // Escopo 6: a negociação vira CONTEXTO para a Jev — não um gate.
+              emNegociacao: motivoNegociacao !== null,
+            },
             runLog,
           ).catch(() => null);
           if (perguntarAgora === false) {
