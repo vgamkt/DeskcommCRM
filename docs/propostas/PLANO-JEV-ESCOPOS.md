@@ -186,6 +186,18 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FASE 2 · ESCOPO 4 (`modelo_categoria`) — FEITO (aguarda deploy).**
+  - **RECLASSIFICAÇÃO (reformulado pós-sonda):** o "DEGRAU 1" (`categoriaDoModeloNaReferencia`) **não é
+    regex** — é lookup na tabela `modelos` (dado curado do cliente). Por isso **permanece primeiro** (dado
+    autoritativo); a Jev é o fallback para modelos FORA da referência. Inverter faria a Jev sobrepor o
+    cadastro do cliente com um palpite. O gap real era o **prompt**.
+  - **ANTES:** prompt fraco → sonda: "Lander 250" → `nenhuma`.
+  - **DURANTE:** `modelo-categoria.ts` ganhou conhecimento de modelos (XRE/NXR/Lander/Ténéré/XTZ = Trail;
+    PCX/Biz/Nmax/Burgman = Scooter; CG/Titan/Fan/Factor/Fazer = Street; CB/MT = Naked/Esportiva).
+  - **DEPOIS (sonda):** Lander 250 → Trail; Tenere 700 → Trail; PCX 160 → Scooter; CB 500X → Trail
+    (todos certos).
+  - **Pendente:** deploy + validação ao vivo.
+
 - **2026-10-15 — FASE 2 · ESCOPO 3 (`catalog_criteria`) — FEITO (aguarda deploy).**
   - **ANTES:** o extrator de critérios só rodava se `precisaClassificar` (regex
     `querMoto`/`querAlternativa`/`motosCitadasNoTexto`) — nos DOIS pontos (`pedidoCritDoTurno` ~4539 e

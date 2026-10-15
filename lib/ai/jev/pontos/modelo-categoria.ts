@@ -26,7 +26,10 @@ export function perguntaDeCategoriaDeModeloJev(
       type: 'choice',
       instructions:
         `A qual CATEGORIA do catálogo o modelo "${modelo}" pertence? Escolha entre as categorias ` +
-        `abaixo (só uma). Se você NÃO souber, escolha "${NENHUMA}".`,
+        `abaixo (só uma). Use seu CONHECIMENTO de modelos de moto — ex.: Honda XRE/NXR/Tornado e ` +
+        `Yamaha Lander/Ténéré/XTZ são Trail/On-Off; Honda PCX/Biz e Yamaha Nmax/Burgman são Scooter; ` +
+        `Honda CG/Titan/Fan e Yamaha Factor/Fazer são Street; Honda CB e Yamaha MT são Naked/Esportiva. ` +
+        `Só escolha "${NENHUMA}" se você REALMENTE não souber a categoria do modelo.`,
       criteria,
     },
   };
