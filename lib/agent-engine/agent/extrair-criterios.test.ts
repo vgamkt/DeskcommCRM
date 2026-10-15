@@ -4,6 +4,7 @@ import {
   buildCriteriosPrompt,
   criteriosVazios,
   extrairCriterios,
+  montarPedidoDeCriterios,
   parseCriterios,
 } from './extrair-criterios';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
@@ -176,5 +177,32 @@ describe('ANO é proibido para a IA (regra do dono, 2026-09-28)', () => {
     // …e, mesmo devolvida, é descartada.
     expect(r.hipoteses).toEqual([{ nome: 'CB 250' }]);
     expect(r.faixas).toEqual({});
+  });
+});
+
+describe('montarPedidoDeCriterios — ESCOPO 9 (motoEmFoco)', () => {
+  const estoque: MotoDoCatalogo[] = [{ nome: 'HONDA CB 300', fotos: [], valores: {} }];
+
+  it('leva motoEmFoco ao CONTEXTO e às perguntas quando há moto em foco', () => {
+    const p = montarPedidoDeCriterios({
+      mensagem: 'e tem alguma até 17 mil?',
+      colunas: ['preco'],
+      estoque,
+      motoEmFoco: ['HONDA CB 300'],
+    });
+    expect(p).not.toBeNull();
+    const contexto = p!.pedido.contexto as { motoEmFoco?: string[] };
+    expect(contexto.motoEmFoco).toEqual(['HONDA CB 300']);
+    expect(String(p!.pedido.perguntas.intencao?.instructions)).toMatch(/FOCO/i);
+  });
+
+  it('sem motoEmFoco, o contexto não tem a chave', () => {
+    const p = montarPedidoDeCriterios({
+      mensagem: 'quero uma moto até 17 mil',
+      colunas: ['preco'],
+      estoque,
+    });
+    const contexto = p!.pedido.contexto as { motoEmFoco?: string[] };
+    expect(contexto.motoEmFoco).toBeUndefined();
   });
 });

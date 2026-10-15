@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { perguntaDeMaisOpcoes } from './mais-opcoes';
+import { perguntaDeMaisOpcoes, perguntaDeOutrosNoValor } from './mais-opcoes';
 
 describe('perguntaDeMaisOpcoes', () => {
   it('sem modelo: convite a mais opções, variando', () => {
@@ -22,5 +22,23 @@ describe('perguntaDeMaisOpcoes', () => {
       expect(perguntaDeMaisOpcoes({ variacao: i })).not.toBe('');
       expect(perguntaDeMaisOpcoes({ modeloCitado: 'XRE 190', variacao: i })).toContain('XRE 190');
     }
+  });
+});
+
+describe('perguntaDeOutrosNoValor (ESCOPO 9)', () => {
+  it('fala de "outros modelos nesse valor" e termina em pergunta', () => {
+    const p = perguntaDeOutrosNoValor({ variacao: 0 });
+    expect(p).toMatch(/outros modelos/);
+    expect(p).toMatch(/nesse (mesmo )?valor|nessa (mesma )?faixa/i);
+    expect(p).toMatch(/\?/);
+  });
+
+  it('com modelo em foco, cita o modelo', () => {
+    const p = perguntaDeOutrosNoValor({ modelo: 'CB 300', variacao: 0 });
+    expect(p).toContain('CB 300');
+  });
+
+  it('varia e nunca fica vazio', () => {
+    for (let i = 0; i < 8; i++) expect(perguntaDeOutrosNoValor({ variacao: i })).not.toBe('');
   });
 });

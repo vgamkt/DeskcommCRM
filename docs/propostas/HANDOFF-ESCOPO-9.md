@@ -42,7 +42,15 @@
 
 ---
 
-## 2) Escopo 9 — COMBINAR interesse + critério novo (NÃO IMPLEMENTADO)
+## 2) Escopo 9 — COMBINAR interesse + critério novo (IMPLEMENTADO E VALIDADO 2026-10-15)
+
+> **STATUS: concluído.** Deploy `e9ce6baf`; jornada ao vivo aprovada ("CB 300" → "E tem alguma até 17
+> mil?" → as CB ≤17 mil + convite a "outros modelos nesse valor"). Detalhe/prova em
+> `PLANO-JEV-ESCOPOS.md` §6 (topo). Nota de implementação: a intenção do turno de refino fica **`pedido`**
+> (não `alternativa`), pois no motor `alternativa` desliga o filtro por comparação e a faixa de preço
+> deixaria de filtrar; a decisão do QUE buscar continua 100% da Jev (`catalog_criteria`), o motor só executa
+> a interseção. O contexto que faltava era a moto em foco (`motoEmFoco`) no `state` da Jev.
+
 
 ### 2.1 A solicitação do dono (verbatim)
 > "o sistema tem capacidade de entender a moto de interesse e unir com outras opções do estoque? por

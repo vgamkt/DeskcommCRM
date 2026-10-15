@@ -352,6 +352,8 @@ export function montarPedidoDeCriterios(input: {
   colunas: readonly string[];
   estoque: readonly MotoDoCatalogo[];
   bloquearAno?: boolean;
+  /** ESCOPO 9: motos já em foco (interesse) — contexto do REFINO (interesse ∩ critério). */
+  motoEmFoco?: readonly string[];
 }): { pedido: PedidoAoArbitro; colunas: string[]; estoque: readonly MotoDoCatalogo[] } | null {
   const bloquearAno = input.bloquearAno !== false;
   const colunas = bloquearAno ? input.colunas.filter((c) => !ehColunaDeAno(c)) : [...input.colunas];
@@ -359,8 +361,18 @@ export function montarPedidoDeCriterios(input: {
   return {
     pedido: {
       ponto: 'catalog_criteria',
-      contexto: { mensagem: input.mensagem, estoque: input.estoque.map((m) => m.nome) },
-      perguntas: perguntaDeCriteriosDeJev({ colunas, estoque: input.estoque }),
+      contexto: {
+        mensagem: input.mensagem,
+        estoque: input.estoque.map((m) => m.nome),
+        ...(input.motoEmFoco !== undefined && input.motoEmFoco.length > 0
+          ? { motoEmFoco: input.motoEmFoco }
+          : {}),
+      },
+      perguntas: perguntaDeCriteriosDeJev({
+        colunas,
+        estoque: input.estoque,
+        ...(input.motoEmFoco !== undefined ? { motoEmFoco: input.motoEmFoco } : {}),
+      }),
       obrigatorias: ['intencao'],
     },
     colunas,
@@ -388,6 +400,8 @@ export async function extrairCriterios(
     valores?: Record<string, readonly string[]>;
     /** Motos reais do estoque (colunas "Enviar à IA") — a IA escolhe entre elas. */
     estoque?: readonly MotoDoCatalogo[];
+    /** ESCOPO 9: motos já em foco (interesse) — contexto do REFINO (interesse ∩ critério). */
+    motoEmFoco?: readonly string[];
     /**
      * Bloquear o ANO para a IA (default true = regra do dono). Com `false`
      * (interruptor do agente desligado), a coluna de ano volta à lista permitida.
@@ -416,6 +430,7 @@ export async function extrairCriterios(
     return criteriosDaRespostaDeJev(input.respostasDoArbitro, {
       colunas,
       estoque: input.estoque ?? [],
+      ...(input.motoEmFoco !== undefined ? { motoEmFoco: input.motoEmFoco } : {}),
     });
   }
 
@@ -428,8 +443,18 @@ export async function extrairCriterios(
     const estoque = input.estoque ?? [];
     const decisaoJev = await decidir({
       alvos: alvosJev,
-      state: { mensagem: input.mensagem, estoque: estoque.map((m) => m.nome) },
-      questions: perguntaDeCriteriosDeJev({ colunas, estoque }),
+      state: {
+        mensagem: input.mensagem,
+        estoque: estoque.map((m) => m.nome),
+        ...(input.motoEmFoco !== undefined && input.motoEmFoco.length > 0
+          ? { motoEmFoco: input.motoEmFoco }
+          : {}),
+      },
+      questions: perguntaDeCriteriosDeJev({
+        colunas,
+        estoque,
+        ...(input.motoEmFoco !== undefined ? { motoEmFoco: input.motoEmFoco } : {}),
+      }),
       perguntasObrigatorias: ['intencao'],
       // TPM/instabilidade: persiste a decisão para retry durável (outbox).
       aoEsgotar: (info) =>

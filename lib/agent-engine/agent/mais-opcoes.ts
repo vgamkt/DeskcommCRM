@@ -41,6 +41,34 @@ export function perguntaDeMaisOpcoes(args: {
 }
 
 /**
+ * PERGUNTA DE "OUTROS MODELOS NESSE VALOR" (ESCOPO 9).
+ *
+ * POR QUE EXISTE: o cliente tinha uma moto em FOCO (ex.: uma CB) e ADICIONOU um
+ * critério numérico ("e tem alguma até 17 mil?"). A busca combinou interesse ∩
+ * critério; quando a família em foco não preenche (ou esvazia) o valor, o motor
+ * AMPLIA para outros modelos naquele valor e PERGUNTA se ele quer vê-los — em vez
+ * de despejar o catálogo inteiro. Distinta de `perguntaDeMaisOpcoes` (que é sobre
+ * o próprio modelo). Variada. Pura.
+ */
+export function perguntaDeOutrosNoValor(args: {
+  /** Modelo em foco (ex.: "CB 300"), se houver. */
+  modelo?: string | null;
+  /** Gira a variante (nº do turno). */
+  variacao?: number;
+} = {}): string {
+  const modelo = (args.modelo ?? '').trim();
+  const v = Math.abs(Math.floor(args.variacao ?? 0));
+  const foco = modelo !== '' ? ` de ${modelo}` : '';
+  const opcoes = [
+    `Nesse valor eu não tenho mais opções${foco}, mas tenho outros modelos nessa mesma faixa. Quer que eu te mostre?`,
+    `Não encontrei outras${foco} dentro desse valor, mas posso te mostrar outros modelos nesse valor. Quer ver?`,
+    `Essas foram as que achei${foco} nesse valor. Quer que eu procure outros modelos nesse mesmo valor?`,
+    `Se quiser, eu te mostro outros modelos nessa faixa de valor também. Quer que eu veja?`,
+  ];
+  return opcoes[v % opcoes.length]!;
+}
+
+/**
  * PERGUNTA DE ESCOLHA — "qual delas te interessou?".
  *
  * POR QUE EXISTE: quando o motor ACABOU de mostrar motos, a pergunta do turno é a

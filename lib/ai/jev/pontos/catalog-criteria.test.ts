@@ -125,6 +125,29 @@ describe("potência (atributo-chave) e marca", () => {
   });
 });
 
+describe("ESCOPO 9 — moto em foco (interesse ∩ critério)", () => {
+  it("com motoEmFoco, a intenção explica o REFINO e cita as motos em foco", () => {
+    const q = perguntaDeCriteriosDeJev({
+      ...entrada,
+      motoEmFoco: ["HONDA CB 300", "HONDA CBX 250"],
+    });
+    expect(String(q.intencao?.instructions)).toMatch(/FOCO/i);
+    expect(String(q.intencao?.instructions)).toMatch(/REFINO/i);
+    expect(String(q.intencao?.instructions)).toMatch(/HONDA CB 300/);
+  });
+
+  it("com motoEmFoco, a hipótese prioriza a MESMA família/linha em foco", () => {
+    const q = perguntaDeCriteriosDeJev({ ...entrada, motoEmFoco: ["HONDA CB 300"] });
+    expect(String(q["parecida_0"]?.instructions)).toMatch(/INTERESSE EM FOCO/i);
+  });
+
+  it("sem motoEmFoco, NÃO injeta a regra de refino", () => {
+    const q = perguntaDeCriteriosDeJev(entrada);
+    expect(String(q.intencao?.instructions)).not.toMatch(/REFINO/i);
+    expect(String(q["parecida_0"]?.instructions)).not.toMatch(/INTERESSE EM FOCO/i);
+  });
+});
+
 describe("marca por si (marca_alvo)", () => {
   it("cria a pergunta marca_alvo com as marcas REAIS do estoque", () => {
     const q = perguntaDeCriteriosDeJev(entrada);

@@ -12,7 +12,12 @@
  * A pergunta do fluxo NÃO se perde: o campo segue pendente e vira a do próximo
  * turno. Módulo PURO.
  */
-import { perguntaDeAquisicao, perguntaDeEscolha, perguntaDeMaisOpcoes } from './mais-opcoes';
+import {
+  perguntaDeAquisicao,
+  perguntaDeEscolha,
+  perguntaDeMaisOpcoes,
+  perguntaDeOutrosNoValor,
+} from './mais-opcoes';
 
 export function ajustarFechoDoTurnoDeCatalogo(args: {
   corpo: string;
@@ -35,6 +40,12 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
   modeloCitado?: string | null;
   /** Nome do cliente — a pergunta de aquisição o chama pelo nome. */
   nomeCliente?: string | null;
+  /**
+   * ESCOPO 9: o cliente adicionou um critério a uma moto em foco e a família dela
+   * não preencheu o valor — o convite do turno é "quer ver OUTROS MODELOS nesse
+   * valor?" (não o "mais opções" genérico). Só entra com `temMaisOpcoes`.
+   */
+  outrosNoValor?: boolean;
 }): { corpo: string; ajustado: boolean } {
   let corpo = args.corpo.trim();
 
@@ -73,7 +84,11 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
   //     aquisição — o cliente já decidiu; não se pergunta por mais fotos/opções).
   const mais =
     args.temEscolha !== true && args.temMaisOpcoes === true
-      ? `\n\n${perguntaDeMaisOpcoes({ modeloCitado: args.modeloCitado ?? null, variacao: v })}`
+      ? `\n\n${
+          args.outrosNoValor === true
+            ? perguntaDeOutrosNoValor({ modelo: args.modeloCitado ?? null, variacao: v })
+            : perguntaDeMaisOpcoes({ modeloCitado: args.modeloCitado ?? null, variacao: v })
+        }`
       : '';
   corpo = corpo === '' ? `${pergunta}${mais}` : `${corpo}\n\n${pergunta}${mais}`;
 

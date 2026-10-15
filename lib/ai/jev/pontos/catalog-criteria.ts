@@ -84,6 +84,19 @@ export interface EntradaDeCriterios {
   /** Colunas de critério PERMITIDAS (já sem o `ano` quando bloqueado). */
   colunas: readonly string[];
   estoque: readonly MotoDeEstoque[];
+  /**
+   * ESCOPO 9 — motos que o cliente JÁ tem em FOCO na conversa (interesse
+   * demonstrado, ex.: as CB apresentadas). Quando o cliente ADICIONA um critério
+   * numérico a elas ("e tem alguma até 17 mil?"), isto é um REFINO do interesse
+   * (interesse ∩ critério) — não um pedido novo. A Jev usa isto como CONTEXTO
+   * para ancorar as hipóteses na MESMA família/linha da moto em foco.
+   */
+  motoEmFoco?: readonly string[];
+}
+
+/** Lista compacta de nomes para o contexto (evita estourar o prompt). */
+function listaDeFoco(motos: readonly string[]): string {
+  return motos.slice(0, 6).join('; ');
 }
 
 function rotulos(opcoes: readonly FaixaDeOpcao[]): Record<string, string> {
@@ -99,11 +112,20 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
   const criteriaPrincipal: Record<string, string> = { nenhum: 'sem destaque' };
   for (const col of e.colunas) criteriaPrincipal[col] = `o cliente enfatizou "${col}"`;
 
+  const foco = e.motoEmFoco ?? [];
+  const temFoco = foco.length > 0;
+  // ESCOPO 9: com uma moto em FOCO, "e tem alguma até 17 mil?" é REFINO do
+  // interesse (a MESMA linha, agora com um teto) — não um pedido novo nem uma
+  // alternativa ("algo diferente"). A intenção segue "pedido" (ele continua
+  // querendo AQUELA linha) e as hipóteses ficam na família da moto em foco.
+  const instrucaoIntencao = temFoco
+    ? `O cliente JÁ tem estas motos em FOCO na conversa (interesse demonstrado): ${listaDeFoco(foco)}. ` +
+      'Se a mensagem ADICIONA um critério (preço, cilindrada, ano, cor) a essas motos — ex.: "e tem alguma até 17 mil?" — NÃO é pedido de outro modelo nem "outra moto": ele continua querendo a MESMA família/linha, agora com o critério (é um REFINO). Nesse caso responda "pedido" e marque em "parecida" as motos do ESTOQUE da MESMA família/linha. Só responda "alternativa" se ele quiser algo DIFERENTE dessas motos por si (outra marca/estilo, achou caro A PONTO de trocar de linha).'
+    : 'O cliente está PEDINDO uma moto, ou falando de uma e quer algo DIFERENTE dela (alternativa)?';
   const perguntas: PerguntasDeJev = {
     intencao: {
       type: 'choice',
-      instructions:
-        'O cliente está PEDINDO uma moto, ou falando de uma e quer algo DIFERENTE dela (alternativa)?',
+      instructions: instrucaoIntencao,
       criteria: {
         pedido: 'o cliente pede/quer uma moto (nome, marca, cilindrada, estilo…)',
         alternativa:
@@ -208,6 +230,12 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     };
   }
 
+  // ESCOPO 9: quando há moto em FOCO e o cliente adiciona um critério, a família
+  // dela MANDA na nota (interesse ∩ critério): quem é da MESMA linha e cabe no
+  // critério vem antes; quem é de outra linha só entra se não houver da linha.
+  const regraDeFoco = temFoco
+    ? `REGRA DO INTERESSE EM FOCO: o cliente já demonstrou interesse por: ${listaDeFoco(foco)}. Se a mensagem apenas ADICIONA um critério a essas motos (ex.: "e tem alguma até 17 mil?"), dê nota ALTA (≥0,7) às motos do estoque da MESMA família/linha (ex.: uma CB se o foco é CB), desde que caibam no critério; dê nota BAIXA a modelos de OUTRA família, MESMO que caibam no critério (eles são só o "plano B"). `
+    : '';
   e.estoque.slice(0, MAX_MOTOS_HIPOTESES).forEach((m, i) => {
     perguntas[`parecida_${i}`] = {
       type: 'noul',
@@ -222,7 +250,7 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       // cliente PEDE UMA MARCA por si, a marca É o filtro — o motor casa a marca
       // pelas hipóteses, então marcar moto de OUTRA marca como parecida anula o
       // filtro e mistura concorrentes. Nesse caso, só a MESMA marca é parecida.
-      instructions: `Esta moto do ESTOQUE se parece com o que o cliente quer? Dê uma NOTA de 0 a 1 de semelhança (assimile o CONJUNTO do que ele pediu — nome/modelo/família, cilindrada COM MARGEM, ano, preço, categoria, potência — mas NÃO pontue por COR, cor não ordena). 1 = combina quase tudo; 0,7 = combina a maioria; 0,5 = combina em parte/próximo (ex.: cilindrada perto ±30%); 0 = não combina quase nada. A CILINDRADA pesa um pouco MAIS. REGRA DA NOTA ALTA: só dê nota ≥0,7 a quem casa o MODELO/FAMÍLIA do que o cliente pediu OU tem CILINDRADA próxima (±30%). Quem NÃO casa nem o modelo/família NEM a cilindrada (ex.: cliente quer "cb 250" e a moto é uma Dominar 400 — outro modelo E outra cilindrada) recebe nota BAIXA (≤0,2). NUNCA dê nota alta por marca, preço ou categoria sozinhos. (1) quando o cliente NÃO especificou marca, preço, cor nem outro atributo à parte, a CILINDRADA é o critério que MAIS pesa — moto de cilindrada próxima (±30%) conta como PARECIDA, mesmo de OUTRA marca (ex.: quer "250" → a Yamaha XMax 250 conta). (2) FILTROS COMBINADOS (ex.: "CB 2025" = modelo + ano; "Honda 300" = marca + cilindrada) — a moto que casa a COMBINAÇÃO INTEIRA é MUITO mais parecida. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só dê nota alta para motos DESSA MESMA marca. "${m.nome}"`,
+      instructions: `${regraDeFoco}Esta moto do ESTOQUE se parece com o que o cliente quer? Dê uma NOTA de 0 a 1 de semelhança (assimile o CONJUNTO do que ele pediu — nome/modelo/família, cilindrada COM MARGEM, ano, preço, categoria, potência — mas NÃO pontue por COR, cor não ordena). 1 = combina quase tudo; 0,7 = combina a maioria; 0,5 = combina em parte/próximo (ex.: cilindrada perto ±30%); 0 = não combina quase nada. A CILINDRADA pesa um pouco MAIS. REGRA DA NOTA ALTA: só dê nota ≥0,7 a quem casa o MODELO/FAMÍLIA do que o cliente pediu OU tem CILINDRADA próxima (±30%). Quem NÃO casa nem o modelo/família NEM a cilindrada (ex.: cliente quer "cb 250" e a moto é uma Dominar 400 — outro modelo E outra cilindrada) recebe nota BAIXA (≤0,2). NUNCA dê nota alta por marca, preço ou categoria sozinhos. (1) quando o cliente NÃO especificou marca, preço, cor nem outro atributo à parte, a CILINDRADA é o critério que MAIS pesa — moto de cilindrada próxima (±30%) conta como PARECIDA, mesmo de OUTRA marca (ex.: quer "250" → a Yamaha XMax 250 conta). (2) FILTROS COMBINADOS (ex.: "CB 2025" = modelo + ano; "Honda 300" = marca + cilindrada) — a moto que casa a COMBINAÇÃO INTEIRA é MUITO mais parecida. REGRA: se o cliente NÃO pediu marca, NUNCA exclua por marca. EXCEÇÃO: se o cliente PEDIU UMA MARCA por si (ex.: "quero uma Honda", "tem Yamaha?"), só dê nota alta para motos DESSA MESMA marca. "${m.nome}"`,
     };
   });
 

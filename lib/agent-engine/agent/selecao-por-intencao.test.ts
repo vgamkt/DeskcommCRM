@@ -802,6 +802,123 @@ describe('C-106: filtro ESTRITO por exigidos + faixa + ordem por preço', () => 
   });
 });
 
+describe('selecionarPorIntencao — ESCOPO 9 (interesse ∩ critério)', () => {
+  const MOTOS: MotoDoCatalogo[] = [
+    moto('HONDA CB 300 F Twister', { categoria: 'Naked', cilindrada: '293.5', marca: 'HONDA', preco: '16500' }),
+    moto('HONDA CBX 250 Twister', { categoria: 'Street', cilindrada: '249', marca: 'HONDA', preco: '15900' }),
+    moto('YAMAHA NMax 160', { categoria: 'Scooter', cilindrada: '155', marca: 'YAMAHA', preco: '18900' }),
+    moto('YAMAHA Neo 125', { categoria: 'Scooter', cilindrada: '125', marca: 'YAMAHA', preco: '14900' }),
+    moto('YAMAHA Factor 125', { categoria: 'Street', cilindrada: '125', marca: 'YAMAHA', preco: '12900' }),
+    moto('HONDA CB 500 X', { categoria: 'Trail', cilindrada: '471', marca: 'HONDA', preco: '39900' }),
+  ];
+  const CBs = ['HONDA CB 300 F Twister', 'HONDA CBX 250 Twister'];
+  const hipotesesCB = [
+    { nome: 'HONDA CB 300 F Twister', score: 0.8 },
+    { nome: 'HONDA CBX 250 Twister', score: 0.7 },
+  ];
+
+  it('combina: as CB no valor vêm PRIMEIRO e sinaliza outros no valor', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'e tem alguma até 17 mil?',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: MOTOS,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      motoEmFoco: CBs,
+      hipoteses: hipotesesCB,
+      faixas: { preco: { max: 19500 } },
+    });
+    // O interesse (CB) vem antes das outras que caibam no valor.
+    expect(r.motos.map((m) => m.nome)).toEqual([
+      'HONDA CB 300 F Twister',
+      'HONDA CBX 250 Twister',
+    ]);
+    expect(r.interesse.map((m) => m.nome)).toEqual(CBs);
+    // Sobrou menos que o pedido (2 < 3) e há outros modelos no valor.
+    expect(r.outrosNoValor).toBe(true);
+    expect(r.temMaisOpcoes).toBe(true);
+  });
+
+  it('interesse esvaziou no valor → amplia para OUTROS modelos no valor (nunca acima do teto)', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'e tem alguma até 17 mil?',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: MOTOS,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      // Só há a CB 500 X (R$39.900) em foco — nada dela cabe em 17.000.
+      motoEmFoco: ['HONDA CB 500 X'],
+      hipoteses: [{ nome: 'HONDA CB 500 X', score: 0.8 }],
+      faixas: { preco: { max: 19500 } },
+    });
+    expect(r.interesse).toEqual([]);
+    expect(r.outrosNoValor).toBe(true);
+    // Ampliou para outros no valor; NUNCA trouxe a CB 500 X (39.900) nem >teto.
+    expect(r.motos.length).toBeGreaterThan(0);
+    expect(r.motos.every((m) => Number(m.preco) <= 19500)).toBe(true);
+    expect(r.motos.map((m) => m.nome)).not.toContain('HONDA CB 500 X');
+  });
+
+  it('sem motoEmFoco NÃO combina (comportamento anterior preservado)', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'e tem alguma até 17 mil?',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: MOTOS,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      hipoteses: hipotesesCB,
+      faixas: { preco: { max: 19500 } },
+    });
+    expect(r.interesse).toEqual([]);
+    expect(r.outrosNoValor).toBe(false);
+  });
+
+  it('sem critério NUMÉRICO não combina (não pergunta "nesse valor" à toa)', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'e aí, tudo bem?',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: MOTOS,
+      mapeamento: MAPEAMENTO,
+      quantidade: 3,
+      filtrarPorComparacao: true,
+      motoEmFoco: CBs,
+      hipoteses: hipotesesCB,
+      faixas: {},
+    });
+    expect(r.interesse).toEqual([]);
+    expect(r.outrosNoValor).toBe(false);
+  });
+
+  it('interesse preenche o pedido → NÃO sinaliza outros no valor', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'e tem alguma até 17 mil?',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: MOTOS,
+      mapeamento: MAPEAMENTO,
+      quantidade: 2,
+      filtrarPorComparacao: true,
+      motoEmFoco: CBs,
+      hipoteses: hipotesesCB,
+      faixas: { preco: { max: 19500 } },
+    });
+    expect(r.interesse.length).toBe(2);
+    expect(r.outrosNoValor).toBe(false);
+  });
+});
+
 describe('selecionarPorIntencao — nomeiaModelo mantém a LINHA do modelo', () => {
   const candidatos = [
     moto('HONDA CBX 250 Twister', {

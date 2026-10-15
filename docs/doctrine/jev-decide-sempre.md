@@ -114,6 +114,15 @@ Exemplo de correção legítima: para o caso "quero ver mais opções" (a Jev de
 
 ### Histórico de correções
 
+- ✅ **2026-10-15 — ESCOPO 9 (interesse ∩ critério) na `catalog_criteria` (combinar)**. O cliente com uma
+  moto em FOCO ("CB 300") que ADICIONA um critério ("e tem alguma até 17 mil?") agora tem a busca
+  COMBINADA: a Jev recebe a moto em foco como **contexto** (`motoEmFoco`) e ancora as hipóteses na MESMA
+  família; o motor só **executa** a interseção (família ∩ faixa), mostra as CB ≤17 mil e, quando o interesse
+  não preenche o valor, amplia para **outros modelos nesse valor** e PERGUNTA. Nada decidido por regex: a
+  Jev decide o que buscar (critérios + parecidas); o motor nunca antecede o veredito. (A intenção segue
+  `pedido` no refino — `alternativa` desligaria o filtro por comparação no motor.) Prova em
+  `docs/propostas/PLANO-JEV-ESCOPOS.md` §6.
+
 - ✅ **2026-10-15 — 7 violações [A] corrigidas** (detalhe e prova em
   `docs/propostas/PLANO-JEV-ESCOPOS.md` §3 e §6). Em todas, o regex/determinístico deixou de decidir
   ANTES da Jev; quando útil, virou **sinal no contexto** dela:

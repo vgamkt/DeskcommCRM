@@ -133,6 +133,14 @@ export interface EntradaSelecaoPorIntencao {
    * das hipóteses.
    */
   nomeiaModelo?: boolean;
+  /**
+   * ESCOPO 9: motos que o cliente JÁ tem em FOCO na conversa (interesse). Com
+   * elas + uma faixa numérica (ex.: "e tem alguma até 17 mil?"), a busca COMBINA:
+   * interesse ∩ critério — as motos da família em foco que caibam na faixa vêm
+   * primeiro; se o filtro esvaziar para o interesse, amplia para outros modelos
+   * NO MESMO valor (`outrosNoValor`). A lista vazia desliga a combinação.
+   */
+  motoEmFoco?: readonly string[];
 }
 
 /** Tokens significativos (>=2 letras) do nome de uma moto, normalizados. */
@@ -179,6 +187,18 @@ export interface ResultadoSelecaoPorIntencao {
    * para pôr as casadas-ainda-não-enviadas na frente da fila do "quer ver mais?".
    */
   casadas: MotoDoCatalogo[];
+  /**
+   * ESCOPO 9: as motos do INTERESSE (família/linha da moto em foco, segundo as
+   * hipóteses da Jev) que caíram dentro do critério. Vazio quando não houve
+   * combinação interesse ∩ critério, OU quando o filtro esvaziou para o interesse.
+   */
+  interesse: MotoDoCatalogo[];
+  /**
+   * ESCOPO 9: o filtro do interesse ESVAZIOU (ou sobrou menos que o pedido) e o
+   * motor ampliou para OUTROS modelos no mesmo valor. O turno pergunta "quer ver
+   * outros modelos nesse valor?".
+   */
+  outrosNoValor: boolean;
 }
 
 /** Perfil interpretado pela IA: marcas e categorias das hipóteses + faixas. */
@@ -637,7 +657,17 @@ export function selecionarPorIntencao(
     : [...new Set([...(input.exigidos ?? []), ...faixasComLimite])].filter(
         (c) => !ehAtributoDePedido(c),
       );
+  // ESCOPO 9: só combina quando há um critério NUMÉRICO (faixa com limite) — o
+  // caso "e tem alguma até 17 mil". Sem ele, o turno NÃO é um refino e a busca
+  // segue o comportamento anterior (nada de perguntar "outros nesse valor" à toa).
+  const temFaixaNumerica = faixasComLimite.length > 0;
+  const temFaixaDePreco = faixasComLimite.some((c) => detectarPapelColuna(c) === 'preco');
   let casadas: MotoDoCatalogo[] = [];
+  // ESCOPO 9: as motos do INTERESSE (família da moto em foco, pelas hipóteses da
+  // Jev) que caíram dentro do critério. `combinouInteresse` = houve REFINO
+  // (moto em foco + faixa) e a Jev ancorou as hipóteses na família.
+  let interesse: MotoDoCatalogo[] = [];
+  let combinouInteresse = false;
   // `estrito` = havia exigência E ela casou algo. Diferente de "caiu no genérico
   // porque o estrito zerou" — só no primeiro não se completa com perfil alheio.
   let estrito = false;
@@ -672,14 +702,29 @@ export function selecionarPorIntencao(
       );
     }
     if (casadas.length > 0) {
+      // ESCOPO 9 — REFINO (interesse ∩ critério): com moto(s) em FOCO e hipóteses
+      // da JEV com NOTA (ela ancorou a família), a busca COMBINA. O INTERESSE são
+      // as casadas que a Jev reconheceu parecidas com a moto em foco.
+      const hipoteses = input.hipoteses ?? [];
+      if (
+        temFaixaNumerica &&
+        (input.motoEmFoco?.length ?? 0) > 0 &&
+        hipoteses.some((h) => typeof h.score === 'number')
+      ) {
+        combinouInteresse = true;
+        interesse = casadas.filter((m) => notaDaJev(m, hipoteses) > 0);
+      }
       // Cliente nomeou um modelo: o conjunto PREFERIDO também fica na LINHA do
       // modelo. Sem isto, o casamento por MARCA (comum a toda a hipótese Honda)
       // traz outra linha (ex.: XRE) já pelos PONTOS — não só pelo complemento.
+      // ESCOPO 9: no REFINO, o PREFERIDO é o INTERESSE (a família em foco); se
+      // ele esvaziou, ficam as casadas (outros modelos NO VALOR — o "plano B").
       const naLinha =
         input.nomeiaModelo === true
-          ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, input.hipoteses ?? []))
+          ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, hipoteses))
           : casadas;
-      const preferidas = naLinha.length > 0 ? naLinha : casadas;
+      const preferidas =
+        interesse.length > 0 ? interesse : naLinha.length > 0 ? naLinha : casadas;
       preferidos = new Set(preferidas);
       filtrados = preferidas.length;
     }
@@ -784,6 +829,11 @@ export function selecionarPorIntencao(
     preferidos !== null &&
     !semTeto &&
     (estrito ? casadas.length > motos.length : candidatos.length > motos.length);
+  // ESCOPO 9: o REFINO casou MENOS que o pedido (ou ZEROU) no interesse — o motor
+  // amplia/assinala "outros modelos NESSE VALOR" e o turno PERGUNTA isso. Não é
+  // "mais opções" genérico: é o convite para ver outras linhas dentro do critério.
+  const outrosNoValor =
+    combinouInteresse && temFaixaDePreco && !semTeto && interesse.length < quantidade;
   return {
     motos,
     preferencias,
@@ -792,6 +842,8 @@ export function selecionarPorIntencao(
     temMaisOpcoes,
     perfil: { marcas: [...perfil.marcas], categorias: [...perfil.categorias] },
     casadas,
+    interesse,
+    outrosNoValor,
   };
 }
 

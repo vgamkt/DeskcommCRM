@@ -86,6 +86,20 @@ describe('ajustarFechoDoTurnoDeCatalogo', () => {
     expect(r.corpo).toMatch(/mais op|mais algumas|outras|alternativas/); // mais opções
   });
 
+  it('ESCOPO 9: outrosNoValor → convite a "outros modelos nesse valor" (não o genérico)', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Separei umas CB até 17 mil pra você.',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      temMaisOpcoes: true,
+      outrosNoValor: true,
+      modeloCitado: 'CB 300',
+    });
+    expect(r.corpo).toMatch(/outros modelos/);
+    expect(r.corpo).toMatch(/nesse (mesmo )?valor|nessa (mesma )?faixa/i);
+    expect(r.corpo).toContain('chamou'); // escolha continua
+  });
+
   it('com ESCOLHA + mais opções → NÃO pergunta mais opções (fecho de aquisição)', () => {
     const r = ajustarFechoDoTurnoDeCatalogo({
       corpo: 'Boa escolha! A Factor é econômica.',

@@ -197,7 +197,7 @@ import {
 import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
-import { perguntaDeEscolha, perguntaDeMaisOpcoes } from './mais-opcoes';
+import { perguntaDeEscolha, perguntaDeMaisOpcoes, perguntaDeOutrosNoValor } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
 import { perguntaDeObjecaoJev, vereditoDeObjecaoDaJev } from '../../ai/jev/pontos/objecao';
@@ -3175,6 +3175,10 @@ async function executarTurnoDoAgente(
   // C-089: o filtro casou mais motos do que as oferecidas? O bloco do turno
   // instrui a IA a PERGUNTAR se o cliente quer ver mais opções (regra do dono).
   let temMaisOpcoesNesteTurno = false;
+  // ESCOPO 9: o cliente tinha uma moto em FOCO e adicionou um critério numérico
+  // cujo valor esvaziou (ou quase) a família em foco → o turno convida a ver
+  // OUTROS MODELOS NESSE VALOR. Substitui o "mais opções" genérico neste turno.
+  let outrosNoValorNesteTurno = false;
   // C-089: fila de opções pendentes a persistir no catálogo da conversa.
   let opcoesParaSalvar: FilaDeOpcoes | null | undefined = undefined;
   // Motos apresentadas que precisam ser persistidas (consumo da fila).
@@ -3267,6 +3271,23 @@ async function executarTurnoDoAgente(
     catalogoDaConversa.escolhida ??
     catalogoDaConversa.referencia ??
     (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
+  // ESCOPO 9: motos JÁ em FOCO na conversa (interesse demonstrado) — a escolha
+  // vence; senão, a referência; senão, as que foram apresentadas. É o CONTEXTO
+  // que a Jev recebe para COMBINAR (interesse ∩ critério novo) quando o cliente
+  // adiciona um critério ("e tem alguma até 17 mil?"). Nomes, deduplicados, no
+  // máximo 6 — o suficiente para ancorar a família/linha.
+  const motosEmFoco: string[] =
+    preview !== undefined
+      ? []
+      : [
+          ...new Set(
+            [
+              catalogoDaConversa.escolhida?.nome,
+              catalogoDaConversa.referencia?.nome,
+              ...catalogoDaConversa.motos.map((m) => m.nome),
+            ].filter((n): n is string => typeof n === 'string' && n.trim() !== ''),
+          ),
+        ].slice(0, 6);
 
   const objecaoCtx = {
     mensagem: mensagemDoJob,
@@ -4555,6 +4576,9 @@ async function executarTurnoDoAgente(
                 : msgCliente,
             colunas,
             estoque: mesclarMotos(catalogoDoTurno, catalogoDaConversa.motos),
+            // ESCOPO 9: a(s) moto(s) em FOCO entram como CONTEXTO — a Jev decide
+            // se o critério novo é um REFINO do interesse (interesse ∩ critério).
+            motoEmFoco: motosEmFoco,
             bloquearAno: agentConfig?.catalogConfig?.bloquear_ano_ia !== false && !clienteCitouAno,
           });
         })();
@@ -4814,6 +4838,10 @@ async function executarTurnoDoAgente(
                     // As motos reais do estoque vão no prompt: a IA diz quais têm
                     // configuração parecida com o que o cliente quis.
                     estoque: estoqueParaIA,
+                    // ESCOPO 9: a(s) moto(s) em FOCO entram como CONTEXTO — a Jev
+                    // ancora as hipóteses na família quando o critério novo é um
+                    // REFINO do interesse (interesse ∩ critério).
+                    motoEmFoco: motosEmFoco,
                     // ÁRBITRO DE TURNO (Fase 4): o veredito já veio na chamada
                     // unificada (junto da escolha) — não faz uma segunda ida à Jev.
                     ...(criteriosDoArbitro !== undefined
@@ -5025,6 +5053,8 @@ async function executarTurnoDoAgente(
               motoAtual,
               candidatos,
               mapeamento,
+              // ESCOPO 9: combina interesse ∩ critério quando há moto em foco.
+              motoEmFoco: motosEmFoco,
               quantidade: cfgCatalogo?.similares_qtd ?? 3,
               aplicarLimite: cfgCatalogo?.usar_limite_quantidade !== false,
               todasSeEspecificacao:
@@ -5134,6 +5164,12 @@ async function executarTurnoDoAgente(
                 selecao.motos.length > 0 &&
                 catalogoDaConversa.escolhida === null &&
                 (opcoesParaSalvar?.pendentes.length ?? 0) > 0;
+              // ESCOPO 9: o interesse em foco não preencheu o valor → o convite do
+              // turno é "quer ver OUTROS MODELOS nesse valor?" (não o genérico). A
+              // fila continua montada (para o "ver mais" futuro), mas o convite é o
+              // específico — então silencia o genérico neste turno.
+              outrosNoValorNesteTurno = selecao.outrosNoValor;
+              if (outrosNoValorNesteTurno) temMaisOpcoesNesteTurno = false;
               // Apresentação de SEMELHANTES: 1 foto por moto. Só quando o cliente
               // pediu um MODELO que EXISTE (e veio 1 unidade) faz sentido mandar
               // todas as fotos dela — como na escolha. Sem isto, um filtro que
@@ -5432,23 +5468,30 @@ async function executarTurnoDoAgente(
             // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
             // ignora com frequência). Só quando o filtro deixou motos parecidas de
             // fora (temMaisOpcoesNesteTurno). Determinístico, não depende do LLM.
-            if (temMaisOpcoesNesteTurno) {
+            // ESCOPO 9: quando o interesse em foco não preencheu o valor, a pergunta
+            // do turno é a de "outros modelos NESSE VALOR" (outrosNoValorNesteTurno).
+            if (temMaisOpcoesNesteTurno || outrosNoValorNesteTurno) {
               // Pergunta NATURAL e VARIADA (não a mesma frase em todo mundo), e —
               // quando o cliente citou um MODELO — distinguindo "procura ESSE
               // modelo" de "quer ver outras parecidas".
               const citouModelo =
                 pedeMotoExplicito(mensagemDoJob ?? '') ||
                 motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDaConversa.motos).length > 0;
-              const perguntaMais = perguntaDeMaisOpcoes({
-                modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
-                variacao: pedidosDeOpcoesTurno,
-              });
+              const perguntaMais = outrosNoValorNesteTurno
+                ? perguntaDeOutrosNoValor({
+                    modelo: motoAtualDaConversa?.nome ?? null,
+                    variacao: pedidosDeOpcoesTurno,
+                  })
+                : perguntaDeMaisOpcoes({
+                    modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
+                    variacao: pedidosDeOpcoesTurno,
+                  });
               // Cobre TODAS as variantes do `perguntaDeMaisOpcoes` (senão o fecho F3,
               // que re-adiciona o convite, somaria com esta garantia e DUPLICARIA o
               // "Quer ver mais?" — medido ao vivo 2026-10-14: "…Quer ver mais algumas?
               // Quer ver mais algumas").
               const reMais =
-                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid)/i;
+                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros modelos)/i;
               const jaPergunta = reMais.test(final) || reMais.test(introducao);
               if (!jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
@@ -5562,7 +5605,8 @@ async function executarTurnoDoAgente(
                   perguntaDoFluxo: perguntaFluxo,
                   variacao: pedidosDeOpcoesTurno,
                   temEscolha: catalogoDaConversa.escolhida !== null,
-                  temMaisOpcoes: temMaisOpcoesNesteTurno,
+                  temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
+                  outrosNoValor: outrosNoValorNesteTurno,
                   modeloCitado: motoAtualDaConversa?.nome ?? null,
                   nomeCliente: effectiveContext.contact.name,
                 });
@@ -6697,6 +6741,7 @@ async function executarTurnoDoAgente(
               colunas: colunasCriterioPrefetch,
               valores: valoresDasColunas(candidatasPrefetch, colunasCriterioPrefetch),
               estoque: candidatasPrefetch,
+              motoEmFoco: motosEmFoco,
               bloquearAno:
                 agentConfig?.catalogConfig?.bloquear_ano_ia !== false && !clienteCitouAno,
             },
@@ -6715,6 +6760,8 @@ async function executarTurnoDoAgente(
             faixas: extraidosPrefetch.faixas,
             principal: extraidosPrefetch.principal,
             exigidos: extraidosPrefetch.exigidos,
+            // ESCOPO 9: combina interesse ∩ critério também no caminho de prefetch.
+            motoEmFoco: motosEmFoco,
             filtrarPorComparacao: extraidosPrefetch.intencao !== 'alternativa',
             toleranciaPct: agentConfig?.catalogConfig?.tolerancia_preco_pct ?? 30,
             criteriosDinamicos: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
@@ -6989,6 +7036,13 @@ async function executarTurnoDoAgente(
       // em vez de inventar. Determinístico.
       currentInboundText !== null && motoAtualDaConversa === null && pedePrecoSemValor(currentInboundText)
         ? '## Perguntar a faixa de preço\nO cliente falou de preço/orçamento SEM citar um valor. NÃO invente faixa nem ofereça motos por chute: pergunte de forma natural qual a faixa de preço (ou o valor aproximado) que ele procura, e ofereça confirmar as opções dentro dela. Não liste nomes de motos neste turno.'
+        : '',
+      // ESCOPO 9: o cliente adicionou um critério (ex.: "até 17 mil") a uma moto
+      // em FOCO e a família dela não preencheu o valor. Mostre as que caibam nessa
+      // família e CONVIDE a ver OUTROS MODELOS nesse valor (sem despejar o catálogo
+      // nem trazer motos muito acima do teto).
+      outrosNoValorNesteTurno
+        ? '## A família em foco não preencheu esse valor\nO cliente tinha um modelo em foco e adicionou um valor/critério. Mostre as motos DESSA família/linha que caibam no valor; se não houver nenhuma, mostre as que caibam no valor. Feche o turno perguntando se ele quer ver OUTROS MODELOS nesse valor (ex.: "Quer que eu te mostre outros modelos nesse valor?"). NUNCA traga motos muito acima do valor que ele citou.'
         : '',
       // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
       // convidado a ver as demais. Determinístico (motor), por-lead.
@@ -8002,7 +8056,8 @@ async function executarTurnoDoAgente(
                   perguntaDoFluxo: pendenteTexto,
                   variacao: pedidosDeOpcoesTurno,
                   temEscolha: catalogoDaConversa.escolhida !== null,
-                  temMaisOpcoes: temMaisOpcoesNesteTurno,
+                  temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
+                  outrosNoValor: outrosNoValorNesteTurno,
                   modeloCitado: motoAtualDaConversa?.nome ?? null,
                   nomeCliente: effectiveContext.contact.name,
                 }).corpo

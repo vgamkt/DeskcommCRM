@@ -186,6 +186,51 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — ESCOPO 9 (combinar interesse + critério novo) — FEITO E VALIDADO AO VIVO.**
+  - **ANTES (sonda ao vivo, binding `typesafe`/`jev-latest`):** "e tem alguma até 17 mil?" com o
+    estoque completo e o estado ATUAL (`{mensagem, estoque}`):
+    `intencao=pedido`, `principal=preco`, `exigidos=[preco]`, `cx_preco="15 a 20 mil"` (teto),
+    **`parecidas={}`** — a Jev **não recebia a CB em foco** e não ancorava a família; o critério de preço
+    **substituía** o interesse. Com o contexto `motoEmFoco=[CBs]` no `state`, a MESMA mensagem passou a
+    marcar `parecidas={CB 300 R 0.93, CB 300 R FLEX 0.94, CB 300 F 0.93, CBX 250 0.9, XRE 0.76}` —
+    provando que **a informação que faltava era o contexto**, não a capacidade da Jev.
+  - **DURANTE (JEV PRIMEIRO):**
+    (1) `catalog-criteria.ts` — `EntradaDeCriterios` ganhou `motoEmFoco`; a pergunta `intencao` e a
+    instrução das `parecida_i` passam a dizer que, com moto em foco, adicionar um critério é **REFINO**
+    (interesse ∩ critério) e que a **família/linha em foco manda na nota** (outras famílias = "plano B").
+    ⚠️ A intenção continua **`pedido`** (não `alternativa`): no motor, `alternativa` desliga
+    `filtrarPorComparacao` e a faixa de preço deixaria de filtrar. A decisão do QUE buscar segue toda da
+    Jev (critérios + parecidas); o motor só **executa** a interseção.
+    (2) `extrair-criterios.ts` — `motoEmFoco` viaja no `state` e no `contexto` (ponto e árbitro).
+    (3) `inbound-turn.ts` — `motosEmFoco` (escolhida → referência → apresentadas, dedup, ≤6) é passado aos
+    DOIS call sites do `catalog_criteria` e ao `selecionarPorIntencao`; novo flag `outrosNoValorNesteTurno`.
+    (4) `selecao-por-intencao.ts` — **combina interesse ∩ critério**: com `motoEmFoco` + faixa numérica +
+    hipóteses da Jev com NOTA, o INTERESSE (casadas que a Jev marcou) vem primeiro; se o interesse **não
+    preenche** o pedido (ou **esvazia**), amplia para **outros modelos no valor** e liga `outrosNoValor`.
+    (5) `mais-opcoes.ts`/`fecho-do-turno.ts` — pergunta **"quer ver outros modelos nesse valor?"** (variada),
+    usada no fecho e na apresentação quando o interesse não preencheu.
+  - **DEPOIS (sonda, prompt novo):** "e tem alguma até 17 mil?" com `motoEmFoco=[CBs]` →
+    `intencao=pedido`, `parecidas={CB 300 R 0.93, CB 300 R FLEX 0.94, CB 300 F 0.93, CBX 250 0.9, XRE 0.76}`
+    (familia CB ancorada, XRE rebaixada). Caso "sem CB no valor" (`motoEmFoco=[CB 500 X]`) →
+    `parecidas` mantém a CB 500 X (0.9) e marca CBs caras com nota baixa — o interesse esvazia no valor e o
+    motor amplia. 13 testes novos (catalog-criteria, extrair-criterios, selecao-por-intencao, fecho, mais-opcoes).
+    `tsc` 0; `lint` 0 erros; suíte **1469/1469** (`vitest run lib/agent-engine lib/followup lib/ai`).
+  - **DEPOIS (deploy + AO VIVO):** versão **`e9ce6baf`** no ar (app/worker/scheduler healthy); sonda no
+    código DEPLOYADO confirma o prompt novo. Jornada real (WAHA 0101 → datafy 2501):
+    **[1] "Vocês têm uma CB 300?"** → 5 fotos (CB 300 F Twister, CB 300 R, CB 300 R FLEX, CBX 250, CB 500 X).
+    **[2] "E tem alguma até 17 mil?"** → 3 fotos, **todas CB e ≤ 17 mil, do maior pro menor** (CB 300 R FLEX
+    14.990 → CB 300 R 12.500 → CBX 250 9.990) e o fecho **"Não encontrei outras dentro desse valor, mas
+    posso te mostrar outros modelos nesse valor. Quer ver?"**. Log do turno 2: `intencao=pedido`,
+    `exigidos=["preco"]`, `faixas={preco:{max:26000}}` (bucket "15 a 20 mil" + margem 30%),
+    `hipoteses` ancoradas na família CB (R 0.88, R FLEX 0.86, F 0.8, CBX 0.53) →
+    `depois.motos=[CB 300 R FLEX, CB 300 R, CBX 250]` (a CB 300 F de 28.990 ficou de fora). `similares_qtd=5`
+    → interesse (3) < 5 → `outrosNoValor=true` (pergunta de outros no valor). **Aceite cumprido.**
+  - **Observações:** (a) a intenção fica **`pedido`** (não `alternativa`), de propósito — ver "DURANTE";
+    (b) os buckets de preço são discretos ("15 a 20 mil"), então o teto efetivo foi R$ 26.000 (o "17 mil"
+    entra no bucket e o motor mantém a margem +30%) — nunca trouxe R$ 95 mil; (c) a combinação só LIGA com
+    um critério **NUMÉRICO** (faixa com limite): sem ele, nada muda (teste dedicado — evita o convite
+    "outros nesse valor" em turnos sem valor). Deploy revalidado ao vivo após esse ajuste.
+
 - **2026-10-15 — FECHO APÓS A ESCOLHA (bug do "qual chamou mais atenção") — FEITO (aguarda deploy).**
   - **ANTES:** `brief-do-turno.ts` (e `atendimento.ts`, caminho sem brief) mandavam o modelo **"convide a
     ESCOLHA ('qual delas chamou mais atenção?')"** SEMPRE que o turno mostrou motos — **mesmo com a moto JÁ
