@@ -5144,6 +5144,13 @@ async function executarTurnoDoAgente(
                 exigidos: exigidosDoTurno,
                 principal: principalDoTurno,
               },
+              diagnostico: {
+                candidatos: candidatos.length,
+                do_banco: doBanco.length,
+                do_turno: catalogoDoTurno.length,
+                casadas: selecao.casadas.length,
+                quantidade: cfgCatalogo?.similares_qtd ?? 3,
+              },
               depois: { motos: selecao.motos.map((m) => m.nome), filtrados: selecao.filtrados },
             });
             if (selecao.motos.length > 0) {

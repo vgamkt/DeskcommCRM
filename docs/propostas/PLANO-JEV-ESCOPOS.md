@@ -201,8 +201,11 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
     sozinha → excluía motos boas); (d) `offer_motos`: USO/TERRENO conta como critério (não perguntar).
   - **DEPOIS (ao vivo):** texto e fotos CASAM ("Separei 2 opções" + 2 fotos; "até 20 mil" → 2 fotos ≤20k).
     `tsc` 0; suíte **1484/1484**.
-  - **Pendência observada:** um turno com `categoria_alvo` trouxe só 2 motos onde o filtro isolado traz 6 —
-    investigar os CANDIDATOS (leitura do banco / consulta do modelo), não o filtro.
+  - **Investigação do "só 2 motos" (resolvido):** adicionei observabilidade ao log de decisão
+    (`diagnostico: {candidatos, do_banco, do_turno, casadas, quantidade}`). Reproduzido 4×: `do_banco=27`,
+    `candidatos=26`, `casadas=8`, `quantidade=5` → **5 motos SEMPRE**. O "2" não reproduz (foi variância da
+    Jev/transiente, não dos candidatos). "Ver mais" PROLONGA a fila (5 → +3), com a contagem casando.
+    NÃO há erro estrutural nos candidatos — o banco lê as 27 e a oferta sai até `similares_qtd` (5).
 
 - **2026-10-15 — ESCOPO 11 (separar MATCH de SIMILAR; estilo por texto) — FEITO E VALIDADO AO VIVO.**
   - **ANTES (medido ao vivo):** (a) "pra cidade e umas **trilhas**" → a Jev NÃO marcava `categoria` →
