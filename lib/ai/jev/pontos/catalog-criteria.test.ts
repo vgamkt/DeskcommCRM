@@ -53,9 +53,12 @@ describe("criteriosDaRespostaDeJev", () => {
     expect(c.intencao).toBe("pedido");
     expect(c.exigidos).toEqual(["preco"]);
     expect(c.principal).toBe("preco");
-    // Faixas com margem de ±30% (regra do dono).
-    expect(c.faixas.preco).toEqual({ min: 10500, max: 26000 });
-    expect(c.faixas.cilindrada).toEqual({ min: 113, max: 325 });
+    // Faixa EXATA = o que o cliente pediu (1ª oferta SÓ o que casa exatamente).
+    expect(c.faixas.preco).toEqual({ min: 15000, max: 20000 });
+    expect(c.faixas.cilindrada).toEqual({ min: 161, max: 250 });
+    // MARGEM ±30% (regra do dono) = as SIMILARES, que vão para a fila do "ver mais".
+    expect(c.faixasSimilares.preco).toEqual({ min: 10500, max: 26000 });
+    expect(c.faixasSimilares.cilindrada).toEqual({ min: 113, max: 325 });
     expect(c.hipoteses).toEqual([
       { nome: "Honda CB 300", preco: "14990", cilindrada: "293.5", marca: "Honda", score: 0.8 },
     ]);
@@ -74,18 +77,19 @@ describe("criteriosDaRespostaDeJev", () => {
       cx_preco: { type: "choice", choice: "15 a 20 mil", confidence: 1, probabilities: {} },
       modo_preco: { type: "choice", choice: "teto", confidence: 1, probabilities: {} },
     };
-    expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({ max: 26000 });
+    const c = criteriosDaRespostaDeJev(respostas, entrada);
+    expect(c.faixas.preco).toEqual({ max: 20000 });
+    expect(c.faixasSimilares.preco).toEqual({ max: 26000 });
   });
 
-  it("'intervalo' mantém min e max", () => {
+  it("'intervalo' mantém min e max (exato; a margem vai em faixasSimilares)", () => {
     const respostas: RespostasDeJev = {
       cx_preco: { type: "choice", choice: "15 a 20 mil", confidence: 1, probabilities: {} },
       modo_preco: { type: "choice", choice: "intervalo", confidence: 1, probabilities: {} },
     };
-    expect(criteriosDaRespostaDeJev(respostas, entrada).faixas.preco).toEqual({
-      min: 10500,
-      max: 26000,
-    });
+    const c = criteriosDaRespostaDeJev(respostas, entrada);
+    expect(c.faixas.preco).toEqual({ min: 15000, max: 20000 });
+    expect(c.faixasSimilares.preco).toEqual({ min: 10500, max: 26000 });
   });
 });
 
@@ -102,10 +106,9 @@ describe("potência (atributo-chave) e marca", () => {
     const r: RespostasDeJev = {
       cx_potencia: { type: "choice", choice: "21 a 30", confidence: 1, probabilities: {} },
     };
-    expect(criteriosDaRespostaDeJev(r, entradaPotencia).faixas.potencia).toEqual({
-      min: 15,
-      max: 39,
-    });
+    const c = criteriosDaRespostaDeJev(r, entradaPotencia);
+    expect(c.faixas.potencia).toEqual({ min: 21, max: 30 });
+    expect(c.faixasSimilares.potencia).toEqual({ min: 15, max: 39 });
   });
 
   it("a exigência de MARCA avisa para não contar marca DENTRO do nome do modelo", () => {
@@ -122,6 +125,45 @@ describe("potência (atributo-chave) e marca", () => {
     expect(instrucao).toMatch(/CILINDRADA é o critério que MAIS pesa/i);
     expect(instrucao).toMatch(/FILTROS COMBINADOS/i);
     expect(instrucao).toMatch(/NUNCA exclua por marca/i);
+  });
+});
+
+describe("estilo/categoria por si (ESCOPO 11)", () => {
+  const entradaCat: EntradaDeCriterios = {
+    colunas: ["categoria"],
+    estoque: [
+      { nome: "XTZ 150 Crosser", valores: { categoria: "Adventure / Trilha" } },
+      { nome: "CB 300 F", valores: { categoria: "Motos Seminovas" } },
+    ],
+  };
+
+  it("cria categoria_alvo com as categorias REAIS do estoque", () => {
+    const q = perguntaDeCriteriosDeJev(entradaCat);
+    expect(q.categoria_alvo?.type).toBe("choice");
+    const crit = q.categoria_alvo?.criteria as Record<string, string> | undefined;
+    expect(crit?.["Adventure / Trilha"]).toBeTruthy();
+    expect(crit?.["nenhuma"]).toBeTruthy();
+  });
+
+  it("categoria_alvo → exigência + faixa de texto (o motor MANTÉM o estilo)", () => {
+    const r: RespostasDeJev = {
+      categoria_alvo: { type: "choice", choice: "Adventure / Trilha", confidence: 1, probabilities: {} },
+    };
+    const c = criteriosDaRespostaDeJev(r, entradaCat);
+    expect(c.exigidos).toContain("categoria");
+    expect(c.faixas.categoria).toEqual(["Adventure / Trilha"]);
+  });
+
+  it("categoria_alvo='nenhuma' não exige categoria", () => {
+    const r: RespostasDeJev = {
+      categoria_alvo: { type: "choice", choice: "nenhuma", confidence: 1, probabilities: {} },
+    };
+    expect(criteriosDaRespostaDeJev(r, entradaCat).exigidos).not.toContain("categoria");
+  });
+
+  it("a exigência de ESTILO fala de manter o estilo (não completar com outros)", () => {
+    const q = perguntaDeCriteriosDeJev(entradaCat);
+    expect(String(q["exigidos_categoria"]?.instructions)).toMatch(/MANTER esse estilo/i);
   });
 });
 

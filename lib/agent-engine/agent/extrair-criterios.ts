@@ -76,8 +76,14 @@ export interface CriteriosExtraidos {
   criterios: Record<string, string>;
   /** Configurações concretas de motos parecidas (na dúvida, várias). */
   hipoteses: HipoteseDeMoto[];
-  /** Intervalos aceitáveis por coluna (cilindrada/preço/categoria/marca…). */
+  /** Intervalos EXATOS pedidos pelo cliente (cilindrada/preço/categoria/marca…). */
   faixas: FaixasDoPedido;
+  /**
+   * ESCOPO 11: os MESMOS intervalos com a MARGEM de ±30% — as motos que só caem
+   * na margem (não casam o pedido exato) vão para a FILA do "quer ver similares?".
+   * Vazio no caminho de chat (sem margem).
+   */
+  faixasSimilares: FaixasDoPedido;
   /**
    * C-096: coluna que o cliente ENFATIZOU ("preco" em "quero barata"; "categoria"
    * em "quero Naked"). O motor prioriza por ela. `null` = sem destaque.
@@ -94,7 +100,15 @@ export interface CriteriosExtraidos {
 
 /** Formato vazio (nunca lança). */
 export function criteriosVazios(): CriteriosExtraidos {
-  return { intencao: null, criterios: {}, hipoteses: [], faixas: {}, principal: null, exigidos: [] };
+  return {
+    intencao: null,
+    criterios: {},
+    hipoteses: [],
+    faixas: {},
+    faixasSimilares: {},
+    principal: null,
+    exigidos: [],
+  };
 }
 
 /**
@@ -331,6 +345,8 @@ export function parseCriterios(
     criterios,
     hipoteses,
     faixas: parseFaixas(obj.faixas, permitidas),
+    // Caminho de CHAT (fallback): sem split exato/margem — a fila cai na faixa exata.
+    faixasSimilares: {},
     principal,
     exigidos,
   };

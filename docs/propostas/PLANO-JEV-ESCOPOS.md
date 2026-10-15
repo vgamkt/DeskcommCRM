@@ -186,6 +186,25 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — ESCOPO 11 (separar MATCH de SIMILAR; estilo por texto) — FEITO E VALIDADO AO VIVO.**
+  - **ANTES (medido ao vivo):** (a) "pra cidade e umas **trilhas**" → a Jev NÃO marcava `categoria` →
+    sem filtro de estilo → vinha **CB 300 F (seminova)** entre as trail; (b) "gostei dessas trail. tem
+    alguma **até 20 mil**?" → a faixa de preço vinha **já com a margem (+30% = 26.000)** → o **XRE 190
+    (R$22,5k)** aparecia ANTES das ≤20k.
+  - **REGRA (dono):** a 1ª oferta traz SÓ o que casa EXATAMENTE (estilo principal + dentro do valor).
+    O que NÃO casa (margem/outro estilo) sai **somente depois** do "quer ver similares?".
+  - **DURANTE:**
+    (1) `catalog-criteria`: `faixas` = EXATO; novo `faixasSimilares` = mesmo intervalo com a margem ±30%
+    (a fila). Nova pergunta **`categoria_alvo`** (como `marca_alvo`): estilo por texto ("trail", "naked",
+    "scooter", uso/terreno) vira **exigência + faixa de texto** — o motor MANTÉM o estilo.
+    (2) `extrair-criterios`: `CriteriosExtraidos.faixasSimilares`.
+    (3) `inbound-turn`: a 1ª oferta usa `faixasDoTurno` (exata); a FILA do "ver mais" usa
+    `{ ...faixasDoTurno, ...faixasSimilaresDoTurno }` (texto exato + número com margem) — mantém o
+    estilo e só alarga o número.
+  - **DEPOIS (ao vivo):** "cidade + trilhas" → **só trail** (XTZ, BMW GS, XRE, CB 500 X); "até 20 mil"
+    → **só ≤20k** (Crosser S 19.990, Crosser 16.900) + "outros nesse valor?"; "pode mostrar sim" →
+    **XRE 190 (trail acima do valor)**, não street. `tsc` 0; `lint` 0; suíte **1480/1480**.
+
 - **2026-10-15 — ORDEM NUMÉRICA + anti-duplicação de apresentação — FEITO E VALIDADO AO VIVO.**
   - **ORDEM NUMÉRICA (dono):** quando o cliente pede um NÚMERO (ex.: "quero uma 250") e a Jev marca a
     coluna principal (`principal=cilindrada`), as motos mais PRÓXIMAS do número têm que vir primeiro

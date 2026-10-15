@@ -3192,6 +3192,10 @@ async function executarTurnoDoAgente(
   // sobre o catálogo. Vazias ⇒ comportamento antigo (só ranking).
   let hipotesesDoTurno: HipoteseDeMoto[] = [];
   let faixasDoTurno: FaixasDoPedido = {};
+  // ESCOPO 11: mesma faixa com a MARGEM de ±30% — vira a FILA do "quer ver
+  // similares?" (as motos que NÃO batem o pedido exato vão para cá, e só saem
+  // depois do cliente confirmar). A 1ª oferta usa `faixasDoTurno` (exata).
+  let faixasSimilaresDoTurno: FaixasDoPedido = {};
   // C-096: coluna que o cliente enfatizou (o motor prioriza por ela).
   let principalDoTurno: string | null = null;
   // C-106: colunas que o cliente REQUER (dedução da IA, incl. marca do modelo).
@@ -4893,6 +4897,7 @@ async function executarTurnoDoAgente(
                 }
                 hipotesesDoTurno = extraidos.hipoteses;
                 faixasDoTurno = extraidos.faixas;
+                faixasSimilaresDoTurno = extraidos.faixasSimilares;
                 principalDoTurno = extraidos.principal;
                 exigidosDoTurno = extraidos.exigidos;
                 // C-107: o cliente citou um ANO? Ele é OBRIGATÓRIO e EXATO — o
@@ -5163,11 +5168,18 @@ async function executarTurnoDoAgente(
                   // As PARCIAIS têm de RESPEITAR o filtro RÍGIDO (exigidos/faixas): nunca uma
                   // Bajaj num pedido de Honda, nem 19k num "até 15 mil" (medido ao vivo).
                   const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
+                  // ESCOPO 11: as PARCIAIS (o "ver mais") = faixa exata + MARGEM
+                  // numérica (`...faixasDoTurno, ...faixasSimilaresDoTurno`): mantém os
+                  // filtros de TEXTO exatos (categoria/marca — o estilo NÃO se perde)
+                  // e só alarga o NÚMERO. São as motos que NÃO batem o pedido exato
+                  // (ex.: acima do teto) e por isso só saem DEPOIS do "quer ver
+                  // similares?".
+                  const faixasDaFila = { ...faixasDoTurno, ...faixasSimilaresDoTurno };
                   const parciais = filtrarPorExigencias(
                     candidatos,
                     exigidosDoTurno,
                     hipotesesDoTurno,
-                    faixasDoTurno,
+                    faixasDaFila,
                     cfgCatalogo?.tolerancia_preco_pct ?? 30,
                   ).filter((m) => !casadasSet.has(m.nome) && !jaEnviadas.has(m.nome));
                   opcoesParaSalvar = {

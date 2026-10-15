@@ -168,6 +168,30 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     };
   }
 
+  // ESCOPO 11 — ESTILO/CATEGORIA por si (como a marca-alvo): quando o cliente
+  // pede um estilo ("quero uma trail", "pra trilha", "uma naked", "scooter"),
+  // a Jev escolhe a CATEGORIA REAL do estoque. O motor então MANTÉM esse estilo
+  // (filtro exato) — não completa com outros estilos (medido ao vivo: "trail"
+  // trazendo CB 300 F seminova). Sem isto, a categoria só vinha por acaso.
+  const catCol = e.colunas.find((c) => detectarPapelColuna(c) === 'tipo');
+  if (catCol) {
+    const categorias: string[] = [];
+    for (const m of e.estoque) {
+      const v = (m.valores?.[catCol] ?? '').trim();
+      if (v !== '' && !categorias.includes(v)) categorias.push(v);
+    }
+    const criteriaCat: Record<string, string> = {
+      nenhuma: 'o cliente NÃO pediu estilo/categoria por si (ou citou só dentro de um modelo)',
+    };
+    for (const c of categorias) criteriaCat[c] = `o estilo/categoria "${c}"`;
+    perguntas.categoria_alvo = {
+      type: 'choice',
+      instructions:
+        'O cliente pediu um ESTILO/CATEGORIA por si, como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha" (escolha a categoria REAL do estoque que corresponde). Se ele citou o estilo apenas DENTRO do nome de um modelo, ou não citou estilo, responda "nenhuma".',
+      criteria: criteriaCat,
+    };
+  }
+
   for (const col of e.colunas) {
     perguntas[`exigidos_${col}`] = {
       type: 'noul',
@@ -185,7 +209,9 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
         ? 'O cliente exigiu a MARCA como FILTRO (ex.: "quero uma Honda")? Se a marca apareceu apenas DENTRO do nome de um modelo (ex.: "Honda CB 250"), responda NÃO — ali o que importa é o MODELO.'
         : detectarPapelColuna(col) === 'cilindrada'
           ? 'O cliente pediu CILINDRADA por si (ex.: "quero uma 250", "250cc", "motos de 300", "entre 150 e 300")? Se o número apareceu apenas DENTRO do nome do MODELO (ex.: "CB 250", "Fazer 250"), responda NÃO — o número faz parte do nome, não é filtro.'
-          : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
+          : detectarPapelColuna(col) === 'tipo'
+            ? 'O cliente mencionou um ESTILO/CATEGORIA por si como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha". Quando ele descreve o USO/TERRENO (trilha, terra, estrada, cidade), marque SIM — o motor vai MANTER esse estilo (não completar com outros). Se ele citou o estilo apenas DENTRO de um modelo, responda NÃO.'
+            : `O cliente DECLAROU EXPLICITAMENTE um valor para a coluna "${col}"? (NÃO conte o que foi apenas deduzido)`,
     };
   }
 
@@ -337,39 +363,41 @@ export function criteriosDaRespostaDeJev(
       ? principalResp.choice
       : null;
 
+  // ESCOPO 11: `faixas` = EXATO (o que o cliente pediu) — a 1ª oferta mostra SÓ
+  // quem casa exatamente. `faixasSimilares` = mesmo intervalo com a MARGEM de
+  // ±30% — vira a FILA do "quer ver similares?": motos que NÃO batem o pedido
+  // (acima do teto, etc.) saem SOMENTE depois da confirmação do cliente. Antes a
+  // margem ia embutida na faixa estrita e uma moto de 22.5k aparecia antes das de
+  // ≤20k (medido ao vivo).
   const faixas: Record<string, unknown> = {};
+  const faixasSimilares: Record<string, unknown> = {};
+  const registrarFaixa = (
+    col: string,
+    escolha: string | undefined,
+    modo: string | undefined,
+    opcoes: readonly FaixaDeOpcao[],
+  ): void => {
+    if (escolha === undefined) return;
+    const exata = aplicarModo(faixaEscolhida(escolha, opcoes), modo);
+    if (!exata) return;
+    faixas[col] = exata;
+    const margem = aplicarMargem(exata, MARGEM_NUMERICA_PCT);
+    if (margem) faixasSimilares[col] = margem;
+  };
   const precoCol = e.colunas.find((c) => detectarPapelColuna(c) === 'preco');
   const precoResp = respostas.cx_preco;
   if (precoCol && precoResp?.type === 'choice') {
-    const f = aplicarMargem(
-      aplicarModo(faixaEscolhida(precoResp.choice, FAIXAS_DE_PRECO), modoDe(respostas, 'modo_preco')),
-      MARGEM_NUMERICA_PCT,
-    );
-    if (f) faixas[precoCol] = f;
+    registrarFaixa(precoCol, precoResp.choice, modoDe(respostas, 'modo_preco'), FAIXAS_DE_PRECO);
   }
   const ccCol = e.colunas.find((c) => detectarPapelColuna(c) === 'cilindrada');
   const ccResp = respostas.cx_cilindrada;
   if (ccCol && ccResp?.type === 'choice') {
-    const f = aplicarMargem(
-      aplicarModo(
-        faixaEscolhida(ccResp.choice, FAIXAS_DE_CILINDRADA),
-        modoDe(respostas, 'modo_cilindrada'),
-      ),
-      MARGEM_NUMERICA_PCT,
-    );
-    if (f) faixas[ccCol] = f;
+    registrarFaixa(ccCol, ccResp.choice, modoDe(respostas, 'modo_cilindrada'), FAIXAS_DE_CILINDRADA);
   }
   const potenciaCol = e.colunas.find(ehColunaDePotencia);
   const potenciaResp = respostas.cx_potencia;
   if (potenciaCol && potenciaResp?.type === 'choice') {
-    const f = aplicarMargem(
-      aplicarModo(
-        faixaEscolhida(potenciaResp.choice, FAIXAS_DE_POTENCIA),
-        modoDe(respostas, 'modo_potencia'),
-      ),
-      MARGEM_NUMERICA_PCT,
-    );
-    if (f) faixas[potenciaCol] = f;
+    registrarFaixa(potenciaCol, potenciaResp.choice, modoDe(respostas, 'modo_potencia'), FAIXAS_DE_POTENCIA);
   }
 
   // Marca-alvo dita pela Jev: vira EXIGÊNCIA + faixa de texto. O motor filtra
@@ -384,6 +412,20 @@ export function criteriosDaRespostaDeJev(
   ) {
     if (!exigidos.includes(marcaCol)) exigidos.push(marcaCol);
     faixas[marcaCol] = [marcaResp.choice];
+  }
+
+  // ESTILO/CATEGORIA por si: vira EXIGÊNCIA + faixa de texto na coluna de
+  // categoria — o motor MANTÉM o estilo (não completa com outros).
+  const catCol = e.colunas.find((c) => detectarPapelColuna(c) === 'tipo');
+  const catResp = respostas.categoria_alvo;
+  if (
+    catCol &&
+    catResp?.type === 'choice' &&
+    catResp.choice !== 'nenhuma' &&
+    catResp.choice.trim() !== ''
+  ) {
+    if (!exigidos.includes(catCol)) exigidos.push(catCol);
+    faixas[catCol] = [catResp.choice];
   }
 
   const comoHipotese = (
@@ -425,5 +467,5 @@ export function criteriosDaRespostaDeJev(
     for (const x of top) hipoteses.push(comoHipotese(x.m, x.score));
   }
 
-  return { intencao, criterios: {}, hipoteses, faixas, principal, exigidos };
+  return { intencao, criterios: {}, hipoteses, faixas, faixasSimilares, principal, exigidos };
 }
