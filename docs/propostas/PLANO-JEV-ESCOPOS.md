@@ -186,6 +186,15 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FASE 2 · ESCOPO 5 (`flow_intent`) — FEITO (aguarda deploy).**
+  - **ANTES:** (a) `escolherFluxoIniciado` deixava o regex `porGatilho` vencer o veredito NEGATIVO da Jev
+    (`ok:true` + `[]`); (b) `escolherFluxosPorIA` retornava `{ok:false}` quando o modelo de CHAT estava
+    vazio, ANTES de ler o binding `flow_intent__jev` — a Jev nunca rodava.
+  - **DURANTE:** (a) `ok:true` é AUTORITATIVO (inclusive vazio) → não cai no regex; (b) o check de `model`
+    vazio foi movido para DEPOIS do bloco da Jev. 2 testes atualizados.
+  - **DEPOIS:** typecheck 0; `flow-intent.test.ts` 15/15; suíte **1454/1454**.
+  - **Pendente:** deploy + validação ao vivo.
+
 - **2026-10-15 — FASE 2 · ESCOPO 4 (`modelo_categoria`) — FEITO (aguarda deploy).**
   - **RECLASSIFICAÇÃO (reformulado pós-sonda):** o "DEGRAU 1" (`categoriaDoModeloNaReferencia`) **não é
     regex** — é lookup na tabela `modelos` (dado curado do cliente). Por isso **permanece primeiro** (dado

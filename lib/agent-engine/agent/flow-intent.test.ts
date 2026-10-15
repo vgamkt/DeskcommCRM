@@ -89,8 +89,8 @@ describe('escolherFluxoIniciado (flow_start sem nome — Jev primeiro, regex só
     expect(escolherFluxoIniciado(ATIVOS, IA_OK(['f2']), { id: 'f3', nome: 'Troca' })?.id).toBe('f2');
   });
 
-  it('IA vazia (ok:true, []) → cai no regex', () => {
-    expect(escolherFluxoIniciado(ATIVOS, IA_OK([]), { id: 'f3', nome: 'Troca' })?.id).toBe('f3');
+  it('IA vazia (ok:true, []) → null (veredito NEGATIVO não cai no regex — Escopo 5)', () => {
+    expect(escolherFluxoIniciado(ATIVOS, IA_OK([]), { id: 'f3', nome: 'Troca' })).toBeNull();
   });
 
   it('IA falhou (ok:false) → cai no regex', () => {
@@ -99,9 +99,9 @@ describe('escolherFluxoIniciado (flow_start sem nome — Jev primeiro, regex só
     );
   });
 
-  it('IA escolheu fluxo que NÃO está ativo → cai no regex', () => {
+  it('IA escolheu fluxo que NÃO está ativo → null (veredito da Jev, não regex)', () => {
     const ia: EscolhaDeFluxosPorIA = { ok: true, fluxos: [{ id: 'f9', nome: 'Fantasma' }] };
-    expect(escolherFluxoIniciado(ATIVOS, ia, { id: 'f2', nome: 'Financiamento' })?.id).toBe('f2');
+    expect(escolherFluxoIniciado(ATIVOS, ia, { id: 'f2', nome: 'Financiamento' })).toBeNull();
   });
 
   it('nada decidiu (IA vazia + sem gatilho) → null', () => {

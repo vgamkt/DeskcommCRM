@@ -112,14 +112,17 @@ export function escolherFluxoIniciado(
   decisaoIA: EscolhaDeFluxosPorIA | null,
   porGatilho: { id: string; nome: string } | null,
 ): { id: string; nome: string } | null {
-  // 1) IA/Jev primeiro: o primeiro fluxo que ela escolheu E que está ativo.
+  // 1) IA/Jev primeiro — AUTORITATIVA quando responde, INCLUSIVE vazio ("nenhum
+  //    fluxo"): um veredito negativo NÃO cai no regex (doutrina `jev-decide-sempre`,
+  //    invariante 2). Antes, `ok:true` + lista vazia vazava para o `porGatilho`.
   if (decisaoIA !== null && decisaoIA.ok) {
     for (const f of decisaoIA.fluxos) {
       const ativo = ativos.find((a) => a.id === f.id);
       if (ativo !== undefined) return ativo;
     }
+    return null;
   }
-  // 2) Fallback: só quando a IA não decidiu.
+  // 2) Fallback: só quando a IA NÃO respondeu (`ok: false` / `null`).
   if (porGatilho !== null) {
     return ativos.find((a) => a.id === porGatilho.id) ?? null;
   }
@@ -189,7 +192,6 @@ export async function escolherFluxosPorIA(
   // Sem texto não há o que classificar (nenhum fluxo). Sem modelo a IA não pode
   // responder — devolve `ok: false` para o chamador cair no regex de palavra.
   if (input.texto === null || input.texto.trim() === '') return { ok: true, fluxos: [] };
-  if (input.model.trim() === '') return { ok: false };
   try {
     const fluxos = await carregarFluxosAtivos(db, input.organizationId, input.contactId);
     if (fluxos.length === 0) return { ok: true, fluxos: [] };
@@ -219,6 +221,10 @@ export async function escolherFluxosPorIA(
         return { ok: true, fluxos: escolhidos.map((f) => ({ id: f.id, nome: f.nome })) };
       }
     }
+
+    // Sem modelo de CHAT a IA não pode responder — mas a Jev JÁ foi tentada acima
+    // (não depende do modelo de chat). Só agora o `ok:false` libera o regex.
+    if (input.model.trim() === '') return { ok: false };
 
     const call = deps.runModelCall ?? runModelCall;
     const { result } = await call(
