@@ -4507,17 +4507,20 @@ async function executarTurnoDoAgente(
         // ─── ÁRBITRO DE TURNO (Fase 4): ESCOLHA + CRITÉRIOS numa chamada só ────
         // A escolha e os critérios decidem sobre o MESMO turno (mesmo `msgCliente`,
         // mesmo catálogo). Antes eram DUAS idas à Jev neste turno; agora é UMA.
-        const planoEscolha =
-          jaApresentou && !pediuOutraMoto
-            ? montarPedidoDeEscolha({
-                textoDoModelo: body,
-                textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),
-                catalogo: catalogoEfetivo,
-                jaDetalhadas: catalogoDaConversa.detalhadas,
-                textoCitado: textoCitadoDoTurno,
-                escolhidaAtual: catalogoDaConversa.escolhida,
-              })
-            : null;
+        // Doutrina `jev-decide-sempre`: `pediuOutraMoto` (regex `ehPedidoDiferente`) NÃO
+        // barra mais a consulta — vira SINAL para a Jev, que decide ("quero outra" →
+        // "nenhuma"). Antes, `!pediuOutraMoto` impedia a Jev de ser chamada.
+        const planoEscolha = jaApresentou
+          ? montarPedidoDeEscolha({
+              textoDoModelo: body,
+              textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),
+              catalogo: catalogoEfetivo,
+              jaDetalhadas: catalogoDaConversa.detalhadas,
+              textoCitado: textoCitadoDoTurno,
+              escolhidaAtual: catalogoDaConversa.escolhida,
+              pediuOutraMoto,
+            })
+          : null;
         // O gate dos critérios é o MESMO do bloco do `planoAutomatico` (abaixo):
         // computado aqui para o pedido entrar na MESMA chamada do Árbitro. Se o
         // gate de lá divergir, o bloco de lá refaz a chamada sozinho (fallback).
@@ -4584,6 +4587,7 @@ async function executarTurnoDoAgente(
                   tenantId,
                   log: runLog,
                   escolhidaAtual: catalogoDaConversa.escolhida,
+                  pediuOutraMoto,
                   ...(vereditoArbitro?.porPonto.moto_escolhida !== undefined
                     ? { respostasProntas: vereditoArbitro.porPonto.moto_escolhida }
                     : {}),

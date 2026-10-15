@@ -555,10 +555,12 @@ export function rotuloDeMoto(m: MotoDoCatalogo): string {
 }
 
 /**
- * Prepara o PEDIDO do ponto `moto_escolhida` para o ÁRBITRO DE TURNO: aplica as
- * travas (pergunta/objeção NÃO é escolha; sem referência a uma moto mostrada NÃO
- * é escolha), monta as candidatas e os rótulos. `null` = não é um turno de
- * escolha. Quem já tem o pedido pronto (o merge da Fase 4) não recomputa isto.
+ * Prepara o PEDIDO do ponto `moto_escolhida` para o ÁRBITRO DE TURNO: monta as
+ * candidatas e os rótulos e envia à Jev os SINAIS (`parece_pergunta_objecao`,
+ * `tem_referencia_nominal`, `unica_em_foco`, `pediu_algo_diferente`). A Jev DECIDE
+ * — os sinais NÃO a barram (doutrina `jev-decide-sempre`, invariante 1). `null` =
+ * não é turno de escolha (sem catálogo / sem candidatas). Quem já tem o pedido
+ * pronto (o merge da Fase 4) não recomputa isto.
  */
 export function montarPedidoDeEscolha(args: {
   textoDoModelo: string;
@@ -573,11 +575,11 @@ export function montarPedidoDeEscolha(args: {
    * (medido ao vivo: `moto_interesse` trocou Factor 150 → Factor 125 K).
    */
   escolhidaAtual?: MotoDoCatalogo | null;
+  /** O cliente pediu algo DIFERENTE ("quero outra cor/mais nova")? Sinal para a Jev. */
+  pediuOutraMoto?: boolean;
 }): { pedido: PedidoAoArbitro; candidatas: MotoDoCatalogo[]; rotulos: string[] } | null {
   const { textoDoModelo, textoDoCliente, catalogo, jaDetalhadas, textoCitado = '' } = args;
   if (catalogo.length === 0) return null;
-  // Pergunta/objeção NÃO é escolha — barra ANTES (vale para a Jev e o fallback).
-  if (bloqueiaEscolha(textoDoCliente)) return null;
   const detalhadas = new Set(jaDetalhadas.map(normalizarNomeDeMoto));
   // A moto CITADA (foto respondida) entra mesmo se já foi "detalhada": é justamente
   // a que o cliente escolhe — excluí-la fazia o matcher casar um prefixo errado
@@ -593,10 +595,20 @@ export function montarPedidoDeEscolha(args: {
   const candidatas = catalogo.filter(
     (m) => !detalhadas.has(normalizarNomeDeMoto(m.nome)) || ehCitada(m) || ehEscolhidaAtual(m),
   );
-  // TRAVA ESTRUTURAL: sem referência a NENHUMA moto mostrada, a mensagem NÃO é
-  // escolha ("Sao paulo", "Gostei", "ok", número solto).
-  if (!temReferenciaAMoto(textoDoCliente, textoCitado, candidatas)) return null;
+  // Nada a escolher (todas já detalhadas) → não é turno de escolha. Estrutural.
+  if (candidatas.length === 0) return null;
   const rotulos = candidatas.map(rotuloDeMoto);
+  // Doutrina `jev-decide-sempre`: os SINAIS abaixo vão para o CONTEXTO da Jev (ela
+  // decide); NÃO barram a consulta. Antes, `bloqueiaEscolha`/`temReferenciaAMoto`
+  // retornavam `null` AQUI e a Jev nunca era consultada — regex decidindo antes da
+  // Jev (violação). Os mesmos testes alimentam o FALLBACK determinístico
+  // (`motoEscolhidaPeloCliente`), usado SÓ quando a Jev não responde (`null`).
+  const sinais = {
+    parece_pergunta_objecao: bloqueiaEscolha(textoDoCliente),
+    tem_referencia_nominal: temReferenciaAMoto(textoDoCliente, textoCitado, candidatas),
+    unica_em_foco: candidatas.length === 1,
+    pediu_algo_diferente: args.pediuOutraMoto === true,
+  };
   return {
     pedido: {
       ponto: 'moto_escolhida',
@@ -605,6 +617,7 @@ export function montarPedidoDeEscolha(args: {
         citado: textoCitado,
         modelo: textoDoModelo,
         candidatas: rotulos,
+        sinais,
       },
       perguntas: perguntaDeMotoEscolhidaJev(rotulos),
       obrigatorias: ['moto'],
@@ -641,6 +654,8 @@ export async function motoEscolhidaPeloClienteComJev(
     respostasProntas?: RespostasDeJev;
     /** A3: a moto já escolhida entra nas candidatas (não se perde em match ambíguo). */
     escolhidaAtual?: MotoDoCatalogo | null;
+    /** O cliente pediu algo DIFERENTE? Sinal para a Jev (não barra a consulta). */
+    pediuOutraMoto?: boolean;
   },
 ): Promise<MotoDoCatalogo | undefined> {
   const plano = montarPedidoDeEscolha({
@@ -650,6 +665,7 @@ export async function motoEscolhidaPeloClienteComJev(
     jaDetalhadas,
     textoCitado,
     escolhidaAtual: deps?.escolhidaAtual ?? null,
+    pediuOutraMoto: deps?.pediuOutraMoto === true,
   });
   if (plano === null) return undefined;
   const { candidatas, rotulos } = plano;

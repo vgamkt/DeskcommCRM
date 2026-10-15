@@ -16,6 +16,13 @@ describe("perguntaDeMotoEscolhidaJev", () => {
     if (!p || p.type !== "choice") throw new Error("esperava choice");
     expect(Object.keys(p.criteria).sort()).toEqual(["Honda CB 300", "Yamaha Factor", MOTO_NENHUMA]);
   });
+
+  it("traz as regras que substituem os gates: 'SEM REFERÊNCIA' e 'ÚNICA EM FOCO'", () => {
+    const p = perguntaDeMotoEscolhidaJev(["Yamaha Factor 150"]).moto;
+    if (!p || p.type !== "choice") throw new Error("esperava choice");
+    expect(p.instructions).toContain("SEM REFERÊNCIA");
+    expect(p.instructions).toContain("ÚNICA EM FOCO");
+  });
 });
 
 describe("motoEscolhidaDaRespostaDeJev", () => {

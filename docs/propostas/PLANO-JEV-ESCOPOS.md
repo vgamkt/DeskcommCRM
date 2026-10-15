@@ -186,6 +186,34 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FASE 2 · ESCOPO 1 (`moto_escolhida`) — FEITO (aguarda DEPOIS ao vivo).**
+  - **ANTES:** `montarPedidoDeEscolha` barrava a Jev com `bloqueiaEscolha`/`temReferenciaAMoto`
+    (`return null`, `catalogo-da-conversa.ts`); `inbound-turn.ts` barrava com `!pediuOutraMoto`. Sonda:
+    "me interessei" (1 candidata) → `nenhuma` (lacuna).
+  - **DURANTE:** (1) `moto-escolhida.ts`: prompt ganhou **"SEM REFERÊNCIA"** e **"ÚNICA EM FOCO"**;
+    (2) `catalogo-da-conversa.ts`: os gates viraram **SINAIS** no contexto (`parece_pergunta_objecao`,
+    `tem_referencia_nominal`, `unica_em_foco`, `pediu_algo_diferente`); `null` só estrutural (sem
+    catálogo/candidatas); (3) `inbound-turn.ts`: `pediuOutraMoto` vira sinal (não barra a Jev). 5 testes novos.
+  - **DEPOIS (sonda com o prompt NOVO):** "gostei dela"/"me interessei"/"essa mesmo"/"quero ver ela de
+    perto" (1 candidata) → a candidata (0.98–1.0); cidade/objeção/ambíguo (3 candidatas) → `nenhuma` (1.0);
+    "quero outra cor" → `nenhuma`. typecheck 0; suíte **1453/1453**.
+  - **Pendente:** deploy + validação ao vivo (WAHA) quando o datafy estiver pago.
+
+- **2026-10-15 — FASE 1 (sondar todos os pontos que mudam) — FEITO.**
+  - **DURANTE:** sonda real (binding `typesafe`/`jev-latest`) nos 6 pontos (§4). Formato comum
+    confirmado: `{"<id>":{"type":"choice|noul","choice"|"noul":...,"confidence":0..1,"probabilities":{...}}}`.
+  - **DEPOIS (acerto por ponto):**
+    - `moto_escolhida`: **acerta** escolha clara (0.99), citando a foto (0.96), pergunta/objeção→`nenhuma`,
+      cidade→`nenhuma`, ambíguo→`nenhuma`. **LACUNAS:** "gostei dela" (1 candidata) acerta mas confidence 0.4;
+      **"me interessei" (1 candidata) → `nenhuma`** → precisa da regra "única em foco + interesse" (Escopo 1, regra 3).
+    - `catalog_criteria`: **acerta** (preço faixa/modo/teto, `intencao` pedido/alternativa, vago→`principal=nenhum`).
+    - `modelo_categoria`: Burgman→Scooter, XRE→Trail (ok); **LACUNA:** "Lander 250" → `nenhuma` (o modelo não
+      reconhece) → o escopo precisa de **exemplos por categoria** (Escopo 4).
+    - `flow_intent`: **todos certos** (Qualificação / Financiamento / `none` p/ dúvida / multi-fluxo Troca+Financiamento).
+    - `pergunta_do_fluxo`: **todos certos** (objeção→`esperar`; interesse→`agora`; vazio→`agora`).
+  - **Conclusão:** a Jev **é capaz**; o que a atrapalha são os **gates de regex** (§2) e **2 lacunas de escopo**
+    (Escopos 1 e 4). **Pendente:** Fase 2 (implementar os 7 escopos [A]).
+
 - **2026-10-15 — FASE 0 (contrato + timeout) — FEITO.**
   - **ANTES:** `.env` só tinha `JEV_BRIEF_ENABLED`; valiam os defaults (teto 120s, 8s/tentativa,
     12 tentativas, breaker 30s).

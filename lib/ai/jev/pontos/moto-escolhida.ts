@@ -24,16 +24,24 @@ export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasD
     moto: {
       type: 'choice',
       instructions:
-        'Dentre as motos abaixo, qual o cliente ESCOLHEU/gostou nesta mensagem? Só marque uma moto se ' +
-        'o cliente demonstrou a escolha ("gostei dessa", "quero essa", "essa mesmo"). Se foi pergunta, ' +
-        'objeção ou não houve escolha, responda "nenhuma". ' +
+        'Dentre as motos abaixo, qual o cliente ESCOLHEU/gostou nesta mensagem? ' +
+        // SEM REFERÊNCIA (substitui o gate determinístico `temReferenciaAMoto`): sem alvo, NÃO é escolha.
+        'SEM REFERÊNCIA: se a mensagem NÃO fala de nenhuma moto da lista (é cidade, um dado do ' +
+        'cadastro, saudação, "ok", agradecimento, ou afirmação vaga sem alvo) → responda "nenhuma". ' +
+        'Só marque uma moto se o cliente demonstrou a escolha por ELA ("gostei dessa", "quero essa", ' +
+        '"essa mesmo"). Se foi pergunta ou objeção, responda "nenhuma" — a menos que haja um sinal ' +
+        'POSITIVO explícito junto ("quero a X, quanto fica?" continua sendo escolha). ' +
+        // ÚNICA EM FOCO (NOVA, medida na sonda): 1 candidata + interesse, mesmo sem nomear.
+        'ÚNICA EM FOCO: se a lista tem UMA SÓ moto e o cliente demonstra interesse/afirmação por ela — ' +
+        'MESMO SEM NOMEAR ("gostei dela", "me interessei", "essa", "curti", "quero ver de perto") — ' +
+        'marque ESSA (não há outra candidata). ' +
         'Use TODOS os dados de cada candidata (nome, ANO, COR, cilindrada…) para casar com o que o ' +
         'cliente disse — o atributo dinâmico pode ser QUALQUER um ("a 2015", "a preta", "a 300 F"). ' +
         'AMBIGUIDADE: se a mensagem aponta para MAIS DE UMA moto da lista — ex.: o cliente diz "gostei da ' +
         '300" e há DUAS 300 (CB 300 R e CB 300 R FLEX), ou "a preta" quando há várias pretas — responda ' +
         '"nenhuma". NÃO escolha uma no lugar dele: é ambíguo e o sistema vai PERGUNTAR qual ele quer. ' +
-        'Só marque uma moto quando a mensagem apontar para UMA só (nome/versão/ano/cor específicos ou ' +
-        'citação única).',
+        'Só marque uma moto quando a mensagem apontar para UMA só (nome/versão/ano/cor específicos, ' +
+        'citação única, ou única candidata com interesse).',
       criteria,
     },
   };

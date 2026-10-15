@@ -45,6 +45,58 @@ describe('escolha com PONTUAÇÃO (2026-10-14)', () => {
   });
 });
 
+describe('doutrina jev-decide-sempre: gates viram SINAIS (2026-10-15)', () => {
+  const CAT = [
+    { nome: 'YAMAHA Factor 150 ED', ano: '2018', cor: 'Vermelho', fotos: ['https://x/f150.jpg'] },
+  ];
+  const sinaisDe = (p: ReturnType<typeof montarPedidoDeEscolha>) =>
+    (p!.pedido.contexto as { sinais: Record<string, boolean> }).sinais;
+
+  it('sem referência (cidade) → NÃO é null; a Jev decide (sinal vai no contexto)', () => {
+    const p = montarPedidoDeEscolha({
+      textoDoModelo: '',
+      textoDoCliente: 'sou de Sao paulo',
+      catalogo: CAT,
+      jaDetalhadas: [],
+    });
+    expect(p).not.toBeNull();
+    expect(sinaisDe(p).tem_referencia_nominal).toBe(false);
+    expect(sinaisDe(p).unica_em_foco).toBe(true);
+  });
+
+  it('pergunta/objeção → NÃO é null; sinal `parece_pergunta_objecao=true`', () => {
+    const p = montarPedidoDeEscolha({
+      textoDoModelo: '',
+      textoDoCliente: 'e a Factor? achei caro',
+      catalogo: CAT,
+      jaDetalhadas: [],
+    });
+    expect(p).not.toBeNull();
+    expect(sinaisDe(p).parece_pergunta_objecao).toBe(true);
+  });
+
+  it('"quero outra cor" → sinal `pediu_algo_diferente=true`', () => {
+    const p = montarPedidoDeEscolha({
+      textoDoModelo: '',
+      textoDoCliente: 'quero outra cor',
+      catalogo: CAT,
+      jaDetalhadas: [],
+      pediuOutraMoto: true,
+    });
+    expect(sinaisDe(p).pediu_algo_diferente).toBe(true);
+  });
+
+  it('todas já detalhadas → null (estrutural, nada a escolher)', () => {
+    const p = montarPedidoDeEscolha({
+      textoDoModelo: '',
+      textoDoCliente: 'gostei dela',
+      catalogo: CAT,
+      jaDetalhadas: ['YAMAHA Factor 150 ED'],
+    });
+    expect(p).toBeNull();
+  });
+});
+
 describe('A3 — montarPedidoDeEscolha inclui a moto JÁ ESCOLHIDA (2026-10-13)', () => {
   const F150: MotoDoCatalogo = { nome: 'YAMAHA Factor 150 ED', ano: '2018', cor: 'Vermelho', fotos: ['https://x/f150.jpg'] };
   const F125: MotoDoCatalogo = { nome: 'YAMAHA Factor 125 K', ano: '2015', cor: 'Vermelho', fotos: ['https://x/f125.jpg'] };
