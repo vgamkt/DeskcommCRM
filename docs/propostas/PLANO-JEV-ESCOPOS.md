@@ -197,7 +197,9 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
   - **DEPOIS (sonda com o prompt NOVO):** "gostei dela"/"me interessei"/"essa mesmo"/"quero ver ela de
     perto" (1 candidata) → a candidata (0.98–1.0); cidade/objeção/ambíguo (3 candidatas) → `nenhuma` (1.0);
     "quero outra cor" → `nenhuma`. typecheck 0; suíte **1453/1453**.
-  - **Pendente:** deploy + validação ao vivo (WAHA) quando o datafy estiver pago.
+  - **DEPOIS (deploy):** versão **`70bd384f`** no ar; containers healthy; sonda no CÓDIGO DEPLOYADO
+    confirma ("me interessei" → a moto; "sou de Sao paulo"/"gostei da 300" → `nenhuma`).
+  - **Pendente:** validação ao vivo (WAHA) quando o datafy estiver pago; Escopos 2–7 (Fase 2).
 
 - **2026-10-15 — FASE 1 (sondar todos os pontos que mudam) — FEITO.**
   - **DURANTE:** sonda real (binding `typesafe`/`jev-latest`) nos 6 pontos (§4). Formato comum
