@@ -87,6 +87,7 @@ function blocoDoFluxoCompacto(
   estado: EstadoDeAtendimento,
   finalizacao?: EndFinish,
   mostrouMotos = false,
+  temEscolha = false,
 ): string {
   const contexto =
     estado.notaAnterior !== undefined && estado.notaAnterior.length > 0
@@ -110,8 +111,15 @@ function blocoDoFluxoCompacto(
   // Sem isto, o "uma pergunta por vez" do fluxo trocava a venda pela do roteiro e
   // a conversa parava de avançar (medido ao vivo). Vale para TODOS os fluxos.
   if (mostrouMotos) {
+    // Com a moto JÁ ESCOLHIDA não há o que escolher: o fecho é o de AQUISIÇÃO.
+    // Antes o brief mandava "convide a ESCOLHA" sempre que mostrou motos — e o
+    // modelo repetia "qual delas chamou mais atenção?" DEPOIS da escolha (bug
+    // medido ao vivo 2026-10-15: a moto já tinha sido escolhida e as fotos já saíram).
+    const venda = temEscolha
+      ? 'o cliente JÁ ESCOLHEU uma moto — NÃO pergunte "qual delas chamou mais atenção" nem ofereça mais fotos (não há mais o que escolher). Conduza o PRÓXIMO passo: pergunte como ele pretende ADQUIRIR (à vista, financiado, no cartão, ou com uma moto na troca).'
+      : 'convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?").';
     return [
-      `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo, mas você ACABOU DE MOSTRAR MOTOS. Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?"). NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
+      `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo, mas você ACABOU DE MOSTRAR MOTOS. Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: ${venda} NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
       'Pendentes (só para REGISTRAR se o cliente informar — NÃO pergunte agora):',
       ...linhas,
     ].join('\n');
@@ -249,7 +257,14 @@ export function renderBriefDoTurno(input: BriefDoTurnoInput): string {
     );
   }
   if (input.fluxo !== null) {
-    partes.push(blocoDoFluxoCompacto(input.fluxo, input.finalizacao, input.mostrouMotos === true));
+    partes.push(
+      blocoDoFluxoCompacto(
+        input.fluxo,
+        input.finalizacao,
+        input.mostrouMotos === true,
+        input.escolhida !== null,
+      ),
+    );
   }
   const estado = blocoDeEstadoCompacto(input);
   if (estado !== '') partes.push(estado);

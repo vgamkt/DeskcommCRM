@@ -344,6 +344,7 @@ export function renderBlocoDeAtendimento(
   estado: EstadoDeAtendimento,
   finalizacao?: EndFinish,
   mostrouMotos = false,
+  temEscolha = false,
 ): string {
   // O "passa-bastão" do fluxo ANTERIOR (quando este foi encadeado): o que já foi
   // respondido não se repergunta, e o próximo passo da venda começa daqui.
@@ -393,9 +394,15 @@ export function renderBlocoDeAtendimento(
   // NÃO entra agora — o campo segue pendente e vira a pergunta do próximo turno.
   // Vale para TODOS os fluxos (não é regex).
   if (mostrouMotos) {
+    // Com a moto JÁ ESCOLHIDA, o fecho é o de AQUISIÇÃO (não há o que escolher) —
+    // mesma regra do brief. Sem isto o modelo repetia "qual delas chamou mais
+    // atenção?" depois da escolha (bug medido ao vivo 2026-10-15).
+    const venda = temEscolha
+      ? 'o cliente JÁ ESCOLHEU uma moto — NÃO pergunte "qual delas chamou mais atenção" nem ofereça mais fotos. Conduza o PRÓXIMO passo: pergunte como ele pretende ADQUIRIR (à vista, financiado, no cartão, ou com uma moto na troca).'
+      : 'convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?").';
     return [
       `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo} (mas você ACABOU DE MOSTRAR MOTOS)`,
-      'Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?"). NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).',
+      `Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: ${venda} NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
       'Campos do fluxo (só para REGISTRAR se o cliente informar — NÃO pergunte agora):',
       ...linhas,
     ].join('\n');

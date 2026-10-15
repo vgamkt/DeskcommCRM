@@ -186,6 +186,16 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FECHO APÓS A ESCOLHA (bug do "qual chamou mais atenção") — FEITO (aguarda deploy).**
+  - **ANTES:** `brief-do-turno.ts` (e `atendimento.ts`, caminho sem brief) mandavam o modelo **"convide a
+    ESCOLHA ('qual delas chamou mais atenção?')"** SEMPRE que o turno mostrou motos — **mesmo com a moto JÁ
+    ESCOLHIDA**. Resultado (medido ao vivo): o bot reperguntava "qual chamou mais atenção" depois de a escolha
+    já ter sido feita e as fotos já terem saído.
+  - **DURANTE:** `blocoDoFluxoCompacto`/`renderBlocoDeAtendimento` ganharam `temEscolha`; com escolha, a
+    instrução vira a de **AQUISIÇÃO** (à vista/financiado/cartão/troca). 1 teste novo.
+  - **DEPOIS:** typecheck 0; lint 0 erros; suíte **1456/1456**.
+  - **Pendente:** deploy + validação ao vivo.
+
 - **2026-10-15 — FASE 2 · ESCOPO 6 (`pergunta_do_fluxo`) — FEITO (aguarda deploy). CONCLUI os 7 [A].**
   - **ANTES:** `inbound-turn.ts` tinha `motivoNegociacao === null` no gate — durante uma objeção/negociação a
     Jev era BARRADA e o regex decidia `esperar` sozinho.

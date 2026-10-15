@@ -259,6 +259,18 @@ describe('turno de CATÁLOGO — a venda fecha (mostrouMotos)', () => {
     expect(renderBriefDoTurno({ ...base, fluxo: comPendente })).toContain('COPIADA EXATAMENTE');
     expect(renderBriefDoTurno({ ...base, fluxo: comPendente, mostrouMotos: false })).toContain('COPIADA EXATAMENTE');
   });
+
+  it('com moto JÁ ESCOLHIDA → manda AQUISIÇÃO e NÃO "qual delas chamou mais atenção" (2026-10-15)', () => {
+    const t = renderBriefDoTurno({
+      ...base,
+      escolhida: { nome: 'HONDA XRE 190', fotos: ['https://x/1.jpg'] } as never,
+      fluxo: comPendente,
+      mostrouMotos: true,
+    });
+    expect(t).toContain('JÁ ESCOLHEU');
+    expect(t).toContain('ADQUIRIR');
+    expect(t).not.toContain('convide a ESCOLHA');
+  });
 });
 
 describe('catálogo liberado/bloqueado no brief', () => {

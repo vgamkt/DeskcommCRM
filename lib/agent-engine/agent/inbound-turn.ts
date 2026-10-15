@@ -6815,7 +6815,12 @@ async function executarTurnoDoAgente(
     });
     const blocoFluxoCru =
       fluxoAtendimento && !objecaoTemPrioridade
-        ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo, decisaoDeOfertaDoTurno.pode)
+        ? renderBlocoDeAtendimento(
+            fluxoAtendimento,
+            finalizacaoDoFluxo,
+            decisaoDeOfertaDoTurno.pode,
+            catalogoDaConversa.escolhida !== null,
+          )
         : '';
     if (usaBriefDaJev) {
       runLog.info('brief do turno ativo (Jev)', {
