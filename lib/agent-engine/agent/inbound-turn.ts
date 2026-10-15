@@ -4539,12 +4539,8 @@ async function executarTurnoDoAgente(
             (msgCliente === mensagemDoJob ? ehObjecaoTurno : ehObjecaoValor(msgCliente)) &&
             motoAtual !== null;
           if (ehObjecaoMsg) return null;
-          const semMotoDoPedido = motosCitadasNoTexto(msgCliente, catalogoDoTurno).length === 0;
-          const precisaClassificar =
-            querMoto(msgCliente) ||
-            (catalogoDoTurno.length > 0 && semMotoDoPedido) ||
-            (motoAtual !== null && querAlternativa(msgCliente));
-          if (!precisaClassificar) return null;
+          // Doutrina `jev-decide-sempre` (Escopo 3): o gate é a Jev (`turnoDeCatalogo`,
+          // acima) — não `querMoto`/`querAlternativa`/`motosCitadasNoTexto`.
           if (querMaisOpcoes(msgCliente) && (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0) {
             return null;
           }
@@ -4760,7 +4756,6 @@ async function executarTurnoDoAgente(
             // moto do catálogo OU quando há moto atual E a mensagem sugere querer
             // algo diferente. O pré-filtro `querAlternativa` evita consultar o
             // banco/classificar a cada turno (ex.: "obrigado", "ok"). 1x/turno.
-            const semMotoDoPedido = motosCitadasNoTexto(msgCliente, catalogoDoTurno).length === 0;
             // C-071: numa OBJEÇÃO DE VALOR não se oferece semelhantes automaticamente
             // — primeiro a IA persuade; só a ferramenta `crm_offer_similar_motos`
             // (ou um pedido explícito de diferente) dispara a busca.
@@ -4773,16 +4768,12 @@ async function executarTurnoDoAgente(
             const ehObjecaoMsg =
               (msgCliente === mensagemDoJob ? ehObjecaoTurno : ehObjecaoValor(msgCliente)) &&
               motoAtual !== null;
-            // C-097: o extrator roda SEMPRE que o cliente pede/quer uma moto
-            // (`querMoto`), não só quando o modelo já consultou o catálogo. Antes,
-            // um pedido no 1º turno (modelo não consultou) ficava sem classificação
-            // e o modelo decidia sozinho — resposta pior. `querMoto` é conservador
-            // (acenos como "ok"/"obrigado" não disparam).
-            const precisaClassificar =
-              !ehObjecaoMsg &&
-              (querMoto(msgCliente) ||
-                (catalogoDoTurno.length > 0 && semMotoDoPedido) ||
-                (motoAtual !== null && querAlternativa(msgCliente)));
+            // Doutrina `jev-decide-sempre` (Escopo 3): QUEM decide que este é um turno
+            // de catálogo é a Jev (o veredito de oferta, `turnoDeCatalogo`) — não o
+            // regex. O extrator roda quando a Jev libera; se ela negar, não roda.
+            // (Antes: `querMoto`/`querAlternativa`/`motosCitadasNoTexto` barravam a Jev
+            // de classificar.)
+            const precisaClassificar = !ehObjecaoMsg && turnoDeCatalogo;
             // A ferramenta de semelhantes já decidiu — não precisa classificar.
             if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
               // C-107: os CAMPOS DE BUSCA = "Critério da IA" (autoridade). No modo

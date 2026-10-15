@@ -186,6 +186,15 @@ o **prompt atual** e um **prompt candidato**; (3) imprime `{choice, confidence, 
 
 > Preencher a cada item. Mais recente no topo.
 
+- **2026-10-15 — FASE 2 · ESCOPO 3 (`catalog_criteria`) — FEITO (aguarda deploy).**
+  - **ANTES:** o extrator de critérios só rodava se `precisaClassificar` (regex
+    `querMoto`/`querAlternativa`/`motosCitadasNoTexto`) — nos DOIS pontos (`pedidoCritDoTurno` ~4539 e
+    call site ~4781). O regex barrava a Jev de classificar.
+  - **DURANTE:** os dois gates passaram a ser o veredito da Jev (`turnoDeCatalogo`); removidos
+    `semMotoDoPedido`/`precisaClassificar` de regex.
+  - **DEPOIS:** typecheck 0; lint 0 erros; suíte **1454/1454**.
+  - **Pendente:** deploy + validação ao vivo.
+
 - **2026-10-15 — FASE 2 · ESCOPO 2 (`offer_motos`) — FEITO (aguarda deploy).**
   - **ANTES:** `inbound-turn.ts:4725` consumia a fila com
     `vereditoOfertaJev?.continuacao===true || querMaisOpcoes(...) || clienteConfirmouVer(...)` — OR que
