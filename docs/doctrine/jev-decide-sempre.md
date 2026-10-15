@@ -107,11 +107,32 @@ Exemplo de correção legítima: para o caso "quero ver mais opções" (a Jev de
 
 ## Violações pendentes
 
-> Auditoria de 2026-10-05 (`lib/agent-engine/agent/inbound-turn.ts`).
+> Auditoria de 2026-10-05 (`lib/agent-engine/agent/inbound-turn.ts`) + **auditoria completa de
+> 2026-10-15** dos 19 pontos da Jev (`docs/propostas/PLANO-JEV-ESCOPOS.md` §2).
 
-**Nenhuma pendente.**
+**Nenhuma pendente** — as 7 violações [A] achadas em 2026-10-15 foram corrigidas (ver histórico).
 
 ### Histórico de correções
+
+- ✅ **2026-10-15 — 7 violações [A] corrigidas** (detalhe e prova em
+  `docs/propostas/PLANO-JEV-ESCOPOS.md` §3 e §6). Em todas, o regex/determinístico deixou de decidir
+  ANTES da Jev; quando útil, virou **sinal no contexto** dela:
+  1. **`moto_escolhida`** — `bloqueiaEscolha`/`temReferenciaAMoto` (gates) e `ehPedidoDiferente`
+     (`pediuOutraMoto`) barravam a Jev; agora são sinais (`parece_pergunta_objecao`,
+     `tem_referencia_nominal`, `unica_em_foco`, `pediu_algo_diferente`) — `catalogo-da-conversa.ts`,
+     `inbound-turn.ts`. Prompt ganhou "SEM REFERÊNCIA" e "ÚNICA EM FOCO".
+  2. **`catalog_criteria`** — `precisaClassificar`/`prefetchRelevante` (regex) barravam o extrator; agora o
+     gate é o veredito de oferta da Jev (`turnoDeCatalogo`).
+  3. **`modelo_categoria`** — prompt fraco (não reconhecia "Lander"); reforçado. A referência `modelos`
+     permanece 1ª porque é **DADO curado do cliente**, não regra.
+  4. **`flow_intent`** (`flow_start`) — `escolherFluxoIniciado` deixava o regex vencer o veredito NEGATIVO
+     (`ok:true`+`[]`); agora `ok:true` é autoritativo.
+  5. **`flow_intent`** — gate de `model` de chat vazio rodava ANTES do binding `flow_intent__jev`; movido
+     para depois da Jev.
+  6. **`pergunta_do_fluxo`** — `motivoNegociacao === null` barrava a Jev e decidia `esperar`; agora a
+     negociação é **contexto** (`emNegociacao`).
+  7. **`offer_motos`** (continuação) — OR deixava o regex vencer `continuacao:false`; agora a Jev decide e o
+     regex só entra sob `null`.
 
 - ✅ **`pedidoExplicitoDeMaisOpcoes` vencia a Jev na oferta** (`decidirOfertaDoTurno`).
   O bypass foi removido: a ordem passou a ser (1) negociação da Jev → (2) veredito

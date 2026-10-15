@@ -3,7 +3,9 @@
 - **Data:** 2026-10-13 · **Repo:** `/root/DeskcommCRM` @ `dcaf95ff` (worktree) · **Branch:** `feat/fluxos-de-atendimento`
 - **Origem:** `docs/propostas/STATUS-E-PENDENCIAS.md` §P2 ("por que ainda via regex?").
 - **Doutrina de referência:** `docs/doctrine/jev-decide-sempre.md`.
-- **Natureza deste doc:** só INVENTÁRIO. **Nenhuma migração implementada** — aguarda decisão do dono.
+- **Natureza deste doc:** só INVENTÁRIO (2026-10-13). **SUPERSEDIDO em parte** pela auditoria completa de
+  2026-10-15 em [`PLANO-JEV-ESCOPOS.md`](./PLANO-JEV-ESCOPOS.md), que cobre os **19 pontos** e já corrigiu
+  as **7 violações [A]**. Este doc fica como registro do estado anterior.
 
 ## Como ler
 
