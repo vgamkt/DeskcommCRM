@@ -5579,9 +5579,9 @@ async function executarTurnoDoAgente(
                     modelo: motoAtualDaConversa?.nome ?? null,
                     variacao: pedidosDeOpcoesTurno,
                   })
-                : itens.length === 1
-                  ? // UMA moto: fecho sobre ELA + oferta de outra do mesmo segmento
-                    // de outra fabricante (nunca "qual delas").
+                : nomeModeloEspecificoDoTurno !== ''
+                  ? // UMA moto (mesmo com várias fotos): fecho SINGULAR — nunca
+                    // "qual delas". `itens.length` conta FOTOS, não motos.
                     perguntaDeOutrosNoModelo({
                       modelo: nomeModeloEspecificoDoTurno,
                       categoria: categoriaDoModeloDoTurno,
@@ -5608,21 +5608,13 @@ async function executarTurnoDoAgente(
               }
               await enviarTexto(final);
             } else {
-              // ORDEM (dono, 2026-10-16): (1) APRESENTAÇÃO + CONFIRMAÇÃO (texto) EM
-              // CIMA; (2) TODAS as FOTOS; (3) DESCRIÇÃO da moto + PERGUNTA. O corte
-              // da apresentação é o primeiro ':' (a chamada termina em ':' ANTES de
-              // descrever a moto).
-              const corpo = introducao.trim();
-              const corte = corpo.indexOf(':');
-              const temCorte = corte >= 0 && corte < corpo.length - 1;
-              const apresentacao = temCorte ? corpo.slice(0, corte + 1).trim() : corpo;
-              const descricao = temCorte ? corpo.slice(corte + 1).trim() : '';
-              if (apresentacao !== '') await enviarTexto(apresentacao);
+              // ORDEM (dono, 2026-10-16): (1) TODAS as FOTOS; (2) o TEXTO da
+              // apresentação/descrição; (3) a PERGUNTA. As fotos vêm PRIMEIRO.
               for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);
               }
-              const depois = [descricao, final].filter((s) => s.trim() !== '').join('\n\n');
-              if (depois.trim() !== '') await enviarTexto(depois);
+              if (introducao.trim() !== '') await enviarTexto(introducao);
+              await enviarTexto(final);
             }
             return ultimo!;
           };
