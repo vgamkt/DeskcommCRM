@@ -198,6 +198,7 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
+  comQuantidadeNoTexto,
   nomeCurtoDoModelo,
   perguntaDeEscolha,
   perguntaDeMaisOpcoes,
@@ -5668,11 +5669,35 @@ async function executarTurnoDoAgente(
                           variacao: pedidosDeOpcoesTurno,
                         });
               const reMais =
-                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento|saber mais)/i;
-              // Se o MODELO já fechou com uma pergunta, NÃO duplica (só acrescenta
-              // quando ele não perguntou nada).
-              const jaPergunta = /\?/.test(final) || reMais.test(final) || reMais.test(introducao);
-              if (perguntaMais !== '' && !jaPergunta) {
+                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento|saber mais|ver outras|outras que temos)/i;
+              const jaTemVerMais = reMais.test(final) || reMais.test(introducao);
+              const jaPergunta = /\?/.test(final) || jaTemVerMais;
+              // FILA com mais motos + fecho de ESCOLHA: o "ver mais" NÃO anda sozinho —
+              // ele JUNTA com a escolha. O fecho VIRA a pergunta COMBINADA ("alguma
+              // delas chamou atenção, ou prefere ver outras que temos?"), substituindo
+              // a escolha crua do modelo (dono, 2026-10-16).
+              const combinaEscolhaComMais =
+                temMaisOpcoesNesteTurno &&
+                !outrosNoValorNesteTurno &&
+                (fechoJev === 'escolha' || fechoJev === null);
+              if (perguntaMais !== '' && combinaEscolhaComMais) {
+                // Substitui SÓ a última frase-pergunta (a escolha); preserva o resto.
+                const t = final.trim();
+                const ultimoInterrog = t.lastIndexOf('?');
+                if (ultimoInterrog >= 0) {
+                  const corte = Math.max(
+                    t.lastIndexOf('\n', ultimoInterrog),
+                    t.lastIndexOf('.', ultimoInterrog),
+                    t.lastIndexOf('!', ultimoInterrog),
+                  );
+                  final =
+                    corte >= 0
+                      ? `${t.slice(0, corte + 1).trim()}\n${perguntaMais}`
+                      : perguntaMais;
+                } else {
+                  final = t === '' ? perguntaMais : `${t}\n${perguntaMais}`;
+                }
+              } else if (perguntaMais !== '' && !jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
               }
             }
@@ -5710,7 +5735,11 @@ async function executarTurnoDoAgente(
               if (depois.trim() !== '') await enviarTexto(depois);
             } else {
               // MAIS DE UMA moto: apresentação NORMAL — texto → fotos → pergunta
-              // (como sempre foi).
+              // (como sempre foi). QUANTIFICAÇÃO (dono): o modelo escreve a abertura
+              // ANTES de saber QUANTAS saem — injeta o número REAL no texto.
+              introducao = comQuantidadeNoTexto(introducao, itens.length, {
+                variacao: pedidosDeOpcoesTurno,
+              });
               await enviarTexto(introducao);
               for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);
@@ -7298,7 +7327,7 @@ async function executarTurnoDoAgente(
       // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
       // convidado a ver as demais. Determinístico (motor), por-lead.
       temMaisOpcoesNesteTurno
-        ? '## Ainda há outras opções que combinam\nApresente as que casaram, mas saiba que o sistema AINDA tem outras motos que combinam com o pedido. Feche o turno com um convite NATURAL e VARIADO — nunca repita sempre a mesma frase (não liste os nomes das demais).\n- Se o cliente citou um MODELO específico: pergunte com suas palavras se ele quer EXATAMENTE esse modelo ou se prefere ver opções parecidas (ex.: "Quer que eu procure essa <modelo> mesmo, ou prefere ver outras parecidas?").\n- Senão: convide a ver mais opções de forma leve (ex.: "Quer ver mais algumas?", "Te mostro outras?").'
+        ? '## Ainda há outras opções que combinam\nApresente as que casaram, mas saiba que o sistema AINDA tem outras motos que combinam com o pedido. Feche o turno com UMA pergunta que JUNTA a escolha com o convite a ver as demais — nunca repita sempre a mesma frase (não liste os nomes das demais).\n- Se o cliente citou um MODELO específico: pergunte se ele quer EXATAMENTE esse modelo ou se prefere ver opções parecidas (ex.: "Quer que eu procure essa <modelo> mesmo, ou prefere que eu te mostre outras parecidas?").\n- Senão: pergunte, na MESMA frase, se alguma delas chamou a atenção OU se ele prefere ver as outras que temos (ex.: "Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras que temos na loja?"). Sempre deixe claro que são opções parecidas (mesmo estilo ou de outras fabricantes) — não invente a contagem.'
         : '',
       caseAwaitingLeadBlock,
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',

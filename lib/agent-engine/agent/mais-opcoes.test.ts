@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  comQuantidadeNoTexto,
   introducaoFactualDaApresentacao,
   nomeCurtoDoModelo,
   perguntaDeMaisOpcoes,
@@ -75,6 +76,65 @@ describe('introducaoFactualDaApresentacao (ESCOPO 12)', () => {
     for (let i = 0; i < 5; i++) {
       expect(introducaoFactualDaApresentacao(3, { variacao: i })).not.toMatch(/R\$|mil|faixa|valor/i);
     }
+  });
+});
+
+describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
+  it('troca o termo genérico pelo NÚMERO real, sem apagar a saudação', () => {
+    const t = comQuantidadeNoTexto(
+      'Bom dia! Sou a Marcela. Separei as opções de trail que tenho, dá uma olhada:',
+      5,
+    );
+    expect(t).toContain('5 opções');
+    expect(t).not.toContain('as opções');
+    expect(t).toContain('Bom dia! Sou a Marcela'); // saudação preservada
+  });
+
+  it('troca "essas motos"/"algumas alternativas" pelo número', () => {
+    expect(comQuantidadeNoTexto('Olha essas motos que separei:', 3)).toContain('3 motos');
+    expect(comQuantidadeNoTexto('Veja algumas alternativas:', 4)).toContain('4 alternativas');
+  });
+
+  it('troca número por extenso ("duas opções") pelo número real', () => {
+    const t = comQuantidadeNoTexto('Separei duas opções do nosso estoque que caem bem:', 5);
+    expect(t).toContain('5 opções');
+    expect(t).not.toContain('duas');
+  });
+
+  it('troca "várias opções" (quantificador) pelo número real', () => {
+    const t = comQuantidadeNoTexto('Tenho várias opções dentro do seu valor até 30 mil.', 5);
+    expect(t).toContain('5 opções');
+    expect(t).not.toContain('várias opções');
+  });
+
+  it('NÃO mexe no "Motos" do nome da loja (Valle Motos)', () => {
+    const t = comQuantidadeNoTexto(
+      'Bom dia! Sou a Marcela, da Valle Motos São José. Tenho várias opções até 30 mil.',
+      5,
+    );
+    expect(t).toContain('Valle Motos São José');
+    expect(t).not.toMatch(/Valle \d+ Motos/);
+    expect(t).toContain('5 opções');
+  });
+
+  it('NÃO mexe quando já há contagem no texto', () => {
+    const t = 'Separei 5 opções pra você:';
+    expect(comQuantidadeNoTexto(t, 5)).toBe(t);
+  });
+
+  it('quantidade < 2 não altera', () => {
+    const t = 'As opções que separei:';
+    expect(comQuantidadeNoTexto(t, 1)).toBe(t);
+  });
+
+  it('sem termo natural: prepende a abertura factual', () => {
+    const t = comQuantidadeNoTexto('Dá uma olhada no que separei:', 3);
+    expect(t).toContain('3 opções');
+  });
+
+  it('sem termo e COM saudação: não empilha abertura factual', () => {
+    const t = comQuantidadeNoTexto('Bom dia! Dá uma olhada no que separei:', 3);
+    expect(t).toBe('Bom dia! Dá uma olhada no que separei:');
   });
 });
 

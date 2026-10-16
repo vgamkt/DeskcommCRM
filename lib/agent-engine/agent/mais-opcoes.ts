@@ -20,22 +20,26 @@ export function perguntaDeMaisOpcoes(args: {
   const modelo = (args.modeloCitado ?? '').trim();
   const v = Math.abs(Math.floor(args.variacao ?? 0));
 
+  // O "VER MAIS" NUNCA anda sozinho (dono, 2026-10-16): sempre vem COM a
+  // explicação de que há opções parecidas no MESMO estilo e/ou de OUTRAS
+  // fabricantes — o que sobra para mostrar.
   if (modelo !== '') {
     const opcoes = [
-      `Quer que eu procure exatamente a ${modelo} pra você, ou prefere que eu te mostre outras parecidas?`,
-      `Você está atrás especificamente da ${modelo}, ou posso te mostrar opções parecidas?`,
-      `Prefere que eu busque essa ${modelo} mesmo, ou quer ver mais alternativas?`,
-      `Me diz uma coisa: é a ${modelo} que você quer, ou faço questão de te mostrar outras parecidas?`,
+      `Tem mais ${modelo} e opções parecidas no mesmo estilo, além de outras fabricantes. Quer que eu te mostre essas outras?`,
+      `Além dessa ${modelo}, ainda tenho outras parecidas (mesmo estilo e de outras marcas). Quer ver o que mais combina?`,
+      `Sobraram mais ${modelo} e outras parecidas nesse estilo — e de outras fabricantes também. Quer que eu te mostre?`,
+      `Ainda tenho outras ${modelo} parecidas, no mesmo estilo e de outras marcas. Te mostro as demais?`,
     ];
     return opcoes[v % opcoes.length]!;
   }
 
+  // Junta a ESCOLHA com o convite a ver as demais (dono, 2026-10-16): o "ver mais"
+  // não anda sozinho — vem na MESMA pergunta, e deixa claro que são parecidas.
   const opcoes = [
-    'Quer que eu te mostre mais opções?',
-    'Quer ver mais algumas?',
-    'Quer que eu separe mais opções pra você?',
-    'Te mostro mais alternativas?',
-    'Quer que eu procure outras pra você?',
+    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras que temos na loja?',
+    'Alguma dessas te agradou, ou quer que eu te mostre mais opções que temos na loja?',
+    'Alguma delas é a sua praia, ou prefere ver outras opções que temos aqui (parecidas no mesmo estilo ou de outras marcas)?',
+    'Alguma delas te chamou atenção, ou prefere que eu separe outras que temos na loja?',
   ];
   return opcoes[v % opcoes.length]!;
 }
@@ -49,6 +53,45 @@ export function perguntaDeMaisOpcoes(args: {
  * (medido ao vivo). Aqui a contagem vem da PRÓPRIA lista que vai sair — verdade
  * por construção. Módulo PURO.
  */
+/**
+ * INJETA A QUANTIDADE no texto da apresentação (dono, 2026-10-16): o modelo escreve
+ * a abertura ANTES de saber QUANTAS motos saem, então NÃO menciona o número ("separei
+ * as opções..."). Aqui troca o termo genérico pelo número REAL — sem apagar a saudação
+ * (o que a versão anterior fazia e por isso foi revertida). Módulo PURO.
+ *
+ * Regras: (1) se já há dígito+termo, não mexe; (2) troca o primeiro termo
+ * (as/algumas/essas opções|motos|modelos|alternativas) pelo número; (3) sem termo,
+ * PREPENDE a abertura factual — a menos que o texto comece com saudação (aí não força,
+ * para não empilhar "separei N opções:" antes de "Bom dia!"). 
+ */
+export function comQuantidadeNoTexto(
+  texto: string,
+  quantidade: number,
+  opts: { nome?: string | null; variacao?: number } = {},
+): string {
+  const n = Math.max(0, Math.floor(quantidade));
+  const t = texto.trim();
+  if (n < 2 || t === '') return texto;
+  if (/\b\d+\s+(op[çc]|motos?|modelos?|alternativas?|unidades?)/i.test(t)) return texto;
+  // Cobre artigos/pronomes, quantificadores e números por extenso ("as opções",
+  // "várias opções", "duas opções", "três motos") — o modelo escreve "duas"/"várias"
+  // e a troca deixava "duas 5". SÓ troca quando precedido de DETERMINANTE (evita
+  // casar "Motos" do nome da loja, ex.: "Valle Motos").
+  const det =
+    'as|algumas|essas|umas|uns|os|alguns|esses|dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|v[áa]rias|tantas|diversas';
+  const termo = new RegExp(`\\b(${det})\\s+(op[çc][õo]es|motos?|modelos?|alternativas?)\\b`, 'i');
+  const casado = t.match(termo);
+  if (casado !== null) return texto.replace(casado[0], `${n} ${casado[2]}`);
+  // Sem determinante: só troca "opções"/"modelos"/"alternativas" soltos — NUNCA
+  // "motos" (poderia ser o nome da loja: "...da Valle Motos São José").
+  const solto = t.match(/\b(op[çc][õo]es|modelos?|alternativas?)\b/i);
+  if (solto !== null) return texto.replace(solto[0], `${n} ${solto[0]}`);
+  // Sem termo natural: só prepende se NÃO houver saudação no início (evita empilhar).
+  if (/^\s*(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|e a[íi])/i.test(t)) return texto;
+  const factual = introducaoFactualDaApresentacao(n, opts);
+  return `${factual} ${texto}`;
+}
+
 export function introducaoFactualDaApresentacao(
   quantidade: number,
   opts: { nome?: string | null; variacao?: number } = {},
