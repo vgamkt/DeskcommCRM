@@ -204,7 +204,7 @@ import {
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoModelo,
   perguntaDeOutrosNoValor,
-  perguntaDeSaberMais,
+  perguntaProsseguimentoAposMoto,
 } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
@@ -5678,8 +5678,9 @@ async function executarTurnoDoAgente(
                 : fechoJev === 'nenhum'
                   ? ''
                   : fechoJev === 'saber_mais'
-                    ? perguntaDeSaberMais({
+                    ? perguntaProsseguimentoAposMoto({
                         modelo: nomeModeloEspecificoDoTurno,
+                        nome: effectiveContext.contact.name,
                         variacao: pedidosDeOpcoesTurno,
                       })
                     : fechoJev === 'outra_opcao'

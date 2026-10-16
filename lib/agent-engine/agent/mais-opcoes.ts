@@ -129,12 +129,13 @@ export function perguntaDeSaberMais(
 ): string {
   const modelo = (args.modelo ?? '').trim();
   const v = Math.abs(Math.floor(args.variacao ?? 0));
-  const alvo = modelo !== '' ? ` a ${modelo}` : ' ela';
+  // Convidam a saber mais E a ver de perto na loja — natural, sem "frase enxuta".
+  const alvo = modelo !== '' ? `a ${modelo}` : 'ela';
   const opcoes = [
-    `Quer saber mais sobre${alvo} ou prefere dar uma olhada de perto?`,
-    `Te conto mais sobre${alvo}? Se quiser, posso te chamar pra ver de perto.`,
-    `Quer que eu te passe mais detalhes sobre${alvo}, ou você prefere ver pessoalmente?`,
-    `Sobre${alvo}: quer saber mais ou já prefere dar uma olhada de perto?`,
+    `Se quiser saber mais sobre ${alvo}, é só dizer. E, se desejar, a gente pode marcar pra você vê-la pessoalmente aqui na loja.`,
+    `Qualquer dúvida sobre ${alvo}, é só me falar — e, quando quiser, a gente marca de você conhecê-la de perto na loja.`,
+    `Fico à disposição pra te contar mais sobre ${alvo}. Se preferir, também agendamos pra você vê-la aqui na loja.`,
+    `Se tiver alguma pergunta sobre ${alvo}, me chama. E, se quiser, marcamos um horário pra você vê-la pessoalmente na loja.`,
   ];
   return opcoes[v % opcoes.length]!;
 }
@@ -275,4 +276,21 @@ export function perguntaDeAquisicao(args: { nome?: string | null; variacao?: num
     `${trata}como você está pensando em levar essa moto? À vista, financiado, no cartão, ou dando uma moto na troca como parte do pagamento?`,
   ];
   return opcoes[v % opcoes.length]!;
+}
+
+/**
+ * FECHO DE PROSSEGUIMENTO (1 moto) — convite a saber mais / ver na loja E a pergunta
+ * que INDUZ o cliente a dizer como pretende ADQUIRIR (à vista, cartão, financiamento,
+ * moto na troca). Regra do dono (2026-10-16): depois de mostrar UMA moto específica, o
+ * fecho não pode ser só "quer saber mais?" (frase enxuta) — tem que DAR SEQUÊNCIA,
+ * puxando a forma de pagamento. JEV decide QUE é uma moto só; o motor renderiza. Pura.
+ */
+export function perguntaProsseguimentoAposMoto(args: {
+  modelo?: string | null;
+  nome?: string | null;
+  variacao?: number;
+} = {}): string {
+  const saber = perguntaDeSaberMais({ modelo: args.modelo ?? null, variacao: args.variacao });
+  const aquisicao = perguntaDeAquisicao({ nome: args.nome ?? null, variacao: args.variacao });
+  return `${saber}\n\n${aquisicao}`;
 }

@@ -17,7 +17,7 @@ import {
   perguntaDeEscolha,
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoValor,
-  perguntaDeSaberMais,
+  perguntaProsseguimentoAposMoto,
 } from './mais-opcoes';
 
 export function ajustarFechoDoTurnoDeCatalogo(args: {
@@ -98,7 +98,11 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
   const pergunta = args.temEscolha === true
     ? perguntaDeAquisicao({ nome: args.nomeCliente ?? null, variacao: v })
     : args.umaMoto === true
-      ? perguntaDeSaberMais({ modelo: args.modeloCitado ?? null, variacao: v })
+      ? perguntaProsseguimentoAposMoto({
+          modelo: args.modeloCitado ?? null,
+          nome: args.nomeCliente ?? null,
+          variacao: v,
+        })
       : perguntaDeEscolha({ variacao: v });
   // 3b) Sem escolha e com MAIS opções que casam → re-adiciona o "quer ver mais?"
   //     (o passo 2 apagou a cauda interrogativa). Com escolha, NÃO (o fecho é o de
