@@ -5531,10 +5531,11 @@ async function executarTurnoDoAgente(
             // fora (temMaisOpcoesNesteTurno). Determinístico, não depende do LLM.
             // ESCOPO 9: quando o interesse em foco não preencheu o valor, a pergunta
             // do turno é a de "outros modelos NESSE VALOR" (outrosNoValorNesteTurno).
+            // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
+            // ignora com frequência) SÓ quando o MODELO não escreveu o fecho. O fecho
+            // por MODELO ESPECÍFICO é escrito pela INTELIGÊNCIA (contexto no prompt),
+            // não por frase fixa (dono, 2026-10-16). ESCOPO 9: "outros nesse valor".
             if (temMaisOpcoesNesteTurno || outrosNoValorNesteTurno) {
-              // Pergunta NATURAL e VARIADA (não a mesma frase em todo mundo), e —
-              // quando o cliente citou um MODELO — distinguindo "procura ESSE
-              // modelo" de "quer ver outras parecidas".
               const citouModelo =
                 pedeMotoExplicito(mensagemDoJob ?? '') ||
                 motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDaConversa.motos).length > 0;
@@ -5547,12 +5548,8 @@ async function executarTurnoDoAgente(
                     modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
                     variacao: pedidosDeOpcoesTurno,
                   });
-              // Cobre TODAS as variantes do `perguntaDeMaisOpcoes` (senão o fecho F3,
-              // que re-adiciona o convite, somaria com esta garantia e DUPLICARIA o
-              // "Quer ver mais?" — medido ao vivo 2026-10-14: "…Quer ver mais algumas?
-              // Quer ver mais algumas").
               const reMais =
-                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros modelos)/i;
+                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outra fabricante|mesma categoria)/i;
               const jaPergunta = reMais.test(final) || reMais.test(introducao);
               if (!jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
@@ -7101,6 +7098,16 @@ async function executarTurnoDoAgente(
       // em vez de inventar. Determinístico.
       currentInboundText !== null && motoAtualDaConversa === null && pedePrecoSemValor(currentInboundText)
         ? '## Perguntar a faixa de preço\nO cliente falou de preço/orçamento SEM citar um valor. NÃO invente faixa nem ofereça motos por chute: pergunte de forma natural qual a faixa de preço (ou o valor aproximado) que ele procura, e ofereça confirmar as opções dentro dela. Não liste nomes de motos neste turno.'
+        : '',
+      // FECHO POR MODELO ESPECÍFICO — quem escreve é a INTELIGÊNCIA (dono,
+      // 2026-10-16): quando o cliente PEDE um modelo ("tem uma Biz?"), o sistema
+      // envia as unidades DESSE modelo; o fecho deve ser natural e oferecer, se ele
+      // quiser, CONSULTAR outras na MESMA categoria de OUTRA fabricante.
+      mencionaMoto(currentInboundText ?? '') &&
+      pedeMotoExplicito(mensagemDoJob ?? '') &&
+      catalogoDaConversa.escolhida === null &&
+      !ehObjecaoTurno
+        ? '## Fecho quando o cliente PEDE um MODELO específico\nO cliente pediu um MODELO (ex.: "tem uma Biz?", "queria uma XRE?"). O sistema vai ENVIAR as unidades DESSE modelo — apresente ESSAS (e só essas), SEM misturar outros modelos. Escreva o fecho NATURAL, como uma pessoa: diga que são as do modelo que você tem, pergunte se alguma chamou a atenção e, se ele quiser, ofereça CONSULTAR outras opções na MESMA categoria de OUTRA fabricante (ex.: sendo Biz → outras scooters). NÃO liste essas outras agora e NÃO repita sempre a mesma frase.'
         : '',
       // ESCOPO 9: o cliente adicionou um critério (ex.: "até 17 mil") a uma moto
       // em FOCO e a família dela não preencheu o valor. Mostre as que caibam nessa

@@ -47,6 +47,12 @@ export function perguntaDeObjecaoJev(ctx: ContextoDeObjecao): PerguntasDeJev {
         '"não cabe no bolso"), de RODAGEM ("muito rodada") ou de ANO ("muito antiga") ' +
         'ou insistência nela? Responda sim SÓ quando houver questionamento do que já foi ' +
         'mostrado/negociado. ' +
+        // MEDIDO (2026-10-16): "Gostei da CB 300 R, MAS achei um pouco caro" → a Jev
+        // dizia NÃO. O cliente reclamou do preço na MESMA frase em que escolheu, e a
+        // objeção se perdeu. Reclamação de valor JUNTO de escolha/gosto AINDA É objeção.
+        'IMPORTANTE: se a mensagem RECLAMA do preço/ano/km MESMO que também demonstre ' +
+        'escolha, gosto ou elogio ("gostei dela, mas achei caro", "é boa, só um pouco cara", ' +
+        '"legal, mas tá salgada") → isso É objeção (responda SIM e marque o motivo). ' +
         'NÃO é objeção: pedir algo DIFERENTE ("quero outra cor", "tem outra moto?"), ' +
         'pergunta neutra, cumprimento, ou resposta a um dado.',
     },

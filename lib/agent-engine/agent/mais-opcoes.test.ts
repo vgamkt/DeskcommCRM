@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   introducaoFactualDaApresentacao,
+  nomeCurtoDoModelo,
   perguntaDeMaisOpcoes,
+  perguntaDeOutrosNoModelo,
   perguntaDeOutrosNoValor,
 } from './mais-opcoes';
 
@@ -25,6 +27,26 @@ describe('perguntaDeMaisOpcoes', () => {
     for (let i = 0; i < 8; i++) {
       expect(perguntaDeMaisOpcoes({ variacao: i })).not.toBe('');
       expect(perguntaDeMaisOpcoes({ modeloCitado: 'XRE 190', variacao: i })).toContain('XRE 190');
+    }
+  });
+});
+
+describe('fechamento por MODELO ESPECÍFICO (dono, 2026-10-16)', () => {
+  it('nomeCurtoDoModelo tira marca, versão e ano', () => {
+    expect(nomeCurtoDoModelo('HONDA Biz 125 FLEX 2021')).toBe('Biz 125');
+    expect(nomeCurtoDoModelo('YAMAHA Factor 150 ED')).toBe('Factor 150');
+  });
+
+  it('perguntaDeOutrosNoModelo cita o modelo, a categoria e termina em pergunta', () => {
+    const p = perguntaDeOutrosNoModelo({ modelo: 'Biz 125', categoria: 'Scooter', variacao: 0 });
+    expect(p).toContain('Biz 125');
+    expect(p).toMatch(/Scooter/);
+    expect(p).toMatch(/\?/);
+  });
+
+  it('varia e nunca fica vazio', () => {
+    for (let i = 0; i < 5; i++) {
+      expect(perguntaDeOutrosNoModelo({ modelo: 'Biz 125', categoria: 'Scooter', variacao: i })).not.toBe('');
     }
   });
 });

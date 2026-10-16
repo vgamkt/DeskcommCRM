@@ -14,6 +14,12 @@ const ctx: ContextoDeObjecao = {
 };
 
 describe('objecao Jev', () => {
+  it('reclamação de preço JUNTO de escolha/gosto AINDA é objeção (2026-10-16)', () => {
+    const instr = String(perguntaDeObjecaoJev(ctx).eh_objecao?.instructions);
+    expect(instr).toMatch(/RECLAMA do preço/);
+    expect(instr).toMatch(/mas achei caro/);
+  });
+
   it('cria as perguntas eh_objecao (noul) e motivo (choice)', () => {
     const q = perguntaDeObjecaoJev(ctx);
     expect(q.eh_objecao?.type).toBe('noul');

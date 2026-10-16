@@ -77,6 +77,51 @@ export function introducaoFactualDaApresentacao(
   return opcoes[v % opcoes.length]!;
 }
 
+/** Tokens de VERSÃO/ano que NÃO fazem parte do nome do modelo (para o nome curto). */
+const TOKENS_DE_VERSAO = new Set([
+  'flex', 'ubs', 'abs', 'ed', 'one', 'blue', 'start', 'smart', 'connect', 'premium',
+]);
+
+/**
+ * Nome CURTO do modelo a partir do nome composto do catálogo.
+ * "HONDA Biz 125 FLEX 2021" → "Biz 125" (tira a marca de 1º e versão/ano do fim).
+ * Pura.
+ */
+export function nomeCurtoDoModelo(nome: string): string {
+  const tokens = nome.trim().split(/\s+/).filter(Boolean);
+  const resto = tokens.slice(1);
+  const ehFim = (t: string): boolean =>
+    /^(19|20)\d{2}$/.test(t) || TOKENS_DE_VERSAO.has(t.toLowerCase());
+  while (resto.length > 1 && ehFim(resto[resto.length - 1]!)) resto.pop();
+  const curto = resto.join(' ').trim();
+  return curto !== '' ? curto : nome.trim();
+}
+
+/**
+ * FECHAMENTO DE MODELO ESPECÍFICO (dono, 2026-10-16).
+ *
+ * Quando o cliente PEDE um modelo que existe (ex.: "tem Biz?") o motor mostra as
+ * unidades DELE. Se não houver mais daquele modelo, o fecho diz "essas são as
+ * {modelo} que tenho; se alguma te interessar seguimos; se nenhuma agradar, posso
+ * te mostrar outro modelo de {categoria}". Vale para QUALQUER modelo. Variado.
+ */
+export function perguntaDeOutrosNoModelo(
+  args: { modelo?: string | null; categoria?: string | null; variacao?: number } = {},
+): string {
+  const modelo = (args.modelo ?? '').trim();
+  const cat = (args.categoria ?? '').trim();
+  const v = Math.abs(Math.floor(args.variacao ?? 0));
+  const doModelo = modelo !== '' ? ` as ${modelo}` : ' as opções';
+  const catTxt = cat !== '' ? ` de ${cat}` : '';
+  const opcoes = [
+    `Essas são${doModelo} que tenho. Gostou de alguma? Se nenhuma agradar, posso te mostrar outro modelo${catTxt} também.`,
+    `Essas são todas${doModelo} do estoque. Alguma te interessou? Se quiser, também te mostro outros modelos${catTxt}.`,
+    `Essas são${doModelo} disponíveis por aqui. Quer seguir com alguma delas, ou prefere ver outro modelo${catTxt}?`,
+    `Se${doModelo} não te agradarem, eu te mostro outros modelos${catTxt} também — é só falar. Qual delas te chamou mais atenção?`,
+  ];
+  return opcoes[v % opcoes.length]!;
+}
+
 /**
  * PERGUNTA DE "OUTROS MODELOS NESSE VALOR" (ESCOPO 9).
  *
