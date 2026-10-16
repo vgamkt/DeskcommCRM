@@ -4788,12 +4788,24 @@ async function executarTurnoDoAgente(
           // moto certa vá com TODAS as fotos dela.
           if (escolhidaNesteTurno !== undefined) {
             motosOferecidasNesteTurno = [escolhidaNesteTurno];
-            // C-086: `fotos_moto_escolhida` da tela (0 = TODAS as fotos da moto).
-            return planoDeFotosDasMotos(
-              [escolhidaNesteTurno],
-              agentConfig?.catalogConfig?.fotos_moto_escolhida ?? FOTOS_TODAS,
-              legendaConfig,
-            );
+            // O ÁLBUM dela JÁ saiu? A apresentação de UMA moto só manda o álbum
+            // inteiro; então o turno da escolha NÃO repete as MESMAS fotos (medido:
+            // apresentação do álbum + escolha do álbum = bolhas duplicadas). Sinal:
+            // só UMA moto apresentada na conversa e é ELA. (NÃO usar `detalhadas` —
+            // esse sinal EXCLUI a moto do casamento da escolha.)
+            const chaveBase = (m: MotoDoCatalogo): string =>
+              normalizarNomeDeMoto(m.valores?.nome ?? m.nome);
+            const unicaApresentada = catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null;
+            const albumJaSaiu =
+              unicaApresentada !== null && chaveBase(unicaApresentada) === chaveBase(escolhidaNesteTurno);
+            if (!albumJaSaiu) {
+              // C-086: `fotos_moto_escolhida` da tela (0 = TODAS as fotos da moto).
+              return planoDeFotosDasMotos(
+                [escolhidaNesteTurno],
+                agentConfig?.catalogConfig?.fotos_moto_escolhida ?? FOTOS_TODAS,
+                legendaConfig,
+              );
+            }
           }
           if (fotosDeclaradas.length > 0) return [];
           // Já apresentou as fotos automáticas neste turno? Não repete.
@@ -5317,10 +5329,9 @@ async function executarTurnoDoAgente(
               // casava 1 só moto mandava as 8 fotos dela com 7 bolhas sem legenda.
               // UMA moto só (ex.: "tem Biz?") → TODAS as fotos DELA (dono, 2026-10-16).
               // Com mais de uma, 1 foto por moto (o limite antigo).
-              // Mandamos o ÁLBUM de UMA moto? Então ela está "DETALHADA" — registra
-              // p/ o próximo turno ("quero essa") NÃO reenviar as MESMAS fotos
-              // (evita a duplicação medida: apresentação do álbum + escolha do álbum).
-              if (selecao.motos.length === 1) motoDetalhadaNome = selecao.motos[0]!.nome;
+              // NÃO marcamos como "detalhada": esse sinal EXCLUI a moto do
+              // casamento da ESCOLHA (o cliente escolheria a próxima — medido). A
+              // não-repetição do álbum é tratada no caminho da ESCOLHA (abaixo).
               return planoDeFotosDasMotos(
                 selecao.motos,
                 pedidoDeModeloExistente || selecao.motos.length === 1 ? undefined : 1,
