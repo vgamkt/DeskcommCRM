@@ -17,6 +17,7 @@ import {
   perguntaDeEscolha,
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoValor,
+  perguntaDeSaberMais,
 } from './mais-opcoes';
 
 export function ajustarFechoDoTurnoDeCatalogo(args: {
@@ -46,6 +47,12 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
    * valor?" (não o "mais opções" genérico). Só entra com `temMaisOpcoes`.
    */
   outrosNoValor?: boolean;
+  /**
+   * O turno mostrou UMA moto só (pedido específico/única em estoque)? O fecho NÃO é
+   * "qual delas?" (não há escolha plural) — é o de SABER MAIS ("quer saber mais sobre
+   * ela?"), como pediu o dono (2026-10-16). Só entra sem `temEscolha`.
+   */
+  umaMoto?: boolean;
 }): { corpo: string; ajustado: boolean } {
   let corpo = args.corpo.trim();
 
@@ -64,9 +71,21 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter((s) => s !== '');
-  let i = sentencas.length - 1;
-  while (i >= 0 && sentencas[i]!.includes('?')) i -= 1;
-  const semCauda = [...paragrafos.slice(0, -1), sentencas.slice(0, i + 1).join(' ')]
+  // Acha a ÚLTIMA frase com '?' e corta DALI até o fim — assim some a pergunta do
+  // modelo (mesmo que venha seguida de um "Se quiser, posso te chamar…" sem '?').
+  // Antes, uma cauda sem '?' preservava a pergunta do modelo e o fecho DUPLICAVA
+  // (medido ao vivo: "Te conto mais sobre ela?… Te conto mais sobre a Biz…?").
+  let ultimaPergunta = -1;
+  for (let k = sentencas.length - 1; k >= 0; k -= 1) {
+    if (sentencas[k]!.includes('?')) {
+      ultimaPergunta = k;
+      break;
+    }
+  }
+  const semCauda = [
+    ...paragrafos.slice(0, -1),
+    sentencas.slice(0, ultimaPergunta >= 0 ? ultimaPergunta : sentencas.length).join(' '),
+  ]
     .map((s) => s.trim())
     .filter((s) => s !== '')
     .join('\n\n')
@@ -78,7 +97,9 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
   const v = args.variacao ?? 0;
   const pergunta = args.temEscolha === true
     ? perguntaDeAquisicao({ nome: args.nomeCliente ?? null, variacao: v })
-    : perguntaDeEscolha({ variacao: v });
+    : args.umaMoto === true
+      ? perguntaDeSaberMais({ modelo: args.modeloCitado ?? null, variacao: v })
+      : perguntaDeEscolha({ variacao: v });
   // 3b) Sem escolha e com MAIS opções que casam → re-adiciona o "quer ver mais?"
   //     (o passo 2 apagou a cauda interrogativa). Com escolha, NÃO (o fecho é o de
   //     aquisição — o cliente já decidiu; não se pergunta por mais fotos/opções).

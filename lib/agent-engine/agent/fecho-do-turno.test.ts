@@ -14,6 +14,28 @@ describe('ajustarFechoDoTurnoDeCatalogo', () => {
     expect(r.corpo).toContain('Lander não tenho');
   });
 
+  it('com UMA moto só: fecho de SABER MAIS (não "qual delas")', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Temos sim a Honda Biz! Separei essa unidade. Qual delas te interessou mais?',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      umaMoto: true,
+    });
+    expect(r.corpo).not.toContain('delas');
+    expect(r.corpo.toLowerCase()).toMatch(/saber mais|mais sobre|detalhes/);
+  });
+
+  it('não DUPLICA a pergunta quando o modelo já perguntou com cauda sem "?"', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Separei essa Biz. Ela é econômica. Te conto mais sobre ela? Se quiser, posso te chamar pra ver de perto.',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      umaMoto: true,
+    });
+    const ocorrencias = (r.corpo.match(/te conto mais/gi) ?? []).length;
+    expect(ocorrencias).toBeLessThanOrEqual(1);
+  });
+
   it('mesmo PARAFRASEADA, tira a cauda interrogativa (o fecho é do motor)', () => {
     const r = ajustarFechoDoTurnoDeCatalogo({
       corpo: 'Separei umas opções trail. Me conta de onde você é?',

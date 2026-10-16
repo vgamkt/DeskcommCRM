@@ -3313,6 +3313,10 @@ async function executarTurnoDoAgente(
       catalogoDaConversa.escolhida = null;
       catalogoDaConversa.referencia = null;
       interesseAnteriorApagado = true;
+      // A FILA morre junto (dono, 2026-10-16): o cliente trocou de moto/estilo, então a
+      // fila do pedido ANTIGO não pode sobreviver. `null` LIMPA (undefined manteria);
+      // se a seleção do novo estilo rodar mais adiante, ela reconstrói uma fila nova.
+      opcoesParaSalvar = null;
     }
   }
 
@@ -5011,17 +5015,19 @@ async function executarTurnoDoAgente(
                 .replace(/[^a-z0-9\s]/g, ' ')
                 .split(/\s+/)
                 .filter((t) => t.length >= 3 && !/^\d+$/.test(t));
-              const casam = candidatos.filter((m) => {
-                const nome = normalizarNomeDeMoto(m.nome);
-                return palavras.some((t) => nome.includes(t));
-              });
-              if (
-                casam.length > 0 &&
-                casam.length < 8 &&
-                intencaoDoTurno !== 'alternativa' &&
-                !ehObjecaoMsg
-              ) {
-                candidatos = casam;
+              // Pega o token MAIS ESPECÍFICO (o conjunto MENOR não-vazio) — não a
+              // UNIÃO de todos. Sem isto, a MARCA ("Honda") e palavras de cortesia
+              // ("vocês", "tenho") inflam o conjunto, o `length < 8` falha e o filtro
+              // é PULADO → despeja o catálogo (medido ao vivo: "Honda Biz" → 1 Biz +
+              // 4 outros modelos em vez de só a Biz).
+              const conjuntos = palavras
+                .map((t) => candidatos.filter((m) => normalizarNomeDeMoto(m.nome).includes(t)))
+                .filter((c) => c.length > 0);
+              if (conjuntos.length > 0) {
+                const casam = conjuntos.reduce((a, b) => (b.length < a.length ? b : a));
+                if (casam.length < 8 && intencaoDoTurno !== 'alternativa' && !ehObjecaoMsg) {
+                  candidatos = casam;
+                }
               }
             }
             // ── DEGRAU 1: categoria do modelo CITADO que NÃO está no estoque ──────
@@ -5671,7 +5677,10 @@ async function executarTurnoDoAgente(
               const reMais =
                 /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento|saber mais|ver outras|outras que temos)/i;
               const jaTemVerMais = reMais.test(final) || reMais.test(introducao);
-              const jaPergunta = /\?/.test(final) || jaTemVerMais;
+              // Se o MODELO já perguntou qualquer coisa (no fecho OU na introdução), o
+              // motor NÃO repõe o fecho — senão DUPLICA (medido ao vivo: "Te conto mais
+              // sobre ela?… Te conto mais sobre a Biz 125?…").
+              const jaPergunta = /\?/.test(final) || /\?/.test(introducao) || jaTemVerMais;
               // FILA com mais motos + fecho de ESCOLHA: o "ver mais" NÃO anda sozinho —
               // ele JUNTA com a escolha. O fecho VIRA a pergunta COMBINADA ("alguma
               // delas chamou atenção, ou prefere ver outras que temos?"), substituindo
@@ -5843,6 +5852,7 @@ async function executarTurnoDoAgente(
                   temEscolha: catalogoDaConversa.escolhida !== null,
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
+                  umaMoto: nomeModeloEspecificoDoTurno !== '',
                   modeloCitado: motoAtualDaConversa?.nome ?? null,
                   nomeCliente: effectiveContext.contact.name,
                 });
@@ -8338,6 +8348,7 @@ async function executarTurnoDoAgente(
                   temEscolha: catalogoDaConversa.escolhida !== null,
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
+                  umaMoto: nomeModeloEspecificoDoTurno !== '',
                   modeloCitado: motoAtualDaConversa?.nome ?? null,
                   nomeCliente: effectiveContext.contact.name,
                 }).corpo

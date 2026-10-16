@@ -178,25 +178,27 @@ export function perguntaDeOutrosNoModelo(
   const modelo = (args.modelo ?? '').trim();
   const n = Math.max(1, Math.floor(args.quantidade ?? 1));
   const v = Math.abs(Math.floor(args.variacao ?? 0));
-  // UMA moto: NUNCA "qual delas/alguma delas" (não faz sentido) — fala DELA. A
-  // oferta de "outra opção de outra fabricante" NÃO entra aqui (dono, 2026-10-16):
-  // ela fica reservada para DEPOIS de 3 objeções (fase de negociação). Pura.
+  // UMA moto (dono, 2026-10-16): NUNCA "qual delas" (não faz sentido). Este fecho
+  // roda DEPOIS de negativa esgotada — então PERGUNTA (não manda) se pode ver
+  // opções PARECIDAS de OUTRO FABRICANTE no MESMO estilo. Antes ele oferecia isso
+  // cedo demais; agora é o passo da negociação (3ª recusa). Pura.
   if (n === 1) {
-    const alvo = modelo !== '' ? `a ${modelo}` : 'essa';
+    const alvo = modelo !== '' ? ` ${modelo}` : ' essa';
     const opcoes = [
-      `Essa é ${alvo} que tenho. Gostou dela?`,
-      `Tenho essa ${modelo || 'opção'} aqui. Quer saber mais dela?`,
-      `Essa é ${alvo} disponível. Curtiu?`,
-      `Olha ${alvo} aí — o que achou?`,
+      `Só tenho essa${alvo} aqui no momento. Quer que eu veja se há outras parecidas de outro fabricante no mesmo estilo?`,
+      `Por enquanto é a única${alvo} que tenho. Posso procurar opções parecidas de outras fabricantes no mesmo estilo — quer?`,
+      `Essa é a única${alvo} disponível agora. Se quiser, eu verifico outras parecidas de outra marca, no mesmo estilo.`,
+      `Só essa${alvo} no momento. Quer que eu veja se encontro algo parecido (mesmo estilo) de outra fabricante?`,
     ];
     return opcoes[v % opcoes.length]!;
   }
-  // VÁRIAS: aí sim o "qual chamou mais atenção" faz sentido.
+  // VÁRIAS (dono, 2026-10-16): manda as que batem EXATAMENTE e a pergunta JUNTA a
+  // escolha com a oferta de OUTRAS FABRICANTES no mesmo estilo (sempre PERGUNTA).
   const doModelo = modelo !== '' ? ` as ${modelo}` : ' as opções';
   const opcoes = [
-    `Essas são${doModelo} que tenho. Qual delas chamou mais a sua atenção?`,
-    `Essas são todas${doModelo} do estoque. Alguma te interessou mais?`,
-    `Essas são${doModelo} disponíveis por aqui. Qual delas te agradou mais?`,
+    `Essas são${doModelo} que tenho. Qual delas chamou mais a sua atenção — ou prefere que eu veja outras parecidas de outro fabricante, no mesmo estilo?`,
+    `Essas são todas${doModelo} do estoque. Alguma te interessou mais? Se quiser, também vejo opções parecidas de outra marca no mesmo estilo.`,
+    `Essas são${doModelo} disponíveis por aqui. Qual delas te agradou mais — ou quer que eu busque algo parecido de outra fabricante?`,
   ];
   return opcoes[v % opcoes.length]!;
 }
