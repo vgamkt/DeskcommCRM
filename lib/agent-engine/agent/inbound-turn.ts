@@ -4956,13 +4956,24 @@ async function executarTurnoDoAgente(
             // Sem isto, o motor não tem critério nenhum e mostra o catálogo aleatório.
             {
               const msgDoPedido = mensagemDoJob ?? body;
-              const citadasNoPedido = motosCitadasNoTexto(msgDoPedido, candidatos);
+              // Casa por TOKEN do nome ("tem Biz?" casa "HONDA Biz 125 FLEX") — o
+              // `motosCitadasNoTexto` exige o nome COMPLETO e não pega o pedido
+              // parcial. NÃO vale para marca ("Honda" casaria o estoque inteiro):
+              // só filtra quando casa um conjunto PEQUENO (uma LINHA/modelo).
+              const palavras = normalizarNomeDeMoto(msgDoPedido)
+                .split(' ')
+                .filter((t) => t.length >= 3 && !/^\d+$/.test(t));
+              const casam = candidatos.filter((m) => {
+                const nome = normalizarNomeDeMoto(m.nome);
+                return palavras.some((t) => nome.includes(t));
+              });
               if (
-                citadasNoPedido.length > 0 &&
+                casam.length > 0 &&
+                casam.length < 8 &&
                 intencaoDoTurno !== 'alternativa' &&
                 !ehObjecaoMsg
               ) {
-                candidatos = citadasNoPedido;
+                candidatos = casam;
               }
             }
             // ── DEGRAU 1: categoria do modelo CITADO que NÃO está no estoque ──────
@@ -5621,12 +5632,10 @@ async function executarTurnoDoAgente(
                 await enviarFoto(itens[i]!.url, i === 0 ? introducao : '');
               }
               await enviarTexto(final);
-            } else {
-              // ORDEM (dono, 2026-10-16): (1) CHAMADA — a apresentação (na 1ª
-              // mensagem) + a mensagem que anuncia a moto; (2) TODAS as FOTOS; (3) a
-              // DESCRIÇÃO da moto + a PERGUNTA final. O corte da chamada: o primeiro
-              // ':' OU o fim da frase com o verbo de chamada ("deixa eu te
-              // mostrar/separei/olha/veja…"). Sem corte, tudo vai antes das fotos.
+            } else if (nomeModeloEspecificoDoTurno !== '') {
+              // UMA moto só (pedido específico, escolha, ou é a única no estoque):
+              // CHAMADA → TODAS as fotos → DESCRIÇÃO (qualidades) + PERGUNTA. O corte
+              // da chamada: o primeiro ':' OU o fim da frase de chamada.
               const corpo = introducao.trim();
               const iDoisPontos = corpo.indexOf(':');
               const temDoisPontos = iDoisPontos >= 0 && iDoisPontos < corpo.length - 1;
@@ -5649,6 +5658,14 @@ async function executarTurnoDoAgente(
               }
               const depois = [descricao, final].filter((s) => s.trim() !== '').join('\n\n');
               if (depois.trim() !== '') await enviarTexto(depois);
+            } else {
+              // MAIS DE UMA moto: apresentação NORMAL — texto → fotos → pergunta
+              // (como sempre foi).
+              await enviarTexto(introducao);
+              for (const item of itens) {
+                await enviarFoto(item.url, item.legenda);
+              }
+              await enviarTexto(final);
             }
             return ultimo!;
           };
