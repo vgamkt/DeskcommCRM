@@ -14,12 +14,25 @@ describe('ajustarFechoDoTurnoDeCatalogo', () => {
     expect(r.corpo).toContain('Lander não tenho');
   });
 
-  it('com UMA moto só: fecho de SABER MAIS (não "qual delas")', () => {
+  it('com UMA moto só: fecho de PROGRESSÃO (aquisição), não "qual delas"', () => {
     const r = ajustarFechoDoTurnoDeCatalogo({
       corpo: 'Temos sim a Honda Biz! Separei essa unidade. Qual delas te interessou mais?',
       perguntaDoFluxo: null,
       variacao: 0,
       umaMoto: true,
+    });
+    expect(r.corpo).not.toContain('delas');
+    // Puxa a forma de pagamento (progressão da venda).
+    expect(r.corpo.toLowerCase()).toMatch(/adquirir|pagamento|à vista|financiad/);
+  });
+
+  it('1 moto mas forma de pagamento JÁ perguntada: fecho de SABER MAIS (sem repetir)', () => {
+    const r = ajustarFechoDoTurnoDeCatalogo({
+      corpo: 'Temos sim a Honda Biz! Separei essa unidade. Qual delas te interessou mais?',
+      perguntaDoFluxo: null,
+      variacao: 0,
+      umaMoto: true,
+      formaJaPerguntada: true,
     });
     expect(r.corpo).not.toContain('delas');
     expect(r.corpo.toLowerCase()).toMatch(/saber mais|mais sobre|detalhes/);

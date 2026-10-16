@@ -290,7 +290,8 @@ export function perguntaProsseguimentoAposMoto(args: {
   nome?: string | null;
   variacao?: number;
 } = {}): string {
-  const saber = perguntaDeSaberMais({ modelo: args.modelo ?? null, variacao: args.variacao });
-  const aquisicao = perguntaDeAquisicao({ nome: args.nome ?? null, variacao: args.variacao });
-  return `${saber}\n\n${aquisicao}`;
+  // SÓ a pergunta de AQUISIÇÃO (a progressão). O convite "saber mais / ver na loja" fica
+  // com o MODELO (ou com `perguntaDeSaberMais` quando não há progressão) — juntar os dois
+  // aqui DUPLICAVA o convite (o modelo já escreve um). (dono, 2026-10-16.)
+  return perguntaDeAquisicao({ nome: args.nome ?? null, variacao: args.variacao });
 }
