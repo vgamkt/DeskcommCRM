@@ -204,6 +204,7 @@ import {
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoModelo,
   perguntaDeOutrosNoValor,
+  perguntaDeSaberMais,
   perguntaProsseguimentoAposMoto,
 } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
@@ -3258,6 +3259,11 @@ async function executarTurnoDoAgente(
           opcoes: null,
         }
       : await carregarCatalogoDaConversa(pool, tenantId, input.conversationId);
+  // Já perguntamos como o cliente pretende ADQUIRIR? Regra do dono: pergunta UMA vez.
+  // `true` = não repergunta a forma de pagamento (o cliente já disse ou já foi perguntado).
+  const formaJaPerguntada = catalogoDaConversa.formaDePagamentoPerguntada === true;
+  // Vira `true` a gravar quando ESTE turno emite a progressão (moto específica/escolha).
+  let formaDePagamentoPerguntadaParaSalvar: boolean | undefined = undefined;
   // C-071: OBJEÇÃO — regra do dono (2026-09-30): DUAS tentativas de persuasão por
   // TIPO de objeção e, na TERCEIRA vez do mesmo tipo, libera oferecer outra opção
   // (avisando o responsável). Se o tipo muda, a contagem reinicia. A fase do turno
@@ -5483,6 +5489,16 @@ async function executarTurnoDoAgente(
             orcamentoTurno !== (catalogoDaConversa.orcamento ?? null) ||
             pedidosDeOpcoesTurno !== (catalogoDaConversa.pedidosDeOpcoes ?? 0))
         ) {
+          // Regra do dono: pergunta a forma de pagamento UMA vez. Se ESTE turno mostrou
+          // uma moto específica/escolha (e ainda não perguntamos), marca como perguntada.
+          if (
+            !formaJaPerguntada &&
+            (nomeModeloEspecificoDoTurno !== '' ||
+              escolhaDetectadaNesteTurno !== undefined ||
+              catalogoDaConversa.escolhida !== null)
+          ) {
+            formaDePagamentoPerguntadaParaSalvar = true;
+          }
           void salvarCatalogoDaConversa(
             pool,
             tenantId,
@@ -5496,6 +5512,7 @@ async function executarTurnoDoAgente(
             opcoesParaSalvar,
             orcamentoTurno,
             pedidosDeOpcoesTurno,
+            formaDePagamentoPerguntadaParaSalvar,
           );
         }
         const fotos = fotosDeclaradas;
@@ -5685,11 +5702,18 @@ async function executarTurnoDoAgente(
                 : fechoJev === 'nenhum'
                   ? ''
                   : fechoJev === 'saber_mais'
-                    ? perguntaProsseguimentoAposMoto({
-                        modelo: nomeModeloEspecificoDoTurno,
-                        nome: effectiveContext.contact.name,
-                        variacao: pedidosDeOpcoesTurno,
-                      })
+                    ? // Já perguntamos a forma de pagamento? Então NÃO repete a progressão
+                      // (só o convite a saber mais / ver na loja).
+                      formaJaPerguntada
+                      ? perguntaDeSaberMais({
+                          modelo: nomeModeloEspecificoDoTurno,
+                          variacao: pedidosDeOpcoesTurno,
+                        })
+                      : perguntaProsseguimentoAposMoto({
+                          modelo: nomeModeloEspecificoDoTurno,
+                          nome: effectiveContext.contact.name,
+                          variacao: pedidosDeOpcoesTurno,
+                        })
                     : fechoJev === 'outra_opcao'
                       ? perguntaDeOutrosNoModelo({
                           modelo: nomeModeloEspecificoDoTurno,
@@ -5898,6 +5922,7 @@ async function executarTurnoDoAgente(
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
                   umaMoto: nomeModeloEspecificoDoTurno !== '',
+                  formaJaPerguntada,
                   modeloCitado: motoAtualDaConversa?.nome ?? null,
                   nomeCliente: effectiveContext.contact.name,
                 });
@@ -7376,6 +7401,10 @@ async function executarTurnoDoAgente(
       // em FOCO e a família dela não preencheu o valor. Mostre as que caibam nessa
       // família e CONVIDE a ver OUTROS MODELOS nesse valor (sem despejar o catálogo
       // nem trazer motos muito acima do teto).
+      // Forma de pagamento JÁ perguntada (ou já dita pelo cliente): NÃO repergunta.
+      formaJaPerguntada
+        ? '## Forma de pagamento — JÁ PERGUNTADA\nJá perguntamos (ou o cliente já disse) como ele pretende adquirir. NÃO pergunte de novo "à vista, financiado, no cartão ou na troca". Se ele já informou, continue a partir dessa informação; se não informou ainda, siga SEM reperguntar a forma de pagamento.'
+        : '',
       outrosNoValorNesteTurno
         ? '## Outros modelos nesse valor\nO cliente adicionou um valor/critério a uma moto em foco. Apresente SOMENTE as que caibam no valor (o motor já escolheu — não invente nem afirme que não há opções no valor). Feche o turno perguntando se ele quer ver outros modelos nesse valor (ex.: "Quer que eu te mostre outros modelos nesse valor?"). NUNCA traga motos muito acima do valor que ele citou.'
         : '',
@@ -8394,6 +8423,7 @@ async function executarTurnoDoAgente(
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
                   umaMoto: nomeModeloEspecificoDoTurno !== '',
+                  formaJaPerguntada,
                   modeloCitado: motoAtualDaConversa?.nome ?? null,
                   nomeCliente: effectiveContext.contact.name,
                 }).corpo

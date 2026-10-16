@@ -91,6 +91,12 @@ export interface CatalogoDaConversa {
    * PRÓXIMOS (tolerância maior).
    */
   pedidosDeOpcoes?: number;
+  /**
+   * Já PERGUNTAMOS como o cliente pretende ADQUIRIR (à vista/cartão/financiamento/
+   * troca)? Regra do dono (2026-10-16): pergunta UMA vez — depois que o cliente já
+   * disse (ou já foi perguntado), NÃO repergunta. `true` = já perguntou.
+   */
+  formaDePagamentoPerguntada?: boolean;
 }
 
 /** Fila de opções pendentes do pedido atual (C-089). */
@@ -111,6 +117,7 @@ const VAZIO: CatalogoDaConversa = {
   opcoes: null,
   orcamento: null,
   pedidosDeOpcoes: 0,
+  formaDePagamentoPerguntada: false,
 };
 
 function ehFilaDeOpcoes(valor: unknown): valor is FilaDeOpcoes {
@@ -229,6 +236,8 @@ export async function carregarCatalogoDaConversa(
         typeof (obj as { pedidosDeOpcoes?: unknown }).pedidosDeOpcoes === 'number'
           ? (obj as { pedidosDeOpcoes: number }).pedidosDeOpcoes
           : 0,
+      formaDePagamentoPerguntada:
+        (obj as { formaDePagamentoPerguntada?: unknown }).formaDePagamentoPerguntada === true,
     };
   } catch {
     return VAZIO;
@@ -260,6 +269,7 @@ export async function salvarCatalogoDaConversa(
   opcoes: FilaDeOpcoes | null | undefined = undefined,
   orcamento: number | null | undefined = undefined,
   pedidosDeOpcoes: number | undefined = undefined,
+  formaDePagamentoPerguntada: boolean | undefined = undefined,
 ): Promise<void> {
   try {
     const vistas = new Set<string>();
@@ -288,6 +298,10 @@ export async function salvarCatalogoDaConversa(
       orcamento === undefined ? (atual.orcamento ?? null) : orcamento;
     const pedidosDeOpcoesFinal: number =
       pedidosDeOpcoes === undefined ? (atual.pedidosDeOpcoes ?? 0) : pedidosDeOpcoes;
+    const formaDePagamentoPerguntadaFinal: boolean =
+      formaDePagamentoPerguntada === undefined
+        ? (atual.formaDePagamentoPerguntada ?? false)
+        : formaDePagamentoPerguntada;
     await db.query(
       `update conversations
           set metadata = jsonb_set(
@@ -309,6 +323,7 @@ export async function salvarCatalogoDaConversa(
           opcoes: opcoesFinal,
           orcamento: orcamentoFinal,
           pedidosDeOpcoes: pedidosDeOpcoesFinal,
+          formaDePagamentoPerguntada: formaDePagamentoPerguntadaFinal,
         }),
       ],
     );

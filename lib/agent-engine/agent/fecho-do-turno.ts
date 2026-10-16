@@ -17,6 +17,7 @@ import {
   perguntaDeEscolha,
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoValor,
+  perguntaDeSaberMais,
   perguntaProsseguimentoAposMoto,
 } from './mais-opcoes';
 
@@ -53,6 +54,12 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
    * ela?"), como pediu o dono (2026-10-16). Só entra sem `temEscolha`.
    */
   umaMoto?: boolean;
+  /**
+   * Já perguntamos como o cliente pretende ADQUIRIR? Se sim, o fecho de UMA moto NÃO
+   * repete a progressão (à vista/cartão/financiamento/troca) — só o convite a saber
+   * mais / ver na loja. Regra do dono (2026-10-16): pergunta UMA vez.
+   */
+  formaJaPerguntada?: boolean;
 }): { corpo: string; ajustado: boolean } {
   let corpo = args.corpo.trim();
 
@@ -96,13 +103,20 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
   //    (induz o fluxo de pagamento); senão, a de ESCOLHA.
   const v = args.variacao ?? 0;
   const pergunta = args.temEscolha === true
-    ? perguntaDeAquisicao({ nome: args.nomeCliente ?? null, variacao: v })
+    ? // Escolha travada: fecho de AQUISIÇÃO — MENOS se já perguntamos a forma de
+      // pagamento (regra do dono: UMA vez). Aí não repõe fecho (a próxima etapa,
+      // ex.: fluxo de pagamento, ou a resposta do modelo, assume).
+      args.formaJaPerguntada === true
+      ? ''
+      : perguntaDeAquisicao({ nome: args.nomeCliente ?? null, variacao: v })
     : args.umaMoto === true
-      ? perguntaProsseguimentoAposMoto({
-          modelo: args.modeloCitado ?? null,
-          nome: args.nomeCliente ?? null,
-          variacao: v,
-        })
+      ? args.formaJaPerguntada === true
+        ? perguntaDeSaberMais({ modelo: args.modeloCitado ?? null, variacao: v })
+        : perguntaProsseguimentoAposMoto({
+            modelo: args.modeloCitado ?? null,
+            nome: args.nomeCliente ?? null,
+            variacao: v,
+          })
       : perguntaDeEscolha({ variacao: v });
   // 3b) Sem escolha e com MAIS opções que casam → re-adiciona o "quer ver mais?"
   //     (o passo 2 apagou a cauda interrogativa). Com escolha, NÃO (o fecho é o de

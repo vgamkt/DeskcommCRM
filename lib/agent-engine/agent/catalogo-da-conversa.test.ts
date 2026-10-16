@@ -252,6 +252,7 @@ describe('carregarCatalogoDaConversa', () => {
       opcoes: null,
       orcamento: null,
       pedidosDeOpcoes: 0,
+      formaDePagamentoPerguntada: false,
     });
   });
 });
