@@ -77,6 +77,25 @@ export function introducaoFactualDaApresentacao(
   return opcoes[v % opcoes.length]!;
 }
 
+/**
+ * FECHO "SABER MAIS" — quando a JEV decidiu `saber_mais` (uma moto em foco). O
+ * motor só RENDERIZA a variante; quem decide é a Jev. Variada. Pura.
+ */
+export function perguntaDeSaberMais(
+  args: { modelo?: string | null; variacao?: number } = {},
+): string {
+  const modelo = (args.modelo ?? '').trim();
+  const v = Math.abs(Math.floor(args.variacao ?? 0));
+  const alvo = modelo !== '' ? ` a ${modelo}` : ' ela';
+  const opcoes = [
+    `Quer saber mais sobre${alvo} ou prefere dar uma olhada de perto?`,
+    `Te conto mais sobre${alvo}? Se quiser, posso te chamar pra ver de perto.`,
+    `Quer que eu te passe mais detalhes${alvo}, ou você prefere ver pessoalmente?`,
+    `Sobre${alvo}: quer saber mais ou já prefere dar uma olhada de perto?`,
+  ];
+  return opcoes[v % opcoes.length]!;
+}
+
 /** Tokens de VERSÃO/ano que NÃO fazem parte do nome do modelo (para o nome curto). */
 const TOKENS_DE_VERSAO = new Set([
   'flex', 'ubs', 'abs', 'ed', 'one', 'blue', 'start', 'smart', 'connect', 'premium',

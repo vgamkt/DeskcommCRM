@@ -36,6 +36,7 @@ describe('offer_motos Jev', () => {
       perguntar: false,
       criterio: 'preco',
       continuacao: false,
+      fecho: 'escolha',
       motivo: 'jev_liberou_preco',
     });
   });
@@ -45,6 +46,17 @@ describe('offer_motos Jev', () => {
     const instr = p.oferta?.type === 'choice' ? p.oferta.instructions : '';
     expect(instr).toContain('REGRA DA MOTO EM FOCO');
     expect(instr).toContain('HONDA XRE 190');
+  });
+
+  it('lê o FECHO decidido pela Jev (saber_mais / escolha / outra_opcao / nenhum)', () => {
+    const base: RespostasDeJev = {
+      oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} },
+    };
+    expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'saber_mais', confidence: 1, probabilities: {} } }).fecho).toBe('saber_mais');
+    expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'outra_opcao', confidence: 1, probabilities: {} } }).fecho).toBe('outra_opcao');
+    expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'nenhum', confidence: 1, probabilities: {} } }).fecho).toBe('nenhum');
+    // Sem resposta da Jev e OFERECENDO: default "escolha".
+    expect(vereditoDeOfertaDaJev(base).fecho).toBe('escolha');
   });
 
   it('USO/TERRENO e estilo contam como critério (não perguntar vago)', () => {
@@ -89,6 +101,7 @@ describe('offer_motos Jev', () => {
       perguntar: false,
       criterio: 'nenhum',
       continuacao: false,
+      fecho: 'nenhum',
       motivo: 'jev_negou',
     });
   });
@@ -102,6 +115,7 @@ describe('offer_motos Jev', () => {
       perguntar: true,
       criterio: 'nenhum',
       continuacao: false,
+      fecho: 'nenhum',
       motivo: 'jev_perguntar',
     });
     // A pergunta da Jev oferece a opção "perguntar".

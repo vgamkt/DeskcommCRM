@@ -203,6 +203,7 @@ import {
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoModelo,
   perguntaDeOutrosNoValor,
+  perguntaDeSaberMais,
 } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
@@ -5570,34 +5571,47 @@ async function executarTurnoDoAgente(
             // ignora com frequência) SÓ quando o MODELO não escreveu o fecho. O fecho
             // por MODELO ESPECÍFICO é escrito pela INTELIGÊNCIA (contexto no prompt),
             // não por frase fixa (dono, 2026-10-16). ESCOPO 9: "outros nesse valor".
-            if (temMaisOpcoesNesteTurno || outrosNoValorNesteTurno) {
+            if (
+              temMaisOpcoesNesteTurno ||
+              outrosNoValorNesteTurno ||
+              (vereditoOfertaJev !== null && vereditoOfertaJev.fecho !== 'nenhum')
+            ) {
               const citouModelo =
                 pedeMotoExplicito(mensagemDoJob ?? '') ||
                 motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDaConversa.motos).length > 0;
+              // O TIPO de fecho é DECISÃO da JEV (`vereditoOfertaJev.fecho`); o motor
+              // só RENDERIZA a variante. Nada de regex decidindo "qual delas" vs
+              // "saber mais" vs outra fabricante.
+              const fechoJev = vereditoOfertaJev?.fecho ?? null;
               const perguntaMais = outrosNoValorNesteTurno
                 ? perguntaDeOutrosNoValor({
                     modelo: motoAtualDaConversa?.nome ?? null,
                     variacao: pedidosDeOpcoesTurno,
                   })
-                : nomeModeloEspecificoDoTurno !== ''
-                  ? // UMA moto (mesmo com várias fotos): fecho SINGULAR — nunca
-                    // "qual delas". `itens.length` conta FOTOS, não motos.
-                    perguntaDeOutrosNoModelo({
-                      modelo: nomeModeloEspecificoDoTurno,
-                      categoria: categoriaDoModeloDoTurno,
-                      quantidade: 1,
-                      variacao: pedidosDeOpcoesTurno,
-                    })
-                  : perguntaDeMaisOpcoes({
-                      modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
-                      variacao: pedidosDeOpcoesTurno,
-                    });
+                : fechoJev === 'nenhum'
+                  ? ''
+                  : fechoJev === 'saber_mais'
+                    ? perguntaDeSaberMais({
+                        modelo: nomeModeloEspecificoDoTurno,
+                        variacao: pedidosDeOpcoesTurno,
+                      })
+                    : fechoJev === 'outra_opcao'
+                      ? perguntaDeOutrosNoModelo({
+                          modelo: nomeModeloEspecificoDoTurno,
+                          categoria: categoriaDoModeloDoTurno,
+                          quantidade: 1,
+                          variacao: pedidosDeOpcoesTurno,
+                        })
+                      : perguntaDeMaisOpcoes({
+                          modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
+                          variacao: pedidosDeOpcoesTurno,
+                        });
               const reMais =
-                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento)/i;
+                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento|saber mais)/i;
               // Se o MODELO já fechou com uma pergunta, NÃO duplica (só acrescenta
               // quando ele não perguntou nada).
               const jaPergunta = /\?/.test(final) || reMais.test(final) || reMais.test(introducao);
-              if (!jaPergunta) {
+              if (perguntaMais !== '' && !jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
               }
             }
@@ -5608,13 +5622,33 @@ async function executarTurnoDoAgente(
               }
               await enviarTexto(final);
             } else {
-              // ORDEM (dono, 2026-10-16): (1) TODAS as FOTOS; (2) o TEXTO da
-              // apresentação/descrição; (3) a PERGUNTA. As fotos vêm PRIMEIRO.
+              // ORDEM (dono, 2026-10-16): (1) CHAMADA — a apresentação (na 1ª
+              // mensagem) + a mensagem que anuncia a moto; (2) TODAS as FOTOS; (3) a
+              // DESCRIÇÃO da moto + a PERGUNTA final. O corte da chamada: o primeiro
+              // ':' OU o fim da frase com o verbo de chamada ("deixa eu te
+              // mostrar/separei/olha/veja…"). Sem corte, tudo vai antes das fotos.
+              const corpo = introducao.trim();
+              const iDoisPontos = corpo.indexOf(':');
+              const temDoisPontos = iDoisPontos >= 0 && iDoisPontos < corpo.length - 1;
+              const chamada = corpo.match(
+                /^(.*?(?:mostrar|mostro|separei|selecionei|olha|olhe|veja|conhecer|apresent)[^.!?:]*[.!?:])\s*([\s\S]+)$/i,
+              );
+              const antes = temDoisPontos
+                ? corpo.slice(0, iDoisPontos + 1).trim()
+                : chamada !== null
+                  ? chamada[1]!.trim()
+                  : corpo;
+              const descricao = temDoisPontos
+                ? corpo.slice(iDoisPontos + 1).trim()
+                : chamada !== null
+                  ? chamada[2]!.trim()
+                  : '';
+              if (antes !== '') await enviarTexto(antes);
               for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);
               }
-              if (introducao.trim() !== '') await enviarTexto(introducao);
-              await enviarTexto(final);
+              const depois = [descricao, final].filter((s) => s.trim() !== '').join('\n\n');
+              if (depois.trim() !== '') await enviarTexto(depois);
             }
             return ultimo!;
           };

@@ -22,6 +22,14 @@ export const OFERECER_PERGUNTAR = 'perguntar';
 /** Critério da oferta (vira preferência de ranqueamento no motor). */
 export type CriterioDeOfertaJev = 'preco' | 'km' | 'ano' | 'nenhum';
 
+/**
+ * O TIPO de FECHO da apresentação — DECISÃO da Jev (doutrina `jev-decide-sempre`).
+ * O motor NÃO decide mais por regex se pergunta "qual delas" (plural) ou "quer saber
+ * mais" (uma moto) ou se oferece outra fabricante: a Jev lê a mensagem/contexto e
+ * escolhe. O motor só renderiza a frase da variante marcada.
+ */
+export type FechoDaApresentacao = 'escolha' | 'saber_mais' | 'outra_opcao' | 'nenhum';
+
 export interface ContextoDeOferta {
   /** Mensagem do cliente NESTE turno. */
   mensagem: string;
@@ -63,6 +71,8 @@ export interface VereditoDeOferta {
    * `true` = continuar a fila (mostrar as próximas); a regex é só fallback.
    */
   continuacao: boolean;
+  /** O TIPO de fecho da apresentação (decisão da Jev). */
+  fecho: FechoDaApresentacao;
   /** Frase curta do porquê — para LOG, nunca para o cliente. */
   motivo: string;
 }
@@ -130,6 +140,25 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         ano: 'o cliente reclamou do ANO / quer mais nova',
       },
     },
+    // TIPO DE FECHO — decisão da JEV (doutrina `jev-decide-sempre`). O motor não
+    // decide mais por regex se é "qual delas" (plural) / "saber mais" (uma moto) /
+    // oferecer outra fabricante; a Jev lê a mensagem e escolhe.
+    fecho: {
+      type: 'choice',
+      instructions:
+        'Vamos MOSTRAR motos. Qual a MELHOR pergunta de fecho para ESTE momento? ' +
+        '- "escolha": perguntar QUAL moto chamou mais a atenção — use quando há MAIS DE UMA opção na apresentação. ' +
+        '- "saber_mais": convidar a saber mais sobre a moto / ver de perto — use quando é UMA moto só (ex.: o cliente pediu um MODELO específico). ' +
+        '- "outra_opcao": oferecer CONSULTAR outras opções do MESMO segmento/tipo de OUTRA fabricante — use SÓ quando já houve recusa/objeção e comparar ajuda. ' +
+        '- "nenhum": não perguntar nada agora. ' +
+        `Contexto: mensagem="${ctx.mensagem}"; moto em foco=${ctx.temMotoEmFoco}; motivo da objeção anterior=${ctx.motivoObjecaoAnterior ?? 'nenhum'}.`,
+      criteria: {
+        escolha: 'perguntar QUAL delas chamou mais a atenção (há MAIS DE UMA moto)',
+        saber_mais: 'convidar a saber mais / ver de perto (UMA moto só)',
+        outra_opcao: 'oferecer outra opção do MESMO segmento de OUTRA fabricante (houve recusa/objeção)',
+        nenhum: 'não perguntar nada agora',
+      },
+    },
     // Só quando HÁ opções pendentes (já perguntamos "quer ver mais?"): a Jev decide
     // se o cliente quer CONTINUAR a lista ou pediu algo diferente. Ela lê a intenção
     // — QUALQUER forma de confirmar conta (não é regex de palavra).
@@ -165,11 +194,21 @@ export function vereditoDeOfertaDaJev(respostas: RespostasDeJev): VereditoDeOfer
       : 'nenhum';
   const cont = respostas.continuacao;
   const continuacao = cont?.type === 'choice' && cont.choice === 'mostrar_mais';
+  const f = respostas.fecho;
+  const fechoBruto = f?.type === 'choice' ? f.choice : null;
+  const fecho: FechoDaApresentacao =
+    fechoBruto === 'saber_mais' || fechoBruto === 'outra_opcao' || fechoBruto === 'nenhum' || fechoBruto === 'escolha'
+      ? fechoBruto
+      : // Sem resposta da Jev para o fecho: se vamos mostrar, o default é "escolha".
+        oferecer
+        ? 'escolha'
+        : 'nenhum';
   return {
     oferecer,
     perguntar,
     criterio,
     continuacao,
+    fecho,
     motivo: perguntar ? 'jev_perguntar' : oferecer ? `jev_liberou_${criterio}` : 'jev_negou',
   };
 }
