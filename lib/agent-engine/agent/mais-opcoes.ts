@@ -106,18 +106,35 @@ export function nomeCurtoDoModelo(nome: string): string {
  * te mostrar outro modelo de {categoria}". Vale para QUALQUER modelo. Variado.
  */
 export function perguntaDeOutrosNoModelo(
-  args: { modelo?: string | null; categoria?: string | null; variacao?: number } = {},
+  args: {
+    modelo?: string | null;
+    categoria?: string | null;
+    quantidade?: number;
+    variacao?: number;
+  } = {},
 ): string {
   const modelo = (args.modelo ?? '').trim();
-  const cat = (args.categoria ?? '').trim();
+  const n = Math.max(1, Math.floor(args.quantidade ?? 1));
   const v = Math.abs(Math.floor(args.variacao ?? 0));
+  // UMA moto: NUNCA "qual delas/alguma delas" (não faz sentido) — fala DELA. A
+  // oferta de "outra opção de outra fabricante" NÃO entra aqui (dono, 2026-10-16):
+  // ela fica reservada para DEPOIS de 3 objeções (fase de negociação). Pura.
+  if (n === 1) {
+    const alvo = modelo !== '' ? `a ${modelo}` : 'essa';
+    const opcoes = [
+      `Essa é ${alvo} que tenho. Gostou dela?`,
+      `Tenho essa ${modelo || 'opção'} aqui. Quer saber mais dela?`,
+      `Essa é ${alvo} disponível. Curtiu?`,
+      `Olha ${alvo} aí — o que achou?`,
+    ];
+    return opcoes[v % opcoes.length]!;
+  }
+  // VÁRIAS: aí sim o "qual chamou mais atenção" faz sentido.
   const doModelo = modelo !== '' ? ` as ${modelo}` : ' as opções';
-  const catTxt = cat !== '' ? ` de ${cat}` : '';
   const opcoes = [
-    `Essas são${doModelo} que tenho. Gostou de alguma? Se nenhuma agradar, posso te mostrar outro modelo${catTxt} também.`,
-    `Essas são todas${doModelo} do estoque. Alguma te interessou? Se quiser, também te mostro outros modelos${catTxt}.`,
-    `Essas são${doModelo} disponíveis por aqui. Quer seguir com alguma delas, ou prefere ver outro modelo${catTxt}?`,
-    `Se${doModelo} não te agradarem, eu te mostro outros modelos${catTxt} também — é só falar. Qual delas te chamou mais atenção?`,
+    `Essas são${doModelo} que tenho. Qual delas chamou mais a sua atenção?`,
+    `Essas são todas${doModelo} do estoque. Alguma te interessou mais?`,
+    `Essas são${doModelo} disponíveis por aqui. Qual delas te agradou mais?`,
   ];
   return opcoes[v % opcoes.length]!;
 }

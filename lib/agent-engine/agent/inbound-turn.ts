@@ -198,8 +198,10 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
+  nomeCurtoDoModelo,
   perguntaDeEscolha,
   perguntaDeMaisOpcoes,
+  perguntaDeOutrosNoModelo,
   perguntaDeOutrosNoValor,
 } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
@@ -3181,6 +3183,11 @@ async function executarTurnoDoAgente(
   // C-089: o filtro casou mais motos do que as oferecidas? O bloco do turno
   // instrui a IA a PERGUNTAR se o cliente quer ver mais opções (regra do dono).
   let temMaisOpcoesNesteTurno = false;
+  // FECHO SITUACIONAL (dono, 2026-10-16): quando o turno mostra UMA moto, o fecho
+  // NÃO pode ser "qual delas" — é sobre ELA + oferta de outra do mesmo segmento de
+  // outra fabricante. Guarda o nome curto e a categoria da moto oferecida.
+  let nomeModeloEspecificoDoTurno = '';
+  let categoriaDoModeloDoTurno = '';
   // ESCOPO 9: o cliente tinha uma moto em FOCO e adicionou um critério numérico
   // cujo valor esvaziou (ou quase) a família em foco → o turno convida a ver
   // OUTROS MODELOS NESSE VALOR. Substitui o "mais opções" genérico neste turno.
@@ -4942,6 +4949,21 @@ async function executarTurnoDoAgente(
             // Rede de segurança: leitura do banco falhou → usa o guardado da conversa
             // (comportamento antigo), em vez de ficar sem candidatos.
             if (doBanco.length === 0) candidatos = mesclarMotos(candidatos, catalogoDaConversa.motos);
+            // O cliente CITOU um MODELO que EXISTE no estoque? A oferta é das unidades
+            // DESSE modelo — MESMO que o modelo não tenha consultado o catálogo
+            // (medido ao vivo: "tem Biz?" sem consulta vinha um MIX de modelos).
+            // Sem isto, o motor não tem critério nenhum e mostra o catálogo aleatório.
+            {
+              const msgDoPedido = mensagemDoJob ?? body;
+              const citadasNoPedido = motosCitadasNoTexto(msgDoPedido, candidatos);
+              if (
+                citadasNoPedido.length > 0 &&
+                intencaoDoTurno !== 'alternativa' &&
+                !ehObjecaoMsg
+              ) {
+                candidatos = citadasNoPedido;
+              }
+            }
             // ── DEGRAU 1: categoria do modelo CITADO que NÃO está no estoque ──────
             // Só em turno de CATÁLOGO (o cliente fala de motos). Se ele citou um modelo
             // que não temos (ex.: "Lander"), buscamos a CATEGORIA na referência `modelos`
@@ -5231,13 +5253,26 @@ async function executarTurnoDoAgente(
               // específico — então silencia o genérico neste turno.
               outrosNoValorNesteTurno = selecao.outrosNoValor;
               if (outrosNoValorNesteTurno) temMaisOpcoesNesteTurno = false;
+              // FECHO SITUACIONAL: 1 moto só → guarda o nome curto + a categoria.
+              if (selecao.motos.length === 1) {
+                nomeModeloEspecificoDoTurno = nomeCurtoDoModelo(selecao.motos[0]!.nome);
+                categoriaDoModeloDoTurno = (
+                  selecao.motos[0]!.valores?.categoria ??
+                  selecao.motos[0]!.valores?.tipo ??
+                  ''
+                )
+                  .split(/[,/]/)[0]!
+                  .trim();
+              }
               // Apresentação de SEMELHANTES: 1 foto por moto. Só quando o cliente
               // pediu um MODELO que EXISTE (e veio 1 unidade) faz sentido mandar
               // todas as fotos dela — como na escolha. Sem isto, um filtro que
               // casava 1 só moto mandava as 8 fotos dela com 7 bolhas sem legenda.
+              // UMA moto só (ex.: "tem Biz?") → TODAS as fotos DELA (dono, 2026-10-16).
+              // Com mais de uma, 1 foto por moto (o limite antigo).
               return planoDeFotosDasMotos(
                 selecao.motos,
-                pedidoDeModeloExistente ? undefined : 1,
+                pedidoDeModeloExistente || selecao.motos.length === 1 ? undefined : 1,
                 legendaConfig,
               );
             }
@@ -5544,13 +5579,24 @@ async function executarTurnoDoAgente(
                     modelo: motoAtualDaConversa?.nome ?? null,
                     variacao: pedidosDeOpcoesTurno,
                   })
-                : perguntaDeMaisOpcoes({
-                    modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
-                    variacao: pedidosDeOpcoesTurno,
-                  });
+                : itens.length === 1
+                  ? // UMA moto: fecho sobre ELA + oferta de outra do mesmo segmento
+                    // de outra fabricante (nunca "qual delas").
+                    perguntaDeOutrosNoModelo({
+                      modelo: nomeModeloEspecificoDoTurno,
+                      categoria: categoriaDoModeloDoTurno,
+                      quantidade: 1,
+                      variacao: pedidosDeOpcoesTurno,
+                    })
+                  : perguntaDeMaisOpcoes({
+                      modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
+                      variacao: pedidosDeOpcoesTurno,
+                    });
               const reMais =
-                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outra fabricante|mesma categoria)/i;
-              const jaPergunta = reMais.test(final) || reMais.test(introducao);
+                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento)/i;
+              // Se o MODELO já fechou com uma pergunta, NÃO duplica (só acrescenta
+              // quando ele não perguntou nada).
+              const jaPergunta = /\?/.test(final) || reMais.test(final) || reMais.test(introducao);
               if (!jaPergunta) {
                 final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
               }
@@ -5562,10 +5608,13 @@ async function executarTurnoDoAgente(
               }
               await enviarTexto(final);
             } else {
-              await enviarTexto(introducao);
+              // ORDEM (dono, 2026-10-16): (1) FOTOS — depois delas (2) o TEXTO
+              // (chamada/qualidades) e por último (3) a PERGUNTA. Antes o texto ia
+              // ANTES das fotos.
               for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);
               }
+              if (introducao.trim() !== '') await enviarTexto(introducao);
               await enviarTexto(final);
             }
             return ultimo!;
@@ -6729,7 +6778,30 @@ async function executarTurnoDoAgente(
         preEscolhaDescricao,
       );
     }
-    const motoEmFoco = preEscolhaDescricao ?? motoAtualDaConversa;
+    let motoEmFoco = preEscolhaDescricao ?? motoAtualDaConversa;
+    // A coluna `descricao` do estoque tem a FICHA/BENEFÍCIOS de cada moto. Quando o
+    // cliente CITA um modelo (ex.: "tem uma Biz?") e não há moto em foco, acha-o no
+    // estoque para trazer a DESCRIÇÃO — a IA apresenta os benefícios reais dela
+    // (medido: a IA fica muda de conteúdo sem isto).
+    if (
+      motoEmFoco === null &&
+      catalogoMapeamento !== null &&
+      currentInboundText !== null &&
+      mencionaMoto(currentInboundText)
+    ) {
+      try {
+        const estoqueParaDescricao = await carregarCatalogoDoBanco(
+          deps.crmCfg.supabase,
+          tenantId,
+          catalogoMapeamento,
+          colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
+        );
+        const citadas = motosCitadasNoTexto(currentInboundText, estoqueParaDescricao);
+        if (citadas.length === 1) motoEmFoco = citadas[0]!;
+      } catch {
+        // best-effort: sem descrição, a apresentação segue como antes
+      }
+    }
     const turnoFalaDaMoto =
       preEscolhaDescricao !== undefined ||
       ehObjecaoTurno ||
@@ -7107,7 +7179,7 @@ async function executarTurnoDoAgente(
       pedeMotoExplicito(mensagemDoJob ?? '') &&
       catalogoDaConversa.escolhida === null &&
       !ehObjecaoTurno
-        ? '## Fecho quando o cliente PEDE um MODELO específico\nO cliente pediu um MODELO (ex.: "tem uma Biz?", "queria uma XRE?"). O sistema vai ENVIAR as unidades DESSE modelo — apresente ESSAS (e só essas), SEM misturar outros modelos. Escreva o fecho NATURAL, como uma pessoa: diga que são as do modelo que você tem, pergunte se alguma chamou a atenção e, se ele quiser, ofereça CONSULTAR outras opções na MESMA categoria de OUTRA fabricante (ex.: sendo Biz → outras scooters). NÃO liste essas outras agora e NÃO repita sempre a mesma frase.'
+        ? '## Fecho quando o cliente PEDE um MODELO específico\nO cliente pediu um MODELO (ex.: "tem uma Biz?", "queria uma XRE?"). O sistema vai ENVIAR as unidades DESSE modelo — apresente ESSAS (e só essas), SEM misturar outros modelos.\n- Se veio **UMA moto só**: NÃO diga "qual delas/alguma delas" (é UMA!). **OBRIGATÓRIO: na MESMA mensagem, cite 1 ou 2 QUALIDADES REAIS dela** — tire da DESCRIÇÃO/FICHA da moto que está no seu contexto (ex.: economia, confiabilidade, peça barata, pouca manutenção, km, item de revisão) — como um vendedor falando. NÃO invente nada que não esteja na ficha. Depois convide a avançar de forma natural (ex.: "quer saber mais dela?", "quer dar uma olhada de perto?").\n- Se vieram **VÁRIAS**: aí sim pergunte qual chamou mais a atenção.\nEscreva NATURAL, como uma pessoa; NÃO repita sempre a mesma frase.'
         : '',
       // ESCOPO 9: o cliente adicionou um critério (ex.: "até 17 mil") a uma moto
       // em FOCO e a família dela não preencheu o valor. Mostre as que caibam nessa

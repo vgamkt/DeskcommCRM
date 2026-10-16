@@ -37,11 +37,12 @@ describe('fechamento por MODELO ESPECÍFICO (dono, 2026-10-16)', () => {
     expect(nomeCurtoDoModelo('YAMAHA Factor 150 ED')).toBe('Factor 150');
   });
 
-  it('perguntaDeOutrosNoModelo cita o modelo, a categoria e termina em pergunta', () => {
+  it('perguntaDeOutrosNoModelo (1 moto) cita o modelo, é singular e termina em pergunta', () => {
     const p = perguntaDeOutrosNoModelo({ modelo: 'Biz 125', categoria: 'Scooter', variacao: 0 });
     expect(p).toContain('Biz 125');
-    expect(p).toMatch(/Scooter/);
     expect(p).toMatch(/\?/);
+    // 1 moto NUNCA usa "qual delas/alguma delas".
+    expect(p).not.toMatch(/qual delas|alguma delas/i);
   });
 
   it('varia e nunca fica vazio', () => {
