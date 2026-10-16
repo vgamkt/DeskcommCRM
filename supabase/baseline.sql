@@ -25482,3 +25482,23 @@ forçado. Inventar é pior do que demorar um instante a mais para responder.
      where organization_id is null and name = 'agendamento';
   end if;
 end $mig$;
+
+-- ----------------------------------------------------------------------------
+-- 0272: catálogo Google com modelos VIVOS (apêndice idempotente)
+-- O Google descontinuou `gemini-2.0-flash`/`gemini-2.5-*` (404 "no longer
+-- available to new users"); a tela os oferecia e quem escolhia via a visão
+-- falhar. Marca os mortos (a tela filtra `deprecated_at is null`) e diz que os
+-- Gemini vivos VEEM imagem.
+-- ----------------------------------------------------------------------------
+update public.ai_models set deprecated_at = now()
+ where provider = 'google'
+   and model_id in ('gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro')
+   and deprecated_at is null;
+
+update public.ai_models set supports_vision = true
+ where provider = 'google'
+   and model_id in (
+     'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.5-flash',
+     'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'
+   )
+   and supports_vision = false;
