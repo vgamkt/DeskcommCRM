@@ -3189,6 +3189,11 @@ async function executarTurnoDoAgente(
   // NÃO pode ser "qual delas" — é sobre ELA + oferta de outra do mesmo segmento de
   // outra fabricante. Guarda o nome curto e a categoria da moto oferecida.
   let nomeModeloEspecificoDoTurno = '';
+  // O cliente ESCOLHEU uma moto cujo álbum JÁ foi mostrado (ex.: pediu a Biz, viu as
+  // fotos, e depois "gostei dela")? NÃO reenviamos o álbum; e o texto do modelo NÃO
+  // pode prometer foto nem perguntar "o que achou" (medido ao vivo). O fecho vai
+  // DIRETO para a progressão (como pretende adquirir).
+  let escolhaAlbumJaMostrado = false;
   let categoriaDoModeloDoTurno = '';
   // ESCOPO 9: o cliente tinha uma moto em FOCO e adicionou um critério numérico
   // cujo valor esvaziou (ou quase) a família em foco → o turno convida a ver
@@ -4826,6 +4831,8 @@ async function executarTurnoDoAgente(
                 legendaConfig,
               );
             }
+            // Álbum já saiu: NÃO repete as fotos. Sinaliza para o fecho coerente.
+            escolhaAlbumJaMostrado = true;
           }
           if (fotosDeclaradas.length > 0) return [];
           // Já apresentou as fotos automáticas neste turno? Não repete.
@@ -5860,20 +5867,34 @@ async function executarTurnoDoAgente(
                 fotos.length > 0;
               const pendenteFecho =
                 fluxoAtendimento !== null ? fluxoAtendimento.situacao.pendentes[0] : undefined;
-              if (vaiMostrarMotos && pendenteFecho !== undefined) {
-                const p = pendenteFecho.config;
-                const perguntaFluxo = textoDaPergunta({
-                  key: p.key,
-                  label: p.label,
-                  type: p.type,
-                  ...(p.options !== undefined ? { options: p.options } : {}),
-                  ...(p.question !== undefined ? { question: p.question } : {}),
-                });
+              // ESCOLHA de moto cujo álbum JÁ saiu: NENHUMA foto vai neste turno. Tira a
+              // promessa de foto do texto ("aqui vão mais fotos dela") — o cliente não
+              // pode ler que vem foto e não vir nada (medido ao vivo).
+              if (escolhaAlbumJaMostrado) {
+                corpoFinal = corpoFinal
+                  .split(/\s*\n\s*\n/)
+                  .filter((p) => !/\b(fotos?|imagens?)\b/i.test(p))
+                  .join('\n\n')
+                  .trim();
+              }
+              if ((vaiMostrarMotos || escolhaAlbumJaMostrado) && (pendenteFecho !== undefined || escolhaAlbumJaMostrado)) {
+                const p = pendenteFecho?.config;
+                const perguntaFluxo =
+                  p !== undefined
+                    ? textoDaPergunta({
+                        key: p.key,
+                        label: p.label,
+                        type: p.type,
+                        ...(p.options !== undefined ? { options: p.options } : {}),
+                        ...(p.question !== undefined ? { question: p.question } : {}),
+                      })
+                    : null;
                 const ajuste = ajustarFechoDoTurnoDeCatalogo({
-                  corpo: finalBody,
+                  corpo: corpoFinal,
                   perguntaDoFluxo: perguntaFluxo,
                   variacao: pedidosDeOpcoesTurno,
-                  temEscolha: catalogoDaConversa.escolhida !== null,
+                  // A escolha cujo álbum já saiu TEM escolha travada → fecho de PROGRESSÃO.
+                  temEscolha: catalogoDaConversa.escolhida !== null || escolhaAlbumJaMostrado,
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
                   umaMoto: nomeModeloEspecificoDoTurno !== '',
