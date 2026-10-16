@@ -5608,14 +5608,21 @@ async function executarTurnoDoAgente(
               }
               await enviarTexto(final);
             } else {
-              // ORDEM (dono, 2026-10-16): (1) FOTOS — depois delas (2) o TEXTO
-              // (chamada/qualidades) e por último (3) a PERGUNTA. Antes o texto ia
-              // ANTES das fotos.
+              // ORDEM (dono, 2026-10-16): (1) APRESENTAÇÃO + CONFIRMAÇÃO (texto) EM
+              // CIMA; (2) TODAS as FOTOS; (3) DESCRIÇÃO da moto + PERGUNTA. O corte
+              // da apresentação é o primeiro ':' (a chamada termina em ':' ANTES de
+              // descrever a moto).
+              const corpo = introducao.trim();
+              const corte = corpo.indexOf(':');
+              const temCorte = corte >= 0 && corte < corpo.length - 1;
+              const apresentacao = temCorte ? corpo.slice(0, corte + 1).trim() : corpo;
+              const descricao = temCorte ? corpo.slice(corte + 1).trim() : '';
+              if (apresentacao !== '') await enviarTexto(apresentacao);
               for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);
               }
-              if (introducao.trim() !== '') await enviarTexto(introducao);
-              await enviarTexto(final);
+              const depois = [descricao, final].filter((s) => s.trim() !== '').join('\n\n');
+              if (depois.trim() !== '') await enviarTexto(depois);
             }
             return ultimo!;
           };
