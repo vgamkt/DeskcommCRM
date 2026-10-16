@@ -5038,7 +5038,11 @@ async function executarTurnoDoAgente(
               const conjuntos = palavras
                 .map((t) => candidatos.filter((m) => normalizarNomeDeMoto(m.nome).includes(t)))
                 .filter((c) => c.length > 0);
-              if (conjuntos.length > 0) {
+              // NÃO filtra por token quando o cliente TROCOU de moto/estilo: a mensagem
+              // CITA a moto antiga ao recusá-la ("deixa a Biz de lado, quero trilha") e o
+              // token dela (conjunto menor) sequestraria o filtro, descartando a categoria
+              // nova que a JEV mandou. Com a troca, quem filtra é a hipótese da JEV.
+              if (!interesseAnteriorApagado && conjuntos.length > 0) {
                 const casam = conjuntos.reduce((a, b) => (b.length < a.length ? b : a));
                 if (casam.length < 8 && intencaoDoTurno !== 'alternativa' && !ehObjecaoMsg) {
                   candidatos = casam;
