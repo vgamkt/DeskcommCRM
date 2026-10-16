@@ -133,7 +133,7 @@ export function perguntaDeSaberMais(
   const opcoes = [
     `Quer saber mais sobre${alvo} ou prefere dar uma olhada de perto?`,
     `Te conto mais sobre${alvo}? Se quiser, posso te chamar pra ver de perto.`,
-    `Quer que eu te passe mais detalhes${alvo}, ou você prefere ver pessoalmente?`,
+    `Quer que eu te passe mais detalhes sobre${alvo}, ou você prefere ver pessoalmente?`,
     `Sobre${alvo}: quer saber mais ou já prefere dar uma olhada de perto?`,
   ];
   return opcoes[v % opcoes.length]!;
