@@ -4961,7 +4961,8 @@ async function executarTurnoDoAgente(
               // parcial. NÃO vale para marca ("Honda" casaria o estoque inteiro):
               // só filtra quando casa um conjunto PEQUENO (uma LINHA/modelo).
               const palavras = normalizarNomeDeMoto(msgDoPedido)
-                .split(' ')
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .split(/\s+/)
                 .filter((t) => t.length >= 3 && !/^\d+$/.test(t));
               const casam = candidatos.filter((m) => {
                 const nome = normalizarNomeDeMoto(m.nome);
