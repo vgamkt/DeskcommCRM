@@ -198,7 +198,6 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
-  introducaoFactualDaApresentacao,
   perguntaDeEscolha,
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoValor,
@@ -5509,13 +5508,6 @@ async function executarTurnoDoAgente(
             itens: readonly { url: string; legenda: string }[],
             textoDoModelo: string,
             agrupar: boolean,
-            // ESCOPO 12: quando o MOTOR escolheu as motos (apresentação automática),
-            // o modelo escreveu o texto ANTES de saber QUAIS/QUANTAS vão — e "chuta"
-            // ("vou mandar duas", "não encontrei dentro do valor") enquanto o motor
-            // envia outra coisa. Nesse caminho a INTRO é determinística e FACTUAL
-            // (contagem real); o texto do modelo fica só nos turnos sem apresentação
-            // automática. É o "formar o contexto antes de enviar".
-            motorEscolheuMotos = false,
           ): Promise<ChannelSendResult> => {
             // Reset do contador do bloco: a MESMA apresentação gera os MESMOS seqs
             // em qualquer chamada/re-run (dedupe pelo ledger). Ver o bloco acima.
@@ -5523,13 +5515,7 @@ async function executarTurnoDoAgente(
             const cfg = agentConfig?.catalogConfig;
             let introducao: string;
             let final = '';
-            if (motorEscolheuMotos) {
-              introducao = introducaoFactualDaApresentacao(itens.length, {
-                nome: effectiveContext.contact.name,
-                variacao: pedidosDeOpcoesTurno,
-              });
-              final = perguntaDeEscolha({ variacao: pedidosDeOpcoesTurno });
-            } else if (cfg?.abertura_sem_citar === false) {
+            if (cfg?.abertura_sem_citar === false) {
               introducao = textoDoModelo;
             } else {
               const sep = separarTextoApresentacao(textoDoModelo, catalogoDoTurno);
@@ -5697,13 +5683,7 @@ async function executarTurnoDoAgente(
               // Apresentação (motor escolheu as motos): 1 foto por moto com a
               // legenda dela (ou agrupada, se o toggle pedir).
               if (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) {
-                // ESCOPO 12: motor escolheu as motos → introdução determinística/factual.
-                return enviarApresentacao(
-                  planoAutomatico,
-                  corpoFinal,
-                  cfg?.foto_por_moto === false,
-                  true,
-                );
+                return enviarApresentacao(planoAutomatico, corpoFinal, cfg?.foto_por_moto === false);
               }
               // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
               // mesmo formato — texto, depois as fotos (sem legenda), depois a
