@@ -5765,8 +5765,12 @@ async function executarTurnoDoAgente(
             } else {
               // MAIS DE UMA moto: apresentação NORMAL — texto → fotos → pergunta
               // (como sempre foi). QUANTIFICAÇÃO (dono): o modelo escreve a abertura
-              // ANTES de saber QUANTAS saem — injeta o número REAL no texto.
-              introducao = comQuantidadeNoTexto(introducao, itens.length, {
+              // ANTES de saber QUANTAS saem — injeta o número REAL de MOTOS (não de
+              // FOTOS: 1 moto com 9 fotos NÃO é "9 opções"; medido ao vivo).
+              const motosNaApresentacao = new Set(
+                itens.map((i) => i.legenda.trim()).filter((s) => s !== ''),
+              ).size;
+              introducao = comQuantidadeNoTexto(introducao, motosNaApresentacao, {
                 variacao: pedidosDeOpcoesTurno,
               });
               await enviarTexto(introducao);
