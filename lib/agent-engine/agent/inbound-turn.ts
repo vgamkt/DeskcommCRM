@@ -3286,12 +3286,22 @@ async function executarTurnoDoAgente(
   // e o cliente pergunta "vocês têm uma Lander?") APAGA a moto de interesse ANTES
   // do prompt: o assunto passa a ser a moto PEDIDA (dono, 2026-10-16). Sem isto, o
   // turno atual ainda segura a antiga e pergunta a aquisição da moto errada.
+  // SINAL: o cliente PEDIU uma moto DIFERENTE da que estava em foco. Apaga a
+  // escolha/referência E zera a âncora do turno (inclusive o fallback "1 moto
+  // apresentada = âncora") — senão o turno segue falando da moto antiga.
+  let interesseAnteriorApagado = false;
   if (
     preview === undefined &&
-    (catalogoDaConversa.escolhida !== null || catalogoDaConversa.referencia !== null) &&
+    (catalogoDaConversa.escolhida !== null ||
+      catalogoDaConversa.referencia !== null ||
+      catalogoDaConversa.motos.length === 1) &&
     mencionaMoto(mensagemDoJob)
   ) {
-    const ancora = catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia;
+    const ancora =
+      catalogoDaConversa.escolhida ??
+      catalogoDaConversa.referencia ??
+      catalogoDaConversa.motos[0] ??
+      null;
     const nomeAncora = normalizarNomeDeMoto(ancora?.nome ?? '');
     const palavras = normalizarNomeDeMoto(mensagemDoJob)
       .replace(/[^a-z0-9\s]/g, ' ')
@@ -3301,23 +3311,25 @@ async function executarTurnoDoAgente(
     if (!citaAncora) {
       catalogoDaConversa.escolhida = null;
       catalogoDaConversa.referencia = null;
+      interesseAnteriorApagado = true;
     }
   }
 
   // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
   // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
   // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
-  const motoAtualDaConversa: MotoDoCatalogo | null =
-    catalogoDaConversa.escolhida ??
-    catalogoDaConversa.referencia ??
-    (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null);
+  const motoAtualDaConversa: MotoDoCatalogo | null = interesseAnteriorApagado
+    ? null
+    : (catalogoDaConversa.escolhida ??
+      catalogoDaConversa.referencia ??
+      (catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null));
   // ESCOPO 9: motos JÁ em FOCO na conversa (interesse demonstrado) — a escolha
   // vence; senão, a referência; senão, as que foram apresentadas. É o CONTEXTO
   // que a Jev recebe para COMBINAR (interesse ∩ critério novo) quando o cliente
   // adiciona um critério ("e tem alguma até 17 mil?"). Nomes, deduplicados, no
   // máximo 6 — o suficiente para ancorar a família/linha.
   const motosEmFoco: string[] =
-    preview !== undefined
+    preview !== undefined || interesseAnteriorApagado
       ? []
       : [
           ...new Set(
@@ -5305,6 +5317,10 @@ async function executarTurnoDoAgente(
               // casava 1 só moto mandava as 8 fotos dela com 7 bolhas sem legenda.
               // UMA moto só (ex.: "tem Biz?") → TODAS as fotos DELA (dono, 2026-10-16).
               // Com mais de uma, 1 foto por moto (o limite antigo).
+              // Mandamos o ÁLBUM de UMA moto? Então ela está "DETALHADA" — registra
+              // p/ o próximo turno ("quero essa") NÃO reenviar as MESMAS fotos
+              // (evita a duplicação medida: apresentação do álbum + escolha do álbum).
+              if (selecao.motos.length === 1) motoDetalhadaNome = selecao.motos[0]!.nome;
               return planoDeFotosDasMotos(
                 selecao.motos,
                 pedidoDeModeloExistente || selecao.motos.length === 1 ? undefined : 1,
@@ -5388,18 +5404,12 @@ async function executarTurnoDoAgente(
             : motosConsultadasPeloModelo.length === 1
               ? motosConsultadasPeloModelo[0]!
               : null;
-        // PEDIDO NOVO de uma moto (ex.: "vocês têm uma Lander 250?") APAGA a moto de
-        // interesse anterior (a que estava em foco): o assunto passa a ser a moto
-        // PEDIDA, não a antiga (dono, 2026-10-16 — "moto Lander não tem → apaga a
-        // moto de interesse, fala sobre a Lander"). Espelha a destrave da escolha.
         const referenciaParaSalvar: MotoDoCatalogo | null | undefined =
           escolhaDetectadaNesteTurno !== null
             ? escolhaDetectadaNesteTurno
-            : pediuOutraMoto || pedidoExplicito
-              ? null
-              : candidataReferencia !== null && baseDaReferencia(candidataReferencia) !== baseAtual
-                ? candidataReferencia
-                : undefined;
+            : candidataReferencia !== null && baseDaReferencia(candidataReferencia) !== baseAtual
+              ? candidataReferencia
+              : undefined;
         // C-071: estado da OBJEÇÃO DE VALOR. A ferramenta de semelhantes limpa;
         // uma objeção nova/que persiste grava a fase; outro turno preserva.
         const motoDaObjecao = catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia;
