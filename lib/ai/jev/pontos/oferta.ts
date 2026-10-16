@@ -107,7 +107,14 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         'REGRA INEGOCIÁVEL: se o cliente PERGUNTA se temos uma moto/modelo específico ' +
         '("tem a CB 300?", "vocês têm X?", "quanto custa a X?") OU PEDE uma moto por um critério ' +
         'claro — marca, CILINDRADA/cc ("quero uma 250", "quero uma 300cc"), categoria/estilo ou faixa ' +
-        'de preço — ou PEDE para ver o catálogo, a resposta é SEMPRE "sim, mostrar motos agora". ' +
+        'de preço — a resposta é SEMPRE "sim, mostrar motos agora". ' +
+        // MEDIDO (2026-10-16): "quero ver as motos de vocês" / "me mostra as opções" (SEM nenhum
+        // critério) viravam "mostrar" e o bot despejava o catálogo. O dono quer DESCOBRIR primeiro o
+        // que o cliente procura. Pedir o CATÁLOGO sem critério é VAGO → "perguntar".
+        'ATENÇÃO: pedir para VER AS MOTOS / O CATÁLOGO / "as opções" SEM nenhum critério (nem ' +
+        'tipo/uso, nem marca, nem cilindrada/cc, nem faixa de preço, nem modelo) é pedido VAGO → ' +
+        'responda "perguntar": o sistema deve DESCOBRIR o que ele procura (cidade/estrada/trilha, uso, ' +
+        'estilo, faixa) antes de mostrar. NÃO despeje o catálogo num pedido sem critério. ' +
         'REGRA INEGOCIÁVEL: se "cliente pediu mais opções" for verdadeiro, a resposta é SEMPRE ' +
         '"sim, mostrar motos agora" (com o criterio que ataca o motivo). NUNCA negue um pedido ' +
         'explícito do cliente. ' +

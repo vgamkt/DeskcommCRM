@@ -7271,6 +7271,13 @@ async function executarTurnoDoAgente(
       currentInboundText !== null && motoAtualDaConversa === null && pedePrecoSemValor(currentInboundText)
         ? '## Perguntar a faixa de preço\nO cliente falou de preço/orçamento SEM citar um valor. NÃO invente faixa nem ofereça motos por chute: pergunte de forma natural qual a faixa de preço (ou o valor aproximado) que ele procura, e ofereça confirmar as opções dentro dela. Não liste nomes de motos neste turno.'
         : '',
+      // PEDIDO VAGO (o cliente pede para ver motos SEM dizer o que procura): a JEV
+      // decidiu `perguntar` (não mostrar). NÃO envie fotos; DESCUBRA primeiro —
+      // diga que há VÁRIAS opções para todos os gostos e necessidades e pergunte o
+      // tipo/uso/estilo/faixa. (dono, 2026-10-16).
+      vereditoOfertaJev?.perguntar === true
+        ? '## Pedido VAGO — descubra ANTES de mostrar\nO cliente quer ver motos, MAS não disse o que procura. NÃO mostre fotos nem nomes agora: diga, de forma natural e curta, que temos VÁRIAS opções para todos os gostos e necessidades e PERGUNTE o que ele procura (tipo/uso — cidade, estrada, trilha —, estilo e faixa de preço). Só mostre motos depois que ele disser.'
+        : '',
       // FECHO POR MODELO ESPECÍFICO — quem escreve é a INTELIGÊNCIA (dono,
       // 2026-10-16): quando o cliente PEDE um modelo ("tem uma Biz?"), o sistema
       // envia as unidades DESSE modelo; o fecho deve ser natural e oferecer, se ele
