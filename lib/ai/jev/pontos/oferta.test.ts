@@ -36,6 +36,7 @@ describe('offer_motos Jev', () => {
       perguntar: false,
       criterio: 'preco',
       continuacao: false,
+      trocaDeInteresse: false,
       fecho: 'escolha',
       motivo: 'jev_liberou_preco',
     });
@@ -101,6 +102,7 @@ describe('offer_motos Jev', () => {
       perguntar: false,
       criterio: 'nenhum',
       continuacao: false,
+      trocaDeInteresse: false,
       fecho: 'nenhum',
       motivo: 'jev_negou',
     });
@@ -115,6 +117,7 @@ describe('offer_motos Jev', () => {
       perguntar: true,
       criterio: 'nenhum',
       continuacao: false,
+      trocaDeInteresse: false,
       fecho: 'nenhum',
       motivo: 'jev_perguntar',
     });
@@ -122,6 +125,21 @@ describe('offer_motos Jev', () => {
     expect(perguntaDeOfertaJev(ctx).oferta).toMatchObject({
       criteria: expect.objectContaining({ [OFERECER_PERGUNTAR]: expect.any(String) }),
     });
+  });
+
+  it('a Jev decide a TROCA DE INTERESSE (só com moto em foco)', () => {
+    // Sem moto em foco: a pergunta nem aparece.
+    expect(perguntaDeOfertaJev(ctx).troca_interesse).toBeUndefined();
+    // Com moto em foco: aparece e é lida.
+    const p = perguntaDeOfertaJev({ ...ctx, temMotoEmFoco: true, nomeMotoEmFoco: 'HONDA Biz 125' });
+    expect(p.troca_interesse?.type).toBe('choice');
+    expect(
+      vereditoDeOfertaDaJev({
+        oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} },
+        troca_interesse: { type: 'choice', choice: 'sim', confidence: 1, probabilities: {} },
+      }).trocaDeInteresse,
+    ).toBe(true);
+    expect(vereditoDeOfertaDaJev({ oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} } }).trocaDeInteresse).toBe(false);
   });
 
   it('oferecer sem critério escolhido → nenhum', () => {

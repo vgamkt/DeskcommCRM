@@ -3323,7 +3323,7 @@ async function executarTurnoDoAgente(
   // "Moto atual" da conversa (âncora do modo alternativa e da ferramenta de
   // semelhantes): a ESCOLHIDA; sem escolha, a REFERÊNCIA; sem ela, a única moto
   // apresentada. Calculada no nível do turno — o motor e a ferramenta usam.
-  const motoAtualDaConversa: MotoDoCatalogo | null = interesseAnteriorApagado
+  let motoAtualDaConversa: MotoDoCatalogo | null = interesseAnteriorApagado
     ? null
     : (catalogoDaConversa.escolhida ??
       catalogoDaConversa.referencia ??
@@ -3333,7 +3333,7 @@ async function executarTurnoDoAgente(
   // que a Jev recebe para COMBINAR (interesse ∩ critério novo) quando o cliente
   // adiciona um critério ("e tem alguma até 17 mil?"). Nomes, deduplicados, no
   // máximo 6 — o suficiente para ancorar a família/linha.
-  const motosEmFoco: string[] =
+  let motosEmFoco: string[] =
     preview !== undefined || interesseAnteriorApagado
       ? []
       : [
@@ -3516,7 +3516,22 @@ async function executarTurnoDoAgente(
       ? vereditoDeOfertaDaJev(vereditoTrio.porPonto.offer_motos ?? {})
       : await decidirOfertaComJev(pool, tenantId, ofertaCtx, runLog);
 
-  // ── GRAVADOR DE DECISÕES DO TURNO (P7, 2026-10-09) ───────────────────────
+  // TROCA DE INTERESSE — decidida pela JEV (doutrina `jev-decide-sempre`): quando ela
+  // diz que o cliente ABANDONOU a moto em foco (MESMO citando o nome dela — ex.:
+  // "deixa a Biz de lado, quero trilha" / "não quero mais a Biz"), o motor LIMPA a
+  // âncora + a fila AQUI. O regex acima é só fallback e não pega a recusa que cita o
+  // nome; aqui a decisão é da JEV. O turno reconstrói tudo pelo NOVO pedido.
+  if (vereditoOfertaJev?.trocaDeInteresse === true && !interesseAnteriorApagado) {
+    catalogoDaConversa.escolhida = null;
+    catalogoDaConversa.referencia = null;
+    interesseAnteriorApagado = true;
+    opcoesParaSalvar = null;
+    motoAtualDaConversa = null;
+    motosEmFoco = [];
+    runLog.info('turno: troca de interesse (JEV) — âncora e fila limpas', {
+      job_id: liveJob().id,
+    });
+  }
   // Um registro ÚNICO, sem PII, de QUEM decidiu o quê neste turno: ponto,
   // veredito da Jev, parâmetro determinístico pré-calculado e o caminho tomado.
   // Sem isto, "a regex venceu a Jev?" e "por que o bot mudou de assunto/silenciou?"

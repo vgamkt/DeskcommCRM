@@ -73,6 +73,13 @@ export interface VereditoDeOferta {
   continuacao: boolean;
   /** O TIPO de fecho da apresentação (decisão da Jev). */
   fecho: FechoDaApresentacao;
+  /**
+   * O cliente ABANDONOU a moto em FOCO e quer outra coisa? Decisão da JEV — ela
+   * entende que "deixa a Biz de lado, quero trilha" / "não quero mais a Biz" é
+   * TROCA, mesmo citando o nome da moto antiga. O motor, ao receber `true`, LIMPA a
+   * âncora + a fila e reconstrói pelo novo pedido (doutrina `jev-decide-sempre`).
+   */
+  trocaDeInteresse: boolean;
   /** Frase curta do porquê — para LOG, nunca para o cliente. */
   motivo: string;
 }
@@ -166,6 +173,27 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         nenhum: 'não perguntar nada agora',
       },
     },
+    // TROCA DE INTERESSE — decisão da JEV (doutrina `jev-decide-sempre`). Só quando
+    // há moto em foco: o cliente está abandonando ELA? Entende a intenção, não a
+    // palavra (ele pode citar o nome da moto antiga ao recusá-la).
+    ...(ctx.temMotoEmFoco
+      ? {
+          troca_interesse: {
+            type: 'choice' as const,
+            instructions:
+              'O cliente ABANDONOU a moto em FOCO e quer outra coisa? Marque "sim" quando ele ' +
+              `RECUSA / DEIXA DE LADO a moto em foco ("${ctx.nomeMotoEmFoco ?? ''}") e pede outra ` +
+              'moto/estilo/uso — MESMO citando o nome dela (ex.: "deixa a Biz de lado, quero trilha", ' +
+              '"não quero mais a Biz, quero ver outra", "esquece essa, me mostra outras"). Marque "nao" ' +
+              'quando ele segue falando DELA (elogio, dúvida, negociação, "ver de perto") ou só reforça ' +
+              'o interesse nela.',
+            criteria: {
+              sim: 'sim: abandonou/trocou a moto em foco, quer outra coisa',
+              nao: 'não: segue falando dela / não trocou de interesse',
+            },
+          },
+        }
+      : {}),
     // Só quando HÁ opções pendentes (já perguntamos "quer ver mais?"): a Jev decide
     // se o cliente quer CONTINUAR a lista ou pediu algo diferente. Ela lê a intenção
     // — QUALQUER forma de confirmar conta (não é regex de palavra).
@@ -201,6 +229,8 @@ export function vereditoDeOfertaDaJev(respostas: RespostasDeJev): VereditoDeOfer
       : 'nenhum';
   const cont = respostas.continuacao;
   const continuacao = cont?.type === 'choice' && cont.choice === 'mostrar_mais';
+  const ti = respostas.troca_interesse;
+  const trocaDeInteresse = ti?.type === 'choice' && ti.choice === 'sim';
   const f = respostas.fecho;
   const fechoBruto = f?.type === 'choice' ? f.choice : null;
   const fecho: FechoDaApresentacao =
@@ -216,6 +246,7 @@ export function vereditoDeOfertaDaJev(respostas: RespostasDeJev): VereditoDeOfer
     criterio,
     continuacao,
     fecho,
+    trocaDeInteresse,
     motivo: perguntar ? 'jev_perguntar' : oferecer ? `jev_liberou_${criterio}` : 'jev_negou',
   };
 }
