@@ -5740,7 +5740,12 @@ async function executarTurnoDoAgente(
                 temMaisOpcoesNesteTurno &&
                 !outrosNoValorNesteTurno &&
                 (fechoJev === 'escolha' || fechoJev === null);
-              if (perguntaMais !== '' && combinaEscolhaComMais) {
+              // PROGRESSÃO (moto específica, 1ª vez): o fecho TAMBÉM SUBSTITUI a pergunta
+              // do modelo (ex.: "O que achou?") — senão o "?" do modelo suprimia a
+              // progressão e o cliente nunca era levado à forma de pagamento.
+              const substituiPorProgressao =
+                nomeModeloEspecificoDoTurno !== '' && fechoJev === 'saber_mais' && !formaJaPerguntada;
+              if (perguntaMais !== '' && (combinaEscolhaComMais || substituiPorProgressao)) {
                 // Substitui SÓ a última frase-pergunta (a escolha); preserva o resto.
                 const t = final.trim();
                 const ultimoInterrog = t.lastIndexOf('?');
