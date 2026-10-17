@@ -141,6 +141,13 @@ export interface EntradaSelecaoPorIntencao {
    * NO MESMO valor (`outrosNoValor`). A lista vazia desliga a combinação.
    */
   motoEmFoco?: readonly string[];
+  /**
+   * (dono, 2026-10-17) Colunas que FILTRAM mesmo sendo "atributo de pedido" (ex.:
+   * cilindrada) — usado quando a referência dá a CILINDRADA REAL do modelo citado
+   * AUSENTE e o motor precisa limitar as parecidas ao mesmo porte ("CB 250" → sem a
+   * CB 650 de 41 mil). Sem isto, `ehAtributoDePedido` remove a cilindrada do filtro.
+   */
+  exigenciasRigidas?: readonly string[];
 }
 
 /** Tokens significativos (>=2 letras) do nome de uma moto, normalizados. */
@@ -705,9 +712,16 @@ export function selecionarPorIntencao(
     /potenci|cavalos|\bcv\b|\bhp\b/i.test(c);
   const exigencias = !criteriosDinamicos
     ? []
-    : [...new Set([...(input.exigidos ?? []), ...faixasComLimite])].filter(
-        (c) => !ehAtributoDePedido(c),
-      );
+    : [
+        ...new Set([
+          ...[...(input.exigidos ?? []), ...faixasComLimite].filter(
+            (c) => !ehAtributoDePedido(c),
+          ),
+          // Colunas forçadas pelo chamador (ex.: cilindrada real do modelo citado
+          // ausente) — NÃO passam pelo filtro de "atributo de pedido".
+          ...(input.exigenciasRigidas ?? []),
+        ]),
+      ];
   // ESCOPO 9: só combina quando há um critério NUMÉRICO (faixa com limite) — o
   // caso "e tem alguma até 17 mil". Sem ele, o turno NÃO é um refino e a busca
   // segue o comportamento anterior (nada de perguntar "outros nesse valor" à toa).

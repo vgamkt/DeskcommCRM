@@ -1118,3 +1118,37 @@ describe('hipotesesDeMaiorNota (só o modelo pedido, irmão de nota baixa fora)'
     expect(hipotesesDeMaiorNota(h).map((x) => x.nome)).toEqual(['Biz 125', 'XMax 250']);
   });
 });
+
+describe('exigenciasRigidas (cilindrada do modelo ausente FILTRA)', () => {
+  const LOJA: MotoDoCatalogo[] = [
+    moto('HONDA CBX 250 Twister', { categoria: 'Naked, Street', cilindrada: '249', marca: 'HONDA', preco: '9990' }),
+    moto('HONDA CB 300 R FLEX', { categoria: 'Street, Naked', cilindrada: '293.5', marca: 'HONDA', preco: '14990' }),
+    moto('HONDA CB 650 ABS', { categoria: 'Naked', cilindrada: '649', marca: 'HONDA', preco: '41000' }),
+  ];
+  const base = {
+    termoBase: 'Tem uma CB 250?',
+    criterios: {},
+    intencao: 'pedido' as const,
+    motoAtual: null,
+    candidatos: LOJA,
+    mapeamento: MAPEAMENTO,
+    quantidade: 5,
+    filtrarPorComparacao: true,
+    exigidos: ['categoria'],
+    hipoteses: [{ nome: 'CBX 250' }, { nome: 'CB 300' }, { nome: 'CB 650' }],
+    faixas: { categoria: ['Naked'], cilindrada: { min: 124, max: 498 } },
+  };
+
+  it('com exigenciasRigidas, a cilindrada filtra e tira a CB 650', () => {
+    const r = selecionarPorIntencao({ ...base, exigenciasRigidas: ['cilindrada'] });
+    const nomes = r.motos.map((m) => m.nome);
+    expect(nomes).toContain('HONDA CBX 250 Twister');
+    expect(nomes).toContain('HONDA CB 300 R FLEX');
+    expect(nomes).not.toContain('HONDA CB 650 ABS');
+  });
+
+  it('sem o flag, a cilindrada NÃO filtra (atributo de pedido) — CB 650 entra', () => {
+    const r = selecionarPorIntencao({ ...base });
+    expect(r.motos.map((m) => m.nome)).toContain('HONDA CB 650 ABS');
+  });
+});

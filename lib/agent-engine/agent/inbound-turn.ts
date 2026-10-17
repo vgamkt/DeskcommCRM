@@ -235,7 +235,7 @@ import { montarConhecimentoDoTurno, renderBlocoDeConhecimento } from './conhecim
 import { abrirAvisoDeLacuna } from './lacuna-de-conhecimento';
 import type { FaixasDoPedido, HipoteseDeMoto } from './extrair-criterios';
 import { carregarCatalogoDoBanco, carregarDescricaoDaMoto, mesclarMotos } from './catalogo-do-banco';
-import { categoriaDoModeloNaReferencia } from './categoria-da-referencia';
+import { dadosDoModeloNaReferencia } from './categoria-da-referencia';
 import { categoriaDoModeloComJev } from './modelo-categoria-jev';
 import { CanalComBuffer } from './canal-com-buffer';
 import { unificarPecasDoTurno } from './juncao-do-turno';
@@ -255,6 +255,7 @@ import {
   colunaDeSimilares,
   colunaDoPapel,
   colunasDoCatalogo,
+  detectarPapelColuna,
   legendaParaExibicao,
   renderBlocoCatalogo,
 } from '@/lib/external-db/catalogo';
@@ -1324,6 +1325,27 @@ const STOPWORDS_DE_PEDIDO = new Set([
   'aqui',
   'ali',
   'la',
+  // SAUDAÇÕES/CORTESIA (dono, 2026-10-17): sem isto, "Boa NOITE!" virava "modelo
+  // citado fora do estoque" e a Jev classificava "noite" como categoria → o motor
+  // impunha um filtro errado (medido ao vivo: "CB 250" → categoria Naked → CB 650).
+  'noite',
+  'tarde',
+  'manha',
+  'dia',
+  'bom',
+  'boa',
+  'oi',
+  'ola',
+  'obrigado',
+  'obrigada',
+  'sou',
+  'estou',
+  'vou',
+  'vai',
+  'estava',
+  'ate',
+  'favor',
+  'por',
 ]);
 
 
@@ -3203,6 +3225,13 @@ async function executarTurnoDoAgente(
   // cujo valor esvaziou (ou quase) a família em foco → o turno convida a ver
   // OUTROS MODELOS NESSE VALOR. Substitui o "mais opções" genérico neste turno.
   let outrosNoValorNesteTurno = false;
+  // (dono, 2026-10-17) O cliente citou um MODELO que NÃO existe no estoque (ex.:
+  // "CB 250"): quando as fotos saírem, o motor GARANTE o aviso de que são PARECIDAS
+  // (não exatas) — antes isso dependia do modelo e às vezes não vinha. Guarda o nome
+  // do modelo citado (formatado) para o aviso.
+  let modeloCitadoAusente = '';
+  // Já inserimos o AVISO de parecidas neste turno? (evita repetir em várias bolhas).
+  let avisoParecidasInserido = false;
   // C-089: fila de opções pendentes a persistir no catálogo da conversa.
   let opcoesParaSalvar: FilaDeOpcoes | null | undefined = undefined;
   // Motos apresentadas que precisam ser persistidas (consumo da fila).
@@ -5088,25 +5117,58 @@ async function executarTurnoDoAgente(
             // chutar a linha errada — "Lander" → hipótese "CB 500" → só a CB 500 X).
             // Mostramos as motos da CATEGORIA (trail) que casam. Medido ao vivo 2026-10-14.
             let citouModeloForaDoEstoque = false;
+            // Coluna de cilindrada que deve FILTRAR (mesmo porte) quando a referência
+            // dá a CC real do modelo citado ausente — ver `exigenciasRigidas`.
+            let colCilindradaRigida: string | null = null;
             if (turnoDeCatalogo && currentInboundText !== null && catalogoMapeamento !== null) {
-              const palavras = [
-                ...new Set(currentInboundText.toLowerCase().match(/[a-zà-ú]{4,}/g) ?? []),
-              ];
-              const nomesEstoque = candidatos.map((m) => m.nome.toLowerCase()).join(' ');
-              const termosCitados = palavras.filter(
-                (p) =>
-                  !nomesEstoque.includes(p) &&
-                  !STOPWORDS_DE_PEDIDO.has(p.normalize('NFD').replace(/[\u0300-\u036f]/g, '')),
+              // Termos candidatos a MODELO: palavra (≥2) + NÚMERO adjacente ("cb 250")
+              // ou palavra longa sozinha ("lander"), SEM stopwords/saudações. Casa por
+              // sem-acento-sem-espaço contra os nomes do estoque — "CB 250" NÃO casa
+              // "CBX 250" (linha diferente), então é tratado como modelo ausente.
+              const semEspaco = (s: string): string =>
+                s
+                  .toLowerCase()
+                  .normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '')
+                  .replace(/[^a-z0-9]/g, '');
+              const brutos =
+                currentInboundText
+                  .toLowerCase()
+                  .normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '')
+                  .match(/[a-z0-9]+/g) ?? [];
+              const termos: string[] = [];
+              for (let i = 0; i < brutos.length; i += 1) {
+                const w = brutos[i]!;
+                if (/^\d+$/.test(w) || w.length < 2 || STOPWORDS_DE_PEDIDO.has(w)) continue;
+                const prox = brutos[i + 1];
+                if (prox !== undefined && /^\d+$/.test(prox)) termos.push(`${w} ${prox}`);
+                else if (w.length >= 4) termos.push(w);
+              }
+              const nomesEstoque = candidatos.map((m) => semEspaco(m.nome)).join(' ');
+              const termosCitados = [...new Set(termos)].filter(
+                (t) => !nomesEstoque.includes(semEspaco(t)),
               );
               if (termosCitados.length > 0) {
                 citouModeloForaDoEstoque = true;
-                // DEGRAU 1: referência `modelos` (determinístico).
-                let catRef = await categoriaDoModeloNaReferencia(
+                // Nome do modelo citado para o AVISO de "parecidas" (formatação leve:
+                // siglas/anos em maiúsculas, resto com a 1ª letra maiúscula).
+                const termo = termosCitados[0] ?? '';
+                modeloCitadoAusente = termo
+                  .split(' ')
+                  .map((w) =>
+                    w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1),
+                  )
+                  .join(' ');
+                // DEGRAU 1: referência `modelos` (determinístico) — categoria + CC real.
+                const refModelo = await dadosDoModeloNaReferencia(
                   deps.crmCfg.supabase,
                   tenantId,
                   catalogoMapeamento,
                   termosCitados,
                 );
+                let catRef = refModelo?.categoria ?? null;
+                const ccRef = refModelo?.cilindrada ?? null;
                 let fonteCat = 'referencia';
                 // DEGRAU 2: a referência não tem o modelo → a JEV decide a categoria
                 // (escolha fechada sobre as categorias REAIS do estoque).
@@ -5141,6 +5203,25 @@ async function executarTurnoDoAgente(
                   criteriosDoTurno['categoria'] = catRef;
                   if (!exigidosDoTurno.includes('categoria')) {
                     exigidosDoTurno = [...exigidosDoTurno, 'categoria'];
+                  }
+                }
+                // CILINDRADA REAL do modelo (referência): limita as parecidas ao MESMO
+                // PORTE. "CB 250" (249 cc) → banda 0.5x–2x → tira a CB 650 (649 cc);
+                // o "Lander 250" (249 cc) mantém o trail até ~500 cc. Sem referência,
+                // não há banda (comportamento anterior). Determinístico.
+                if (ccRef !== null && ccRef > 0) {
+                  const ccCol = (catalogoMapeamento.colunas ?? [])
+                    .map((c) => c.coluna)
+                    .find((c) => detectarPapelColuna(c) === 'cilindrada');
+                  if (ccCol !== undefined) {
+                    faixasDoTurno = {
+                      ...faixasDoTurno,
+                      [ccCol]: { min: Math.round(ccRef * 0.5), max: Math.round(ccRef * 2) },
+                    };
+                    colCilindradaRigida = ccCol;
+                    if (!exigidosDoTurno.includes(ccCol)) {
+                      exigidosDoTurno = [...exigidosDoTurno, ccCol];
+                    }
                   }
                 }
               }
@@ -5302,6 +5383,11 @@ async function executarTurnoDoAgente(
               // modelo citado NÃO está no estoque (ex.: "Lander"), a oferta é pela
               // CATEGORIA — NÃO se estreita pela linha de uma hipótese da Jev.
               nomeiaModelo: nomeiaModeloEspecifico,
+              // (dono, 2026-10-17) MODELO citado AUSENTE: a referência deu a cilindrada
+              // REAL — ela FILTRA (mesmo porte), tirando a CB 650 de um pedido de CB 250.
+              ...(colCilindradaRigida !== null
+                ? { exigenciasRigidas: [colCilindradaRigida] }
+                : {}),
             });
             // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
             // motor EXECUTA (filtra/ordena). Registra os dois lados.
@@ -5356,11 +5442,27 @@ async function executarTurnoDoAgente(
                   // (ex.: acima do teto) e por isso só saem DEPOIS do "quer ver
                   // similares?".
                   const faixasDaFila = { ...faixasDoTurno, ...faixasSimilaresDoTurno };
+                  // (dono, 2026-10-17) MODELO citado AUSENTE: a 1ª oferta é do MESMO
+                  // PORTE (categoria + cc), mas a FILA NÃO descarta as de porte
+                  // diferente — elas ficam para o "ver mais", e QUEM DECIDE mostrá-las
+                  // é a JEV (a continuação). Sem isto, a CB 650 sairia em definitivo do
+                  // pedido de "CB 250"; com isto, ela fica na fila e só sai se o
+                  // cliente pedir/aprovar.
+                  const exigenciasDaFila =
+                    colCilindradaRigida !== null
+                      ? exigidosDoTurno.filter((c) => c !== colCilindradaRigida)
+                      : exigidosDoTurno;
+                  const faixasDaFilaEfetivas =
+                    colCilindradaRigida !== null
+                      ? (Object.fromEntries(
+                          Object.entries(faixasDaFila).filter(([k]) => k !== colCilindradaRigida),
+                        ) as typeof faixasDaFila)
+                      : faixasDaFila;
                   const parciais = filtrarPorExigencias(
                     candidatos,
-                    exigidosDoTurno,
+                    exigenciasDaFila,
                     hipotesesDoTurno,
-                    faixasDaFila,
+                    faixasDaFilaEfetivas,
                     cfgCatalogo?.tolerancia_preco_pct ?? 30,
                   ).filter((m) => !casadasSet.has(m.nome) && !jaEnviadas.has(m.nome));
                   opcoesParaSalvar = {
@@ -5968,6 +6070,22 @@ async function executarTurnoDoAgente(
               const vaiMostrarMotos =
                 (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) ||
                 fotos.length > 0;
+              // AVISO DE PARECIDAS (dono, 2026-10-17): o cliente pediu um MODELO que
+              // não existe no estoque e as fotos que vão sair são PARECIDAS, não
+              // exatas — o motor GARANTE o aviso (antes dependia do modelo e às vezes
+              // não vinha). Só uma vez e só quando MOSTRA motos; não repete se o
+              // modelo já avisou.
+              if (
+                modeloCitadoAusente !== '' &&
+                vaiMostrarMotos &&
+                !avisoParecidasInserido &&
+                !/(parecid|exat|mais pr[óo]xim|fora do estoque|n[ãa]o (est[áa]|tem|tenho|temos|h[áa]|possu)|acabou)/i.test(
+                  corpoFinal,
+                )
+              ) {
+                avisoParecidasInserido = true;
+                corpoFinal = `Não temos a ${modeloCitadoAusente} exatamente no estoque agora — separei estas opções parecidas:\n\n${corpoFinal}`;
+              }
               const pendenteFecho =
                 fluxoAtendimento !== null ? fluxoAtendimento.situacao.pendentes[0] : undefined;
               // ESCOLHA de moto cujo álbum JÁ saiu: NENHUMA foto vai neste turno. Tira a
