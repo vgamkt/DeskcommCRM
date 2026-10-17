@@ -86,6 +86,20 @@ export function comQuantidadeNoTexto(
   // "motos" (poderia ser o nome da loja: "...da Valle Motos São José").
   const solto = t.match(/\b(op[çc][õo]es|modelos?|alternativas?)\b/i);
   if (solto !== null) return texto.replace(solto[0], `${n} ${solto[0]}`);
+  // FRASE DE CONTAGEM NO LUGAR CERTO (dono, 2026-10-17): o modelo chamou as motos
+  // com um verbo de "separar/mostrar" + artigo ("Separei as CB 300") — injeta a
+  // contagem ALI, em vez de PREPENDAR uma abertura que empilha antes da fala do
+  // modelo ("dá uma olhada nessas 5: Temos sim, Vander! Separei as CB 300").
+  const verboChamada =
+    /\b(separei|selecionei|separamos|selecionamos|trouxe|trouxemos|mostrei|mostramos|juntei|juntamos|peguei|pegamos)\s+(as|os|essas|esses|estas|estes|umas|uns|algumas|alguns)\b/i;
+  const mChamada = t.match(verboChamada);
+  if (mChamada !== null && mChamada.index !== undefined) {
+    const corte = mChamada.index + mChamada[0].length;
+    const resto = t.slice(corte);
+    // Já tem número depois do artigo ("Separei as 3 CB 300")? Não mexe.
+    if (/^\s*\d/.test(resto)) return texto;
+    return `${t.slice(0, corte)} ${n}${resto}`;
+  }
   // Sem termo natural: só prepende se NÃO houver saudação no início (evita empilhar).
   if (/^\s*(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|e a[íi])/i.test(t)) return texto;
   const factual = introducaoFactualDaApresentacao(n, opts);
@@ -294,4 +308,44 @@ export function perguntaProsseguimentoAposMoto(args: {
   // com o MODELO (ou com `perguntaDeSaberMais` quando não há progressão) — juntar os dois
   // aqui DUPLICAVA o convite (o modelo já escreve um). (dono, 2026-10-16.)
   return perguntaDeAquisicao({ nome: args.nome ?? null, variacao: args.variacao });
+}
+
+/**
+ * Remove FRASES que ANUNCIAM envio de fotos/opções — usado quando NENHUMA foto vai
+ * sair neste turno (ex.: o teto de valor filtrou tudo). Execução do FATO, não
+ * decisão: o cliente não pode ler "separei as mais acessíveis / olha as opções" e
+ * não vir nada (skill §1: nunca prometer foto sem enviar). Espelha o corte que o
+ * motor já faz quando o álbum da moto escolhida já saiu. Módulo PURO.
+ *
+ * Conservador: só corta a frase que começa com VERBO de anúncio E traz um OBJETO de
+ * moto/opção ("Separei as mais acessíveis", "Deixa eu te mostrar as motos", "Dá uma
+ * olhada nas opções"). Frases sem esse objeto (ex.: "vou te mostrar como funciona o
+ * financiamento") NÃO são cortadas. Nunca esvazia o texto inteiro.
+ */
+const ANUNCIO_DE_FOTOS =
+  /^(separei|selecionei|trouxe|vou\s+(te\s+)?(mostrar|mandar|enviar|postar)|deixa\s+eu\s+(te\s+)?(mostrar|mandar)|te\s+(mostro|mando|envio)|d[áa]\s+uma\s+olhada|olh[ae]|veja|confira)\b[^.!?\n]*\b(fotos?|imagens?|op[çc][õo]es|motos?|unidades?|alternativas?|modelos?|ve[íi]culos?|a\s+mais|as\s+mais|essas|estas)\b/i;
+
+export function semAnuncioDeFotos(texto: string): string {
+  const bruto = texto.trim();
+  if (bruto === '') return texto;
+  const frases = bruto.split(/(?<=[.!?…])\s+|\n+/);
+  const mantidas = frases.filter((f) => !ANUNCIO_DE_FOTOS.test(f.trim()));
+  const out = mantidas.join(' ').replace(/[ \t]{2,}/g, ' ').trim();
+  return out === '' ? texto : out;
+}
+
+/**
+ * Remove a PERGUNTA DE ESCOLHA ("Qual delas…", "Alguma delas…") de um texto —
+ * usado quando ela caiu na INTRODUÇÃO (antes das fotos): o motor coloca a pergunta
+ * DEPOIS das fotos, então tira a do modelo para não DUPLICAR (medido ao vivo:
+ * "Qual delas…" na intro + "Alguma delas…" no fecho). Módulo PURO.
+ */
+const PERGUNTA_DE_ESCOLHA =
+  /\b(qual (delas|dessas|te (interessou|agradou|chamou)|chamou)|alguma (delas|dessas)|gostou de alguma)\b/i;
+
+export function removerPerguntaDeEscolha(texto: string): string {
+  const frases = texto.split(/(?<=[.!?…])\s+|\n+/);
+  const mantidas = frases.filter((f) => !(f.includes('?') && PERGUNTA_DE_ESCOLHA.test(f)));
+  const out = mantidas.join(' ').replace(/[ \t]{2,}/g, ' ').trim();
+  return out;
 }

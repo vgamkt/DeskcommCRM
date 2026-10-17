@@ -178,6 +178,7 @@ import {
   extrairMotosDoResultado,
   FOTOS_TODAS,
   motosCitadasNoTexto,
+  motosDeNomes,
   normalizarNomeDeMoto,
   planoDeFotos,
   planoDeFotosDasMotos,
@@ -206,6 +207,8 @@ import {
   perguntaDeOutrosNoValor,
   perguntaDeSaberMais,
   perguntaProsseguimentoAposMoto,
+  removerPerguntaDeEscolha,
+  semAnuncioDeFotos,
 } from './mais-opcoes';
 import { arbitrar, type PedidoAoArbitro } from '../../ai/jev/arbitro';
 import { perguntaDeNegociacaoAutoContida } from '../../ai/jev/pontos/negociacao';
@@ -239,7 +242,7 @@ import { unificarPecasDoTurno } from './juncao-do-turno';
 import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
-import { casaPerfil, filtrarPorExigencias, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, filtrarPorExigencias, hipotesesDeMaiorNota, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   decidirOfertaComAutoridadeDaJev,
   preferenciaDoCriterio,
@@ -3499,6 +3502,19 @@ async function executarTurnoDoAgente(
       )
       .catch(() => {});
   }
+  // TETO DE VALOR (skill §6): nunca oferecer acima do orçamento +30%. Fonte ÚNICA,
+  // aplicada em TODOS os caminhos de oferta (seleção automática, fallbacks por
+  // citação do cliente e motos declaradas). Antes, o fallback por
+  // `motosCitadasNoTexto` e o caso "nada cabe no valor" ficavam SEM filtro e
+  // vazavam motos acima do teto (medido ao vivo).
+  const limiteTetoDoTurno = orcamentoTurno !== null ? Math.round(orcamentoTurno * 1.3) : null;
+  // Predicado do teto (usado nos fallbacks por citação do cliente). Preço nulo
+  // passa (não dá para checar); com preço, só abaixo do teto.
+  const dentroDoTetoDoTurno = (m: MotoDoCatalogo): boolean => {
+    if (limiteTetoDoTurno === null) return true;
+    const p = precoNumericoDaMoto(m);
+    return p === null || p <= limiteTetoDoTurno;
+  };
   // Quantas vezes o cliente pede para ver opções (contando este turno). Na 2ª
   // vez, se as opções dentro do orçamento não atenderam, libera valores PRÓXIMOS.
   const pedidoDeOpcoesTurno =
@@ -5141,6 +5157,28 @@ async function executarTurnoDoAgente(
               intencaoDoTurno !== 'alternativa' &&
               !ehObjecaoMsg &&
               motosCitadasNoTexto(msgCliente, catalogoDoTurno).length > 0;
+            // (dono, 2026-10-17) O cliente CITOU um MODELO que EXISTE (ex.: "G 310 GS")
+            // → as fotos têm que ser as unidades DESSE modelo, que a JEV já decidiu
+            // (`hipotesesDoTurno`). O pré-filtro por TOKEN acima costuma pegar só a
+            // MARCA ("BMW" → 4 modelos) e, como "modelo existe" desliga o filtro por
+            // comparação, a FAMÍLIA inteira vazava (medido ao vivo: texto "G 310 GS",
+            // fotos de S 1000 RR / G 310 R / R 1200 GS). Aqui estreita à LINHA do
+            // modelo de MAIOR NOTA da Jev — o irmão de designação diferente (ex.:
+            // "G 310 R" para "G 310 GS") tem nota MENOR e fica fora. Casamento por
+            // CONTEÚDO do nome.
+            if (pedidoDeModeloExistente && hipotesesDoTurno.length > 0) {
+              const chaveDe = (s: string): string => normalizarNomeDeMoto(s).replace(/\s+/g, '');
+              const nomesDaJev = hipotesesDeMaiorNota(hipotesesDoTurno)
+                .map((h) => (typeof h.nome === 'string' ? chaveDe(h.nome) : ''))
+                .filter((n) => n !== '');
+              if (nomesDaJev.length > 0) {
+                const naLinha = candidatos.filter((m) => {
+                  const chave = chaveDe(m.nome);
+                  return nomesDaJev.some((alvo) => chave.includes(alvo) || alvo.includes(chave));
+                });
+                if (naLinha.length > 0) candidatos = naLinha;
+              }
+            }
             // Fonte ÚNICA da quantidade: a config do AGENTE (`ai_agents.config.
             // catalog`), não mais o `catalog_mappings`.
             const cfgCatalogo = agentConfig?.catalogConfig;
@@ -5199,9 +5237,22 @@ async function executarTurnoDoAgente(
                     return p !== null && p <= valorLimite;
                   },
                 );
-                if (amplo.length > 0) candidatos = amplo;
+                // NUNCA deixar sem filtro: se nada cabe no teto, `amplo` é vazio e a
+                // oferta fica vazia (o turno trata via objeção/negociação). Antes,
+                // `candidatos` permanecia SEM filtro e motos acima do teto vazavam
+                // (medido ao vivo: orçamento 6 mil → motos de 12,9 a 18,9 mil).
+                candidatos = amplo;
               }
             }
+            // P1 (dono, 2026-10-17): o cliente NOMEOU um MODELO específico? A
+            // decisão alimenta a LINHA do modelo (filtro/complemento na seleção) e
+            // TAMBÉM a FILA do "ver mais" abaixo — um pedido específico não pode
+            // espalhar para a família/marca (medido ao vivo: "CB 300" trazia CBX/
+            // CB 500 X na 1ª oferta E na fila).
+            const nomeiaModeloEspecifico =
+              !citouModeloForaDoEstoque &&
+              (pedeMotoExplicito(mensagemDoJob ?? '') ||
+                motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0);
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
@@ -5250,10 +5301,7 @@ async function executarTurnoDoAgente(
               // na mesma LINHA do modelo — não completa com qualquer marca. Se o
               // modelo citado NÃO está no estoque (ex.: "Lander"), a oferta é pela
               // CATEGORIA — NÃO se estreita pela linha de uma hipótese da Jev.
-              nomeiaModelo:
-                !citouModeloForaDoEstoque &&
-                (pedeMotoExplicito(mensagemDoJob ?? '') ||
-                  motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0),
+              nomeiaModelo: nomeiaModeloEspecifico,
             });
             // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
             // motor EXECUTA (filtra/ordena). Registra os dois lados.
@@ -5327,7 +5375,15 @@ async function executarTurnoDoAgente(
                     categorias: new Set(perfil.categorias),
                   };
                   const restantes = pendentesBrutos.filter((m) => !casadasSet.has(m.nome));
-                  const mesmoPerfil = restantes.filter((m) => casaPerfil(m, perfilSet));
+                  // P1 (dono, 2026-10-17): pedido de MODELO específico → a fila fica
+                  // na LINHA (só as unidades do modelo que a JEV marcou e não saíram).
+                  // NÃO completa com `mesmoPerfil` (mesma marca/categoria), que
+                  // vazava a família/alheias ("CB 300" → CB 500 X / Fazer / Factor /
+                  // CBX 250; medido ao vivo). Sem unidade restante da linha, a fila
+                  // fica vazia e o turno NÃO convida o "ver mais" genérico.
+                  const mesmoPerfil = nomeiaModeloEspecifico
+                    ? []
+                    : restantes.filter((m) => casaPerfil(m, perfilSet));
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
@@ -5378,13 +5434,20 @@ async function executarTurnoDoAgente(
               );
             }
             // Fallback (comportamento anterior): pedido novo que casa por nome.
-            const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
+            // TETO (skill §6) vale AQUI também: moto citada acima do orçamento não sai.
+            const doPedido = motosCitadasNoTexto(
+              mensagemDoJob ?? '',
+              catalogoDoTurno,
+            ).filter(dentroDoTetoDoTurno);
             if (doPedido.length > 0) {
               motosOferecidasNesteTurno = doPedido;
               return planoDeFotosDasMotos(doPedido, 1, legendaConfig);
             }
           } else if (catalogoDoTurno.length > 0) {
-            const doPedido = motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno);
+            const doPedido = motosCitadasNoTexto(
+              mensagemDoJob ?? '',
+              catalogoDoTurno,
+            ).filter(dentroDoTetoDoTurno);
             if (doPedido.length > 0) {
               motosOferecidasNesteTurno = doPedido;
               return planoDeFotosDasMotos(doPedido, undefined, legendaConfig);
@@ -5397,12 +5460,18 @@ async function executarTurnoDoAgente(
           const limiteDeclaradas =
             orcamentoTurno !== null ? Math.round(orcamentoTurno * toleranciaDeclaradas) : null;
           const motosDeclaradas = motos ?? [];
+          const catalogoConhecido = [...catalogoDoTurno, ...catalogoDaConversa.motos];
           const motosDoModelo =
             limiteDeclaradas !== null
               ? motosDeclaradas.filter((nome) => {
-                  const alvo = [...catalogoDoTurno, ...catalogoDaConversa.motos].find(
-                    (x) => x.nome === nome,
-                  );
+                  // Resolve pelo MESMO casamento TOLERANTE que o `planoDeFotos` usa
+                  // (`motosDeNomes`): pela IGUALDADE EXATA, o nome declarado pelo
+                  // modelo ("BMW G 310 GS") não casava o nome do catálogo
+                  // ("... G 310 GS 2022") e o teto era PULADO — as fotos saíam
+                  // resolvidas pelo casamento tolerante (medido ao vivo: orçamento
+                  // 6 mil → 5 motos de 12,9 a 18,9 mil). Sem resolver aqui, dá para
+                  // furar o teto por baixo.
+                  const alvo = motosDeNomes([nome], catalogoConhecido)[0];
                   if (alvo === undefined) return true;
                   const p = precoNumericoDaMoto(alvo);
                   return p === null || p <= limiteDeclaradas;
@@ -5746,6 +5815,11 @@ async function executarTurnoDoAgente(
               const substituiPorProgressao =
                 nomeModeloEspecificoDoTurno !== '' && fechoJev === 'saber_mais' && !formaJaPerguntada;
               if (perguntaMais !== '' && (combinaEscolhaComMais || substituiPorProgressao)) {
+                // A pergunta de ESCOLHA do modelo pode ter caído na INTRODUÇÃO (antes
+                // das fotos). O motor põe a pergunta DEPOIS das fotos — tira a do
+                // modelo de lá para NÃO duplicar (medido ao vivo: "Qual delas…" na
+                // intro + "Alguma delas…" no fecho).
+                introducao = removerPerguntaDeEscolha(introducao);
                 // Substitui SÓ a última frase-pergunta (a escolha); preserva o resto.
                 const t = final.trim();
                 const ultimoInterrog = t.lastIndexOf('?');
@@ -5905,6 +5979,14 @@ async function executarTurnoDoAgente(
                   .filter((p) => !/\b(fotos?|imagens?)\b/i.test(p))
                   .join('\n\n')
                   .trim();
+              }
+              // NENHUMA foto vai sair neste turno (ex.: o teto de valor filtrou tudo):
+              // o modelo às vezes escreve uma CHAMADA anunciando fotos/opções
+              // ("Separei as mais acessíveis pra você ter ideia") que não vão chegar.
+              // Execução do FATO (não é decisão): tira o anúncio — o cliente não pode
+              // ler que vem e não vir nada (skill §1).
+              if (!vaiMostrarMotos) {
+                corpoFinal = semAnuncioDeFotos(corpoFinal);
               }
               if ((vaiMostrarMotos || escolhaAlbumJaMostrado) && (pendenteFecho !== undefined || escolhaAlbumJaMostrado)) {
                 const p = pendenteFecho?.config;

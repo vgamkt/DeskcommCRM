@@ -152,7 +152,7 @@ function tokensDoNome(nome: string): Set<string> {
   );
 }
 
-/** A moto compartilha algum token SIGNIFICATIVO com o nome das hipóteses? (linha) */
+/** A moto está na MESMA LINHA do modelo das hipóteses? (casamento por CONTEÚDO) */
 function compartilhaLinhaDoModelo(
   nome: string,
   hipoteses: readonly HipoteseDeMoto[],
@@ -160,16 +160,38 @@ function compartilhaLinhaDoModelo(
   // FURO CORRIGIDO (2026-10-11): a comparação usava QUALQUER token — e a CILINDRADA
   // ("250", "160") é um token. Então "YS Fazer 250" casava com QUALQUER "250"
   // (XMax 250, CBX 250 Twister) e essas motos alheias entravam na apresentação.
-  // Agora tokens puramente NUMÉRICOS (cilindrada/ano) são ignorados: a "linha" é o
-  // NOME do modelo (fazer, xmax, cbx…), não o número.
-  const significativos = (s: string): Set<string> =>
-    new Set([...tokensDoNome(s)].filter((t) => !/^\d+$/.test(t)));
-  const alvo = significativos(nome);
+  // Tokens numéricos passaram a ser ignorados.
+  // FURO CORRIGIDO (2026-10-17): mesmo ignorando o número, "linha" = QUALQUER token
+  // significativo em comum era largo demais — "CB 300" casava com "CB 500 X"/"CB 650"
+  // (token "cb") e a hipótese "CB 300 F Twister" casava com "CBX 250 Twister" (token
+  // "twister"); um pedido ESPECÍFICO misturava a família inteira (medido ao vivo).
+  // Agora a linha exige o NOME do modelo CONTIDO no outro (sem espaços), nos dois
+  // sentidos — o mesmo critério da `notaDaJev`: "CB 300" só casa quem tem "cb300".
+  const chave = normalizarNomeDeMoto(nome).replace(/\s+/g, '');
+  if (chave === '') return false;
   for (const h of hipoteses) {
     if (typeof h.nome !== 'string' || h.nome.trim() === '') continue;
-    for (const t of significativos(h.nome)) if (alvo.has(t)) return true;
+    const alvo = normalizarNomeDeMoto(h.nome).replace(/\s+/g, '');
+    if (alvo !== '' && (chave.includes(alvo) || alvo.includes(chave))) return true;
   }
   return false;
+}
+
+/**
+ * As hipóteses de MAIOR NOTA — o(s) modelo(s) que o cliente PEDIU. Quando o cliente
+ * NOMEIA um modelo e ele existe no estoque, a 1ª oferta deve ser só as unidades
+ * DESSE modelo; um IRMÃO da mesma família mas de designação diferente (ex.: pediu
+ * "G 310 GS" e a moto é "G 310 R") recebe uma nota MENOR da Jev e fica de fora.
+ * Sem notas (hipóteses antigas), devolve todas. Pura.
+ */
+export function hipotesesDeMaiorNota(
+  hipoteses: readonly HipoteseDeMoto[],
+  margem = 0.15,
+): HipoteseDeMoto[] {
+  const comNota = hipoteses.filter((h) => typeof h.score === 'number');
+  if (comNota.length === 0) return [...hipoteses];
+  const topo = Math.max(...comNota.map((h) => h.score as number));
+  return hipoteses.filter((h) => typeof h.score === 'number' && h.score >= topo - margem);
 }
 
 export interface ResultadoSelecaoPorIntencao {
@@ -734,6 +756,19 @@ export function selecionarPorIntencao(
         input.principal ?? null,
         input.termoBase,
       );
+    }
+    // P1 (dono, 2026-10-17): pedido ESPECÍFICO de um MODELO (`nomeiaModelo`) que
+    // NÃO caiu no filtro ESTRITO não pode espalhar para a FAMÍLIA/marca. O OR
+    // pontuado casa por atributo (marca/categoria/cilindrada) e trazia "CBX 250
+    // Twister"/"CB 500 X" num pedido de "CB 300" (medido ao vivo). Essa lista
+    // `casadas` também é a FILA do "ver mais" (inbound-turn), então o vazamento ia
+    // longe. Restringe à LINHA das hipóteses da JEV (o MODELO, não a família).
+    // Sem linha reconhecível (ex.: hipóteses só de marca/categoria), mantém.
+    if (input.nomeiaModelo === true && !estrito && casadas.length > 0) {
+      const naLinhaDoModelo = casadas.filter((m) =>
+        compartilhaLinhaDoModelo(m.nome, input.hipoteses ?? []),
+      );
+      if (naLinhaDoModelo.length > 0) casadas = naLinhaDoModelo;
     }
     if (casadas.length > 0) {
       // ESCOPO 9 — REFINO (interesse ∩ critério): com moto(s) em FOCO e hipóteses

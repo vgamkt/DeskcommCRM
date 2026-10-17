@@ -7,6 +7,7 @@ import {
   casaPerfil,
   filtrarPorExigencias,
   filtrarPorHipoteses,
+  hipotesesDeMaiorNota,
   pedePrecoSemValor,
   perfilDaIA,
   querAlternativa,
@@ -1041,5 +1042,79 @@ describe('selecionarPorIntencao — nomeiaModelo mantém a LINHA do modelo', () 
     const r = selecionarPorIntencao({ ...base, nomeiaModelo: true });
     expect(r.motos.map((m) => m.nome)).not.toContain('HONDA XRE 190');
     expect(r.motos.some((m) => m.nome.includes('CB'))).toBe(true);
+  });
+});
+
+describe('P1 — pedido ESPECÍFICO de um MODELO não mistura a família (dono, 2026-10-17)', () => {
+  // Reproduz o medido ao vivo: "Queria uma CB 300." com as hipóteses da Jev SÓ de
+  // CB 300, mas o catálogo tem CBX 250 Twister / CB 500 X / CB 650 ABS / BMW G 310 R
+  // (mesma marca/categoria/cc próxima). O OR pontuado + a "linha" por token deixavam
+  // essas alheias entrarem na 1ª oferta E na fila do "ver mais".
+  const LOJA: MotoDoCatalogo[] = [
+    moto('HONDA CB 300 F Twister', { categoria: 'Street', cilindrada: '293.5', marca: 'HONDA', preco: '28990' }),
+    moto('HONDA CB 300 R', { categoria: 'Street', cilindrada: '293.5', marca: 'HONDA', preco: '12500' }),
+    moto('HONDA CB 300 R FLEX', { categoria: 'Street, Naked', cilindrada: '293.5', marca: 'HONDA', preco: '14990' }),
+    moto('HONDA CBX 250 Twister', { categoria: 'Naked, Street', cilindrada: '249', marca: 'HONDA', preco: '9990' }),
+    moto('HONDA CB 500 X', { categoria: 'Trail', cilindrada: '471', marca: 'HONDA', preco: '29990' }),
+    moto('HONDA CB 650 ABS', { categoria: 'Naked', cilindrada: '649', marca: 'HONDA', preco: '41000' }),
+    moto('BMW G 310 R', { categoria: 'Roadster', cilindrada: '313', marca: 'BMW', preco: '22990' }),
+  ];
+  // Saída real da Jev no log do turno: só CB 300 (nome + score).
+  const hipoteses = [
+    { nome: 'CB 300', marca: 'HONDA', categoria: 'Street', score: 0.95 },
+    { nome: 'CB 300', marca: 'HONDA', categoria: 'Naked', score: 0.95 },
+    { nome: 'CB 300 F Twister', marca: 'HONDA', score: 0.92 },
+  ];
+
+  it('1ª oferta e casadas (fila do "ver mais") trazem SÓ as CB 300', () => {
+    const r = selecionarPorIntencao({
+      termoBase: 'Queria uma CB 300.',
+      criterios: {},
+      intencao: 'pedido',
+      motoAtual: null,
+      candidatos: LOJA,
+      mapeamento: MAPEAMENTO,
+      quantidade: 5,
+      filtrarPorComparacao: true,
+      hipoteses,
+      faixas: {},
+      nomeiaModelo: true,
+    });
+    const nomes = r.motos.map((m) => m.nome);
+    expect(nomes).toEqual([
+      'HONDA CB 300 F Twister',
+      'HONDA CB 300 R',
+      'HONDA CB 300 R FLEX',
+    ]);
+    // A FILA do "ver mais" também não pode vazar para a família/alheias.
+    expect(r.casadas.map((m) => m.nome).every((n) => n.includes('CB 300'))).toBe(true);
+    for (const alheia of ['HONDA CBX 250 Twister', 'HONDA CB 500 X', 'HONDA CB 650 ABS', 'BMW G 310 R']) {
+      expect(r.motos.map((m) => m.nome)).not.toContain(alheia);
+      expect(r.casadas.map((m) => m.nome)).not.toContain(alheia);
+    }
+  });
+});
+
+describe('hipotesesDeMaiorNota (só o modelo pedido, irmão de nota baixa fora)', () => {
+  it('descarta o irmão de designação diferente (G 310 R para G 310 GS)', () => {
+    const h = [
+      { nome: 'G 310 GS', score: 0.96 },
+      { nome: 'G 310', score: 0.52 },
+    ];
+    expect(hipotesesDeMaiorNota(h).map((x) => x.nome)).toEqual(['G 310 GS']);
+  });
+
+  it('mantém unidades do MESMO modelo com notas próximas (CB 300)', () => {
+    const h = [
+      { nome: 'CB 300', score: 0.73 },
+      { nome: 'CB 300 F Twister', score: 0.69 },
+      { nome: 'CBX 250 Twister', score: 0.4 },
+    ];
+    expect(hipotesesDeMaiorNota(h).map((x) => x.nome)).toEqual(['CB 300', 'CB 300 F Twister']);
+  });
+
+  it('sem notas devolve todas', () => {
+    const h = [{ nome: 'Biz 125' }, { nome: 'XMax 250' }];
+    expect(hipotesesDeMaiorNota(h).map((x) => x.nome)).toEqual(['Biz 125', 'XMax 250']);
   });
 });

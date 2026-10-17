@@ -7,6 +7,8 @@ import {
   perguntaDeMaisOpcoes,
   perguntaDeOutrosNoModelo,
   perguntaDeOutrosNoValor,
+  removerPerguntaDeEscolha,
+  semAnuncioDeFotos,
 } from './mais-opcoes';
 
 describe('perguntaDeMaisOpcoes', () => {
@@ -107,6 +109,18 @@ describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
     expect(t).not.toContain('várias opções');
   });
 
+  it('injeta o número NA PRÓPRIA frase do modelo ("Separei as CB 300") sem prepend', () => {
+    const t = comQuantidadeNoTexto('Temos sim, Vander! Separei as CB 300 que estão no estoque.', 3);
+    expect(t).toContain('Separei as 3 CB 300');
+    expect(t).not.toMatch(/opções.*Temos sim/i); // não empilhou abertura antes da fala
+    expect(t).toContain('Temos sim, Vander!');
+  });
+
+  it('não injeta de novo quando o artigo já vem com número', () => {
+    const t = 'Separei as 3 CB 300 pra você.';
+    expect(comQuantidadeNoTexto(t, 3)).toBe(t);
+  });
+
   it('NÃO mexe no "Motos" do nome da loja (Valle Motos)', () => {
     const t = comQuantidadeNoTexto(
       'Bom dia! Sou a Marcela, da Valle Motos São José. Tenho várias opções até 30 mil.',
@@ -153,5 +167,59 @@ describe('perguntaDeOutrosNoValor (ESCOPO 9)', () => {
 
   it('varia e nunca fica vazio', () => {
     for (let i = 0; i < 8; i++) expect(perguntaDeOutrosNoValor({ variacao: i })).not.toBe('');
+  });
+});
+
+describe('semAnuncioDeFotos (nenhuma foto sai neste turno)', () => {
+  it('corta a frase que anuncia fotos/opções', () => {
+    const t = semAnuncioDeFotos(
+      'Vander, nessa faixa de 6 mil não tenho nenhuma moto. Separei as mais acessíveis pra você ter ideia. De qual cidade você fala?',
+    );
+    expect(t).not.toMatch(/Separei/i);
+    expect(t).toContain('De qual cidade');
+    expect(t).toContain('não tenho nenhuma moto');
+  });
+
+  it('corta anúncio com objeto de moto/opção', () => {
+    for (const f of [
+      'Deixa eu te mostrar as motos que separei:',
+      'Dá uma olhada nas opções:',
+      'Olha essas unidades disponíveis.',
+      'Vou te mandar as fotos agora.',
+    ]) {
+      expect(semAnuncioDeFotos(`Tudo bem! ${f} Me diz o que procura.`)).not.toMatch(
+        /mostrar as motos|olhada nas opções|essas unidades|fotos agora/i,
+      );
+    }
+  });
+
+  it('NÃO corta frase sem objeto de moto/opção (evita falso-positivo)', () => {
+    const t = 'Vou te mostrar como funciona o financiamento. Me diz sua renda.';
+    expect(semAnuncioDeFotos(t)).toBe(t);
+  });
+
+  it('nunca esvazia o texto inteiro', () => {
+    const t = 'Separei as opções.';
+    expect(semAnuncioDeFotos(t)).toBe(t);
+  });
+});
+
+describe('removerPerguntaDeEscolha (não duplicar o fecho)', () => {
+  it('tira a pergunta de escolha que caiu na introdução', () => {
+    const t = removerPerguntaDeEscolha(
+      'Boa tarde! Temos sim 5 opções de 250. Deixa eu te mostrar o que separei. Qual delas chamou mais a sua atenção?',
+    );
+    expect(t).not.toMatch(/Qual delas/i);
+    expect(t).toContain('Deixa eu te mostrar o que separei');
+  });
+
+  it('não mexe quando não há pergunta de escolha', () => {
+    const t = 'Boa tarde! Temos sim 5 opções de 250. Deixa eu te mostrar o que separei.';
+    expect(removerPerguntaDeEscolha(t)).toBe(t);
+  });
+
+  it('não remove uma pergunta que NÃO é de escolha', () => {
+    const t = 'Você prefere cidade ou estrada? Me diz o que procura.';
+    expect(removerPerguntaDeEscolha(t)).toContain('cidade ou estrada');
   });
 });
