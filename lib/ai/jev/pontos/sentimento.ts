@@ -23,7 +23,11 @@ export function perguntaDeSentimentoDeJev(): PerguntasDeJev {
     sentimento: {
       type: 'score',
       instructions:
-        'Qual o clima/sentimento do cliente nesta mensagem, do mais negativo (índice 0) ao mais positivo?',
+        'Qual o clima/sentimento do CLIENTE, considerando a CONVERSA (o contexto recente, no ' +
+        'campo "conversa") E a mensagem atual (no campo "mensagem"), do mais negativo (índice 0) ' +
+        'ao mais positivo? IMPORTANTE: julgue pelo CONTEXTO — uma mensagem curta/seca ("deixa a Biz ' +
+        'de lado, quero trilha", "pode mostrar") NÃO é negativa se a conversa está normal; só é ' +
+        'negativa com insatisfação, reclamação ou irritação reais.',
       criteria: [...NIVEIS_DE_SENTIMENTO],
     },
   };

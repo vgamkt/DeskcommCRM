@@ -220,6 +220,29 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
         ? agentConfig["sentiment_threshold"]
         : DEFAULT_SENTIMENT_THRESHOLD;
 
+    // CONTEXTO da conversa (dono, 2026-10-18): o sentimento NÃO pode ser lido de UMA
+    // mensagem só — "deixa a Biz de lado, quero trilha" parece negativo isolado e o
+    // bot ia a handoff. Busca as últimas mensagens e passa como contexto (Jev e chat).
+    let contextoConversa = body;
+    try {
+      const { data: ultimas } = await admin
+        .from("messages")
+        .select("direction, body, created_at")
+        .eq("organization_id", event.organization_id)
+        .eq("conversation_id", message.conversation_id)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      const linhas = (ultimas ?? [])
+        .filter((m) => typeof m.body === "string" && (m.body as string).trim() !== "")
+        .reverse()
+        .map(
+          (m) => `${m.direction === "inbound" ? "CLIENTE" : "LOJA"}: ${String(m.body).slice(0, 300)}`,
+        );
+      if (linhas.length > 0) contextoConversa = linhas.join("\n");
+    } catch {
+      // sem contexto, segue com a mensagem atual (comportamento anterior)
+    }
+
     // ── Call LLM ──────────────────────────────────────────────────────────
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), CLASSIFY_TIMEOUT_MS);
@@ -242,7 +265,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     if (alvosJev.length > 0) {
       const decisaoJev = await decidir({
         alvos: alvosJev,
-        state: body,
+        state: { conversa: contextoConversa, mensagem: body },
         questions: perguntaDeSentimentoDeJev(),
       });
       const scoreJev = decisaoJev ? sentimentoDaRespostaDeJev(decisaoJev.respostas) : null;
@@ -268,7 +291,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
           model: sentimentModel,
           schema: sentimentSchema,
           system: SENTIMENT_SYSTEM_PROMPT,
-          prompt: body,
+          prompt: contextoConversa,
           temperature: 0,
           // 80 era pequeno demais e nunca tinha sido exercitado (o worker morria
           // antes, na autenticação). `generateObject` com Anthropic usa modo
