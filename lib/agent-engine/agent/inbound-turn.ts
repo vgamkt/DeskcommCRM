@@ -5563,22 +5563,39 @@ async function executarTurnoDoAgente(
             orcamentoTurno !== null ? Math.round(orcamentoTurno * toleranciaDeclaradas) : null;
           const motosDeclaradas = motos ?? [];
           const catalogoConhecido = [...catalogoDoTurno, ...catalogoDaConversa.motos];
-          const motosDoModelo =
-            limiteDeclaradas !== null
-              ? motosDeclaradas.filter((nome) => {
-                  // Resolve pelo MESMO casamento TOLERANTE que o `planoDeFotos` usa
-                  // (`motosDeNomes`): pela IGUALDADE EXATA, o nome declarado pelo
-                  // modelo ("BMW G 310 GS") não casava o nome do catálogo
-                  // ("... G 310 GS 2022") e o teto era PULADO — as fotos saíam
-                  // resolvidas pelo casamento tolerante (medido ao vivo: orçamento
-                  // 6 mil → 5 motos de 12,9 a 18,9 mil). Sem resolver aqui, dá para
-                  // furar o teto por baixo.
-                  const alvo = motosDeNomes([nome], catalogoConhecido)[0];
-                  if (alvo === undefined) return true;
-                  const p = precoNumericoDaMoto(alvo);
-                  return p === null || p <= limiteDeclaradas;
-                })
-              : motosDeclaradas;
+          // (dono, 2026-10-18) MODELO específico DECLARADO pelo modelo: as motos que ele
+          // declara TÊM que ser da LINHA do modelo que o cliente CITOU (e a Jev marcou) —
+          // senão ele manda a família inteira (medido no teste pesado: "G 310 GS" → 4 BMW:
+          // G 310 R, S 1000 RR, R 1200 GS). "Citou o modelo" = o nome da hipótese de MAIOR
+          // NOTA aparece na MENSAGEM do cliente (evita falsear pedido de marca: não casa
+          // "quero uma Honda" com uma linha específica).
+          const msgChave = normalizarNomeDeMoto(mensagemDoJob ?? '').replace(/\s+/g, '');
+          const nomesLinhaModelo = hipotesesDeMaiorNota(hipotesesDoTurno)
+            .map((h) =>
+              typeof h.nome === 'string' ? normalizarNomeDeMoto(h.nome).replace(/\s+/g, '') : '',
+            )
+            .filter((n) => n !== '' && msgChave.includes(n));
+          const motosDoModelo = motosDeclaradas.filter((nome) => {
+            const chave = normalizarNomeDeMoto(nome).replace(/\s+/g, '');
+            // LINHA do modelo pedido (quando o cliente citou o modelo).
+            if (
+              nomesLinhaModelo.length > 0 &&
+              !nomesLinhaModelo.some((alvo) => chave.includes(alvo) || alvo.includes(chave))
+            ) {
+              return false;
+            }
+            // TETO de valor — resolve pelo MESMO casamento TOLERANTE que o `planoDeFotos`
+            // usa (`motosDeNomes`): pelo nome EXATO, a moto declarada ("G 310 GS") não
+            // casava o nome do catálogo ("... 2022") e o teto era PULADO.
+            if (limiteDeclaradas !== null) {
+              const alvo = motosDeNomes([nome], catalogoConhecido)[0];
+              if (alvo !== undefined) {
+                const p = precoNumericoDaMoto(alvo);
+                if (p !== null && p > limiteDeclaradas) return false;
+              }
+            }
+            return true;
+          });
           // O MESMO teto vale para as motos que o MODELO cita no texto e o motor
           // completa com foto ("foto que o modelo esqueceu"): filtramos o CATÁLOGO
           // passado ao plano, senão uma moto acima do orçamento entrava por ali.
