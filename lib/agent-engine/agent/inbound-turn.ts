@@ -1346,6 +1346,46 @@ const STOPWORDS_DE_PEDIDO = new Set([
   'ate',
   'favor',
   'por',
+  // FILLERS (dono, 2026-10-18): palavras comuns do papo NÃO são modelo — sem isto,
+  // "Na verdade, prefiro trilha" fazia "verdade" virar "modelo citado" e o motor
+  // avisava "Não temos a Verdade".
+  'verdade',
+  'mentira',
+  'gostei',
+  'gosta',
+  'gostar',
+  'acho',
+  'achei',
+  'acha',
+  'entendi',
+  'entende',
+  'entender',
+  'legal',
+  'bacana',
+  'otimo',
+  'ótimo',
+  'melhor',
+  'pior',
+  'prefiro',
+  'prefere',
+  'preferir',
+  'mostrar',
+  'mostra',
+  'mostre',
+  'viu',
+  'hoje',
+  'amanha',
+  'amanhã',
+  'ontem',
+  'talvez',
+  'claro',
+  'certo',
+  'beleza',
+  'blz',
+  'opcao',
+  'opção',
+  'opcoes',
+  'opções',
 ]);
 
 
@@ -5154,12 +5194,16 @@ async function executarTurnoDoAgente(
                 // Nome do modelo citado para o AVISO de "parecidas" (formatação leve:
                 // siglas/anos em maiúsculas, resto com a 1ª letra maiúscula).
                 const termo = termosCitados[0] ?? '';
-                modeloCitadoAusente = termo
-                  .split(' ')
-                  .map((w) =>
-                    w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1),
-                  )
-                  .join(' ');
+                // AVISO só quando o termo é MODELO COM NÚMERO ("cb 250", "lander 250") —
+                // palavra solta ("verdade", "trilha") pode ser papo/estilo, não modelo.
+                if (/\s\d/.test(termo)) {
+                  modeloCitadoAusente = termo
+                    .split(' ')
+                    .map((w) =>
+                      w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1),
+                    )
+                    .join(' ');
+                }
                 // DEGRAU 1: referência `modelos` (determinístico) — categoria + CC real.
                 const refModelo = await dadosDoModeloNaReferencia(
                   deps.crmCfg.supabase,
