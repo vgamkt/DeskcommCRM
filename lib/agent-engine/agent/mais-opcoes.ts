@@ -86,6 +86,13 @@ export function comQuantidadeNoTexto(
   // "motos" (poderia ser o nome da loja: "...da Valle Motos São José").
   const solto = t.match(/\b(op[çc][õo]es|modelos?|alternativas?)\b/i);
   if (solto !== null) return texto.replace(solto[0], `${n} ${solto[0]}`);
+  // Número POR EXTENSO usado como CONTAGEM ("essas duas", "as três") → número real.
+  // (dono, 2026-10-18): o FECHO do modelo saía "Qual dessas DUAS chamou atenção?"
+  // com 5 motos na tela.
+  const detNum =
+    /\b(essas|estas|dessas|destas|as|os|esses|estes)\s+(dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez)\b/i;
+  const mDetNum = t.match(detNum);
+  if (mDetNum !== null) return texto.replace(mDetNum[0], `${mDetNum[1]} ${n}`);
   // FRASE DE CONTAGEM NO LUGAR CERTO (dono, 2026-10-17): o modelo chamou as motos
   // com um verbo de "separar/mostrar" + artigo ("Separei as CB 300") — injeta a
   // contagem ALI, em vez de PREPENDAR uma abertura que empilha antes da fala do
@@ -104,7 +111,10 @@ export function comQuantidadeNoTexto(
     if (/^\s*\d/.test(resto)) return texto;
     return `${t.slice(0, corte)} ${n}${resto}`;
   }
-  // Sem termo natural: só prepende se NÃO houver saudação no início (evita empilhar).
+  // Só prepende a abertura factual quando o modelo NÃO escreveu uma FRASE — um
+  // fragmento solto (ex.: só uma lista). Se ele JÁ abriu com frase ("Trilha, boa
+  // escolha!"), NÃO empilha a abertura na frente (medido ao vivo: ficava truncado).
+  if (/[.!?]/.test(t)) return texto;
   if (/^\s*(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|e a[íi])/i.test(t)) return texto;
   const factual = introducaoFactualDaApresentacao(n, opts);
   return `${factual} ${texto}`;

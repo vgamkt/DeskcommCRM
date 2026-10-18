@@ -6050,6 +6050,11 @@ async function executarTurnoDoAgente(
               introducao = comQuantidadeNoTexto(introducao, motosNaApresentacao, {
                 variacao: pedidosDeOpcoesTurno,
               });
+              // A CONTAGEM vale também para o FECHO do modelo ("Qual dessas DUAS…?"
+              // com 5 na tela) — só troca o número, nunca prepende abertura no fecho.
+              final = comQuantidadeNoTexto(final, motosNaApresentacao, {
+                variacao: pedidosDeOpcoesTurno,
+              });
               await enviarTexto(introducao);
               for (const item of itens) {
                 await enviarFoto(item.url, item.legenda);

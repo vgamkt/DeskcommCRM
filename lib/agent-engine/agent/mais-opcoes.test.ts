@@ -127,6 +127,17 @@ describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
     expect(t).not.toMatch(/5 duas/);
   });
 
+  it('corrige a CONTAGEM no fecho ("Qual dessas duas" → "Qual dessas 5")', () => {
+    const t = comQuantidadeNoTexto('Qual dessas duas chamou mais a sua atenção?', 5);
+    expect(t).toContain('Qual dessas 5');
+    expect(t).not.toMatch(/duas/);
+  });
+
+  it('NÃO prepende abertura quando o modelo já abriu com frase', () => {
+    const t = comQuantidadeNoTexto('Trilha, boa escolha!', 5);
+    expect(t).toBe('Trilha, boa escolha!');
+  });
+
   it('NÃO mexe no "Motos" do nome da loja (Valle Motos)', () => {
     const t = comQuantidadeNoTexto(
       'Bom dia! Sou a Marcela, da Valle Motos São José. Tenho várias opções até 30 mil.',
