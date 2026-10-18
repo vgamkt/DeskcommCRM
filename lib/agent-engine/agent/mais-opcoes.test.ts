@@ -121,6 +121,12 @@ describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
     expect(comQuantidadeNoTexto(t, 3)).toBe(t);
   });
 
+  it('não gera "5 duas" quando o modelo escreveu número por extenso', () => {
+    const t = comQuantidadeNoTexto('Separei essas duas aqui pra você dar uma olhada:', 5);
+    expect(t).toContain('Separei essas 5 aqui');
+    expect(t).not.toMatch(/5 duas/);
+  });
+
   it('NÃO mexe no "Motos" do nome da loja (Valle Motos)', () => {
     const t = comQuantidadeNoTexto(
       'Bom dia! Sou a Marcela, da Valle Motos São José. Tenho várias opções até 30 mil.',

@@ -95,7 +95,11 @@ export function comQuantidadeNoTexto(
   const mChamada = t.match(verboChamada);
   if (mChamada !== null && mChamada.index !== undefined) {
     const corte = mChamada.index + mChamada[0].length;
-    const resto = t.slice(corte);
+    // Tira um número POR EXTENSO logo depois do artigo ("Separei essas DUAS …") —
+    // senão a injeção gerava "essas 5 duas".
+    const resto = t
+      .slice(corte)
+      .replace(/^\s*(dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez)\b/i, '');
     // Já tem número depois do artigo ("Separei as 3 CB 300")? Não mexe.
     if (/^\s*\d/.test(resto)) return texto;
     return `${t.slice(0, corte)} ${n}${resto}`;
