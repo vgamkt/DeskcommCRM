@@ -5837,7 +5837,11 @@ async function executarTurnoDoAgente(
               introducao = textoDoModelo;
             } else {
               const sep = separarTextoApresentacao(textoDoModelo, catalogoDoTurno);
-              introducao = sep.introducao;
+              // A pergunta de ESCOLHA não pode sair ANTES das fotos (regra: texto →
+              // fotos → pergunta). Se a separação a deixou na INTRODUÇÃO (o modelo
+              // escreveu "qual delas…" no meio do texto), tira de lá — o fecho do
+              // turno repõe a pergunta DEPOIS das fotos (medido ao vivo).
+              introducao = removerPerguntaDeEscolha(sep.introducao);
               final = sep.final;
             }
             if (cfg?.pergunta_separada === false) {
