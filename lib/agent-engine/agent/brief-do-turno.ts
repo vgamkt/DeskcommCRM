@@ -286,6 +286,12 @@ export function renderBriefDoTurno(input: BriefDoTurnoInput): string {
       'NÃO cite especificações/ficha técnica (consumo km/l, litros, potência, cilindrada, tanque) nem fatos ' +
       'da base de conhecimento por conta própria. Use-os SÓ quando o cliente PERGUNTAR sobre a moto ou ao ' +
       'contornar uma objeção. Elogios à escolha devem ser curtos e SEM números.',
+    // (dono, 2026-10-18): as respostas abriam repetindo o pedido ("Entendi, você
+    // quer uma CB 250") — soava robótico, como se o bot "pensasse alto". Regra dura.
+    '## Fale como gente (não soe robô)\n' +
+      'NÃO comece repetindo o que o cliente disse ("Entendi, você quer uma CB 250") nem narre seu ' +
+      'raciocínio ("deixa eu pensar", "vou verificar"). Vá direto ao ponto, com frases curtas e ' +
+      'calorosas, como um vendedor humano no WhatsApp.',
   );
   return ['## Brief do turno', ...partes].join('\n');
 }
