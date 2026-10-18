@@ -5918,6 +5918,10 @@ async function executarTurnoDoAgente(
             // ignora com frequência) SÓ quando o MODELO não escreveu o fecho. O fecho
             // por MODELO ESPECÍFICO é escrito pela INTELIGÊNCIA (contexto no prompt),
             // não por frase fixa (dono, 2026-10-16). ESCOPO 9: "outros nesse valor".
+            // Nº de MOTOS distintas que vão sair (pelas legendas) — usado no fecho.
+            const motosDistintasApresentacao = new Set(
+              itens.map((i) => i.legenda.trim()).filter((s) => s !== ''),
+            ).size;
             if (
               temMaisOpcoesNesteTurno ||
               outrosNoValorNesteTurno ||
@@ -5954,7 +5958,7 @@ async function executarTurnoDoAgente(
                       ? perguntaDeOutrosNoModelo({
                           modelo: nomeModeloEspecificoDoTurno,
                           categoria: categoriaDoModeloDoTurno,
-                          quantidade: 1,
+                          quantidade: Math.max(1, motosDistintasApresentacao),
                           variacao: pedidosDeOpcoesTurno,
                         })
                       : perguntaDeMaisOpcoes({
