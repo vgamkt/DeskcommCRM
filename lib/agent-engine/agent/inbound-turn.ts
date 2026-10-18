@@ -2108,7 +2108,25 @@ export async function avisarCapacidadesAusentes(
 function precoNumericoDaMoto(m: MotoDoCatalogo): number | null {
   const raw = m.preco ?? m.valores?.preco ?? m.valores?.valor;
   if (typeof raw !== 'string' || raw.trim() === '') return null;
-  const v = parseFloat(raw.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.'));
+  const limpo = raw.replace(/[^\d.,]/g, '');
+  if (limpo === '') return null;
+  const temPonto = limpo.includes('.');
+  const temVirgula = limpo.includes(',');
+  let normal: string;
+  if (temPonto && temVirgula) {
+    // "9.990,00" → "9990.00" (ponto = milhar, vírgula = decimal)
+    normal = limpo.replace(/\./g, '').replace(',', '.');
+  } else if (temVirgula) {
+    // "9990,00" → "9990.00"
+    normal = limpo.replace(',', '.');
+  } else if (temPonto) {
+    // Só ponto: "9990.00" é DECIMAL (formato do banco); "1.990" é MILHAR.
+    const depois = limpo.split('.').pop() ?? '';
+    normal = depois.length === 3 ? limpo.replace(/\./g, '') : limpo;
+  } else {
+    normal = limpo;
+  }
+  const v = parseFloat(normal);
   return Number.isFinite(v) ? v : null;
 }
 
