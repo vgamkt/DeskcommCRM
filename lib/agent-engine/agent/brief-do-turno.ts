@@ -301,6 +301,14 @@ export function renderBriefDoTurno(input: BriefDoTurnoInput): string {
       'Vá direto ao ponto, natural, como um vendedor humano. E NÃO ANUNCIE a cilindrada nem a ' +
       'quantidade ("separei opções de 250"): diga "opções parecidas/próximas" — o sistema e as ' +
       'legendas cuidam dos números.',
+    // (dono, 2026-10-19) EXPLICAR COM O CONTEXTO DO DADO — vale para QUALQUER
+    // objeção e QUALQUER explicação, não só preço. O modelo escrevia frases soltas
+    // ("a 2011 é mais em conta por isso") sem amarrar ao motivo real.
+    '## Explique com o CONTEXTO do dado\n' +
+      'Ao justificar, comparar ou recomendar algo (preço, condição, escolha, ano, km), amarre o motivo ' +
+      'ao DADO REAL (ano, km, estado, categoria, preço) e entenda o que o cliente quis dizer antes de ' +
+      'responder. NUNCA use "por isso"/"por causa disso" sem dizer POR QUÊ — ex.: "a 2011 é mais em ' +
+      'conta por ser mais antiga e ter mais km". Seja claro, específico e coerente com a informação.',
   );
   return ['## Brief do turno', ...partes].join('\n');
 }

@@ -196,7 +196,7 @@ describe('renderBriefDoTurno', () => {
     // O brief DEDUPLICA/compacta os 4 blocos crus, mas também acrescenta REGRAS
     // FIXAS (tom/robô, não repetir, não fazer pitch, um fluxo por vez…) que não
     // existem nos blocos crus. Comparamos com uma folga pequena para essas regras.
-    expect(brief.length).toBeLessThan(crus.length + 600);
+    expect(brief.length).toBeLessThan(crus.length + 900);
   });
 });
 
