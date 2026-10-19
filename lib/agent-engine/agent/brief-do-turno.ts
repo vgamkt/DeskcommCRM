@@ -126,7 +126,13 @@ function blocoDoFluxoCompacto(
   }
 
   return [
-    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o e atenda o cliente PRIMEIRO. Responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE (abaixo). Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem. Faça UMA pergunta por vez (não despeje o roteiro) e conduza a venda normalmente. Só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática. Pendentes:`,
+    `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o e atenda o cliente PRIMEIRO. Responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE (abaixo). Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem. Faça UMA pergunta por vez (não despeje o roteiro) e conduza a venda normalmente. Só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática.`,
+    // (dono, 2026-10-18) UM FLUXO POR VEZ: se o cliente pediu mais de um processo
+    // (ex.: troca + financiamento), os OUTROS ficam na FILA e começam quando ESTE
+    // terminar — o modelo NÃO pode perguntar do outro no meio (medido: intercalou a
+    // pergunta da troca dentro do financiamento).
+    `Conduza SÓ o fluxo "${estado.nomeDoFluxo}" agora. Se o cliente pediu OUTRO processo junto (ex.: dar a moto na troca E financiar), os demais estão na FILA e começam SOZINHOS quando este terminar — NÃO pergunte do outro, NÃO misture os dois.`,
+    'Pendentes:',
     ...linhas,
     `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(campoParaPergunta(primeira))}"`,
     `Se o cliente não responder o campo em até ${estado.maxTentativas} tentativa(s), pare de perguntá-lo e SIGA a venda normalmente — NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.`,
