@@ -922,3 +922,22 @@ inventar limite nem alterar o banco externo.
 - **Falta apenas o teste completo de regressão.**
 - Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
   versão temporária removida; contatos de teste sem flow/data.
+
+---
+
+# Reteste final no 5924 — achados (2026-10-20 16:28 UTC)
+
+- Só o 5924 recebeu mensagens.
+- **Passaram:** catálogo cidade (5 urbanas, sem V-Strom, Factor R$ 9.500); Biz
+  sem estoque (contato sem `moto_escolhida`); RAG (resposta + 3 citações);
+  objeção de preço sem desconto inventado.
+- **Falhou:** ao pedir financiamento, a conversa tinha um fluxo de
+  **Qualificação** ativo (`pointer 694b...`) e o bot perguntou **CPF + cidade na
+  mesma mensagem**. O P1-D não segurou duas perguntas do próprio modelo, e o
+  fluxo iniciado não foi o de Financiamento.
+- **“Perfeito”:** não é template geral. No código só existe uma frase fixa em
+  `objecao-de-valor.ts` (“Perfeito! Vou te mostrar...”) e o prompt do agente usa
+  “Ótimo!” como exemplo; no reteste as aberturas foram “Isso”, “Entendi”,
+  “Todas”, “Consigo”. É tique do modelo, não uma string única do motor.
+- Teste completo **não passou**; ambiente restaurado (Datafy `WORKING`, agente
+  84, 0101 allowlist 2501, versão temporária removida). Sem crédito Datafy.
