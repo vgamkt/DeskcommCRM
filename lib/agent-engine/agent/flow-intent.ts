@@ -40,10 +40,16 @@ export type EscolhaDeFluxosPorIA =
   | { ok: true; fluxos: Array<{ id: string; nome: string }> }
   | { ok: false };
 
-export function buildFlowIntentPrompt(fluxos: readonly FluxoParaIA[], mensagem: string): string {
+export function buildFlowIntentPrompt(
+  fluxos: readonly FluxoParaIA[],
+  mensagem: string,
+  contexto?: { fluxoAtivo?: string | null; fila?: readonly string[] },
+): string {
   const lista = fluxos
     .map((f) => `- ${f.nome} (exemplos: ${f.gatilhos.join(', ') || '—'})`)
     .join('\n');
+  const ativo = contexto?.fluxoAtivo ?? null;
+  const fila = contexto?.fila ?? [];
   return [
     'Você é um classificador auxiliar (NÃO responde ao cliente).',
     'Decida QUAIS fluxos de atendimento a mensagem deve INICIAR, na ORDEM em que o cliente os pediu.',
@@ -59,6 +65,13 @@ export function buildFlowIntentPrompt(fluxos: readonly FluxoParaIA[], mensagem: 
     '- OBJEÇÃO/comentário de preço ("achei caro", "não tenho condições") NÃO é pedido nem pergunta sobre o processo: lista VAZIA [].',
     '- Se a mensagem pede MAIS de um processo, liste TODOS na ordem citada. Ex.: "quero dar minha moto na troca e financiar o resto" → ["Troca","Financiamento"].',
     '- Sem processo pedido nem perguntado (saudação, catálogo, agradecimento), lista VAZIA [].',
+    '- A mensagem pode ser uma RAJADA (várias bolhas): leia TUDO junto com o CONTEXTO abaixo; NUNCA classifique só a última bolha.',
+    '- Uma ESCOLHA de moto sozinha NÃO inicia Qualificação quando a mensagem TAMBÉM pede um processo específico (financiamento/troca/venda). O processo pedido é o fluxo; a Qualificação não deve ser iniciada.',
+    '- Qualificação só quando o cliente PEDE qualificação/compra de forma genérica e NÃO pediu um processo específico.',
+    ...(ativo !== null
+      ? [`- Já existe fluxo ATIVO: "${ativo}". Se o cliente pedir OUTRO processo, liste o processo pedido; ele entra na FILA. NÃO inicie Qualificação por cima.`]
+      : []),
+    ...(fila.length > 0 ? [`- Fila atual: ${fila.join(', ')}.`] : []),
     'Responda SOMENTE JSON: {"fluxos":["<nome exato de um fluxo da lista>", ...]} (vazio = nenhum)',
     '',
     'Mensagem do cliente:',
@@ -186,6 +199,8 @@ export async function escolherFluxosPorIA(
     model: string;
     provider?: string | null;
     jobId?: string | null;
+    fluxoAtivo?: string | null;
+    fila?: readonly string[];
   },
   deps: EscolherFluxosPorIADeps,
 ): Promise<EscolhaDeFluxosPorIA> {
@@ -203,7 +218,11 @@ export async function escolherFluxosPorIA(
     if (alvosJev.length > 0) {
       const decisaoJev = await decidir({
         alvos: alvosJev,
-        state: { mensagem: input.texto },
+        state: {
+          mensagem: input.texto,
+          fluxoAtivo: input.fluxoAtivo ?? null,
+          fila: input.fila ?? [],
+        },
         questions: perguntasDeFluxosDeJev(fluxos),
         aoEsgotar: (info) =>
           enfileirarDecisaoJev(db, {

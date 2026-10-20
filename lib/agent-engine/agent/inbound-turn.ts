@@ -303,6 +303,8 @@ import type { EndFinish } from '@/lib/followup/graph-schema';
 import {
   algumTextoComPergunta,
   ehAcenoOuSilencio,
+  removerAberturaDeMuleta,
+  removerPerguntasDoModelo,
   ehCampoCpf,
   perguntaSaiuNosTextos,
   textoDaConfirmacaoCpf,
@@ -1201,6 +1203,11 @@ const CASES_SYSTEM_BLOCK =
  * cura possível aqui é instrução, não filtro.
  */
 /** P1-B: quando o agente tem base, a pergunta factual deve passar pela busca. */
+const ESTILO_SYSTEM_BLOCK =
+  '## Abertura das mensagens\n' +
+  'NUNCA comece uma mensagem com “Perfeito”, “Perfeito!”, “Show”, “Ótimo” ou “Claro”. ' +
+  'Vá direto ao conteúdo útil: responda o que o cliente disse e siga. Varie a abertura; não use a mesma palavra em turnos seguidos.';
+
 const CONHECIMENTO_SYSTEM_BLOCK =
   '## Base de conhecimento\n' +
   'Quando o cliente fizer uma pergunta FATUAL (garantia, documentação, financiamento, preço, ' +
@@ -2738,6 +2745,8 @@ async function executarTurnoDoAgente(
           model: agentConfig?.model ?? '',
           provider: agentConfig?.provider ?? null,
           jobId: liveJob().id,
+          fluxoAtivo: atendimento?.nomeDoFluxo ?? null,
+          fila: [],
         },
         { log: runLog },
       );
@@ -2839,7 +2848,7 @@ async function executarTurnoDoAgente(
   // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
   // tools publicadas — ver comentário de `AGENDA_SYSTEM_BLOCK`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // não depende de nenhuma feature — todo agente publicado o recebe.
-  const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
+  const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK, ESTILO_SYSTEM_BLOCK];
   if (
     agentConfig !== null &&
     ((agentConfig.knowledgeSourceIds?.length ?? 0) > 0 || agentConfig.activeKbVersionId != null)
@@ -4757,6 +4766,31 @@ async function executarTurnoDoAgente(
         const media_url = confirmacaoCpf !== null ? undefined : mediaUrlModelo;
         const media_urls = confirmacaoCpf !== null ? [] : mediaUrlsModelo;
         const motos = confirmacaoCpf !== null ? [] : motosModelo;
+        // ESTILO: tira “Perfeito/Show/Ótimo” da abertura. O usuário mediu o tique
+        // em todas as respostas (2026-10-20).
+        body = removerAberturaDeMuleta(body);
+        // P1-D estrutural: com fluxo ativo e sem turno de catálogo, a ÚNICA
+        // pergunta é a oficial do fluxo. Remove as perguntas do modelo e anexa a
+        // pergunta oficial uma vez (a JEV/flow decide o texto).
+        const pendenteOficial = fluxoAtendimento?.situacao.pendentes[0];
+        if (
+          confirmacaoCpf === null &&
+          pendenteOficial !== undefined &&
+          (motosModelo?.length ?? 0) === 0 &&
+          (mediaUrlModelo === undefined || mediaUrlModelo === '') &&
+          (mediaUrlsModelo?.length ?? 0) === 0
+        ) {
+          const oficial = textoDaPergunta(
+            pendenteOficial.config,
+            fluxoAtendimento?.confirmacoes?.[pendenteOficial.config.key],
+          );
+          const semPerguntas = removerPerguntasDoModelo(body);
+          // A pergunta oficial pode ser uma ORDEM sem “?” (“Agora me envie...”) e
+          // o modelo pode repeti-la no corpo. Remove TODAS as ocorrências e
+          // anexa uma única vez.
+          const semOficial = semPerguntas.split(oficial).join(' ').replace(/\s+/g, ' ').trim();
+          body = `${semOficial}${semOficial !== '' ? '\n\n' : ''}${oficial}`.trim();
+        }
         // CONFERÊNCIA (Fase 2.2): o modelo registra QUAIS trechos da base usou. É o
         // elo auditável — a decisão de buscar é da Jev; aqui fica o que ele USOU.
         if ((fonte_ids ?? []).length > 0) {

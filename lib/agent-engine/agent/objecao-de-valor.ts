@@ -286,7 +286,7 @@ export function textoDeContingenciaDaNegociacao(acao: string | null): string | n
     case 'persuadir_3_e_perguntar':
       return 'Vou pedir ao responsável pra ver o que dá pra fazer nessa moto. Me diz: você quer só ela, ou posso te mostrar outras parecidas?';
     case 'mostrar_opcoes':
-      return 'Perfeito! Vou te mostrar as opções agora.';
+      return 'Certo! Vou te mostrar as opções agora.';
     case 'encaminhar_e_encerrar':
       return 'Vou pedir ao responsável pra ver o que dá pra fazer nessa moto pra você e já te retorno por aqui.';
     case 'handoff':

@@ -453,3 +453,25 @@ export function textosDoTurnoParaTrava(
   const livre = textoLivreDoModelo.trim();
   return livre !== "" && !enviouPelaFerramenta ? [...corposEnviados, livre] : [...corposEnviados];
 }
+
+
+/** Remove perguntas do corpo do modelo (a pergunta oficial do fluxo é a única). */
+export function removerPerguntasDoModelo(texto: string): string {
+  return texto
+    .split(/(?<=[.!?？])\s+|\n+/u)
+    .map((p) => p.trim())
+    .filter((p) => p !== '' && !/[?？]\s*$/.test(p))
+    .join(' ')
+    .trim();
+}
+
+/** Remove a muleta de abertura “Perfeito/Show/Ótimo...” sem esvaziar o corpo. */
+export function removerAberturaDeMuleta(texto: string): string {
+  const limpo = texto
+    .replace(
+      /^\s*(?:[Pp]erfeito|[Ss]how|[Óó]timo|[Oo]timo|[Cc]laro)(?:\s*,\s*[A-ZÀ-Ý][\p{L}-]+)?\s*[!,.…]*\s*/u,
+      '',
+    )
+    .trim();
+  return limpo !== '' ? limpo : texto.trim();
+}

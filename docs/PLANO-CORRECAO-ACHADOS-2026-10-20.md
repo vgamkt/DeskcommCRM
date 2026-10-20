@@ -941,3 +941,24 @@ inventar limite nem alterar o banco externo.
   “Todas”, “Consigo”. É tique do modelo, não uma string única do motor.
 - Teste completo **não passou**; ambiente restaurado (Datafy `WORKING`, agente
   84, 0101 allowlist 2501, versão temporária removida). Sem crédito Datafy.
+
+---
+
+# Reteste no 5924 — resultado parcial (2026-10-20 18:34 UTC)
+
+- **Passaram:** catálogo cidade (5 urbanas, sem V-Strom, Factor R$ 9.500);
+  Biz sem estoque (contato limpo); RAG (3 citações/telemetria); objeção;
+  **Financiamento** (fluxo certo, CPF+data, entrada/parcelas, concluído).
+- **P1-D estrutural:** o fluxo de Financiamento foi o correto (não Qualificação)
+  e a pergunta oficial foi única no início.
+- **Achados:**
+  - O Financiamento reperguntou a moto mesmo depois de “Neo 125” no gatilho.
+  - Venda: no turno de TEXTO, a pergunta oficial imperativa saiu duplicada
+    (corrigido no `jevfix35` com dedupe; não revalidado).
+  - Venda: a foto real foi aceita (`venda_fotos` com URL), mas a resposta do
+    bot atrasou >90s por transcrição de mídia; o fluxo não foi concluído.
+- **“Perfeito”:** não apareceu no reteste; a abertura foi “Boa escolha/Anotado”.
+  Bloco de estilo + sanitizador de muleta aplicados.
+- **Teste completo não passou.**
+- Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
+  versão temporária removida; flows/data dos 5924/6837 removidos.

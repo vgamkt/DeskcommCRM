@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import {
   algumTextoComPergunta,
+  removerAberturaDeMuleta,
+  removerPerguntasDoModelo,
   classificarInbound,
   detectarDesvio,
   ehAcenoOuSilencio,
@@ -289,5 +291,19 @@ describe('algumTextoComPergunta (P1-D)', () => {
   });
   it('detecta interrogação fullwidth', () => {
     expect(algumTextoComPergunta(['Tudo bem？'])).toBe(true);
+  });
+});
+
+
+describe('normalização de abertura/perguntas', () => {
+  it('remove Perfeito/Show/Ótimo do começo', () => {
+    expect(removerAberturaDeMuleta('Perfeito, Letícia! Já registrei.')).toBe('Já registrei.');
+    expect(removerAberturaDeMuleta('Show! Tudo certo.')).toBe('Tudo certo.');
+    expect(removerAberturaDeMuleta('Ótimo, vamos seguir.')).toBe('vamos seguir.');
+  });
+  it('remove perguntas do modelo; a oficial é anexada depois', () => {
+    expect(
+      removerPerguntasDoModelo('Consigo sim. Qual seu CPF? E de qual cidade?'),
+    ).toBe('Consigo sim.');
   });
 });
