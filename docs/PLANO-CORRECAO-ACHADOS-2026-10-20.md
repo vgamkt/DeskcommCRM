@@ -827,3 +827,25 @@ inventar limite nem alterar o banco externo.
 - P2 CPF em 3 tentativas.
 - P0-D mídia real: código/config prontos, **deferido ao final**.
 - Validações de P0-E/P1-A/P1-B/P3 e teste completo: no final.
+
+---
+
+# P0-D — validação de mídia ATIVADA nos fluxos (2026-10-20 14:35 UTC)
+
+- Troca e Venda agora apontam para as versões com `exige_midia=true` nos campos
+  `troca_fotos`, `troca_documento_foto`, `venda_fotos`, `venda_documento_foto`.
+- O motor (worker `jevfix27`) grava a referência real da mídia (`media_storage_path`
+  ou `media_url`), não o texto; texto sozinho não preenche.
+- **Validação ao vivo fica para o final**, com foto real de outro telefone para
+  o 0101.
+- Isso ativa uma configuração não validada de propósito, conforme pedido de
+  “corrigir tudo e validar depois”.
+
+## P2 — status
+
+- **Biz sem estoque:** não há writer de `moto_escolhida` no código de fluxo/captura
+  atual; o campo veio do caminho modelo/operador. Correção exige reproduzir e
+  identificar o writer antes de bloquear, para não quebrar `crm_update_lead`.
+- **CPF em 3 tentativas:** é contagem de tentativas por turno (cada turno sem CPF
+  incrementa); com CPF+data e P3 corrigidos, a tendência é reduzir. Não é um bug
+  de gravação comprovado; fica para a validação final.
