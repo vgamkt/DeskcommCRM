@@ -903,3 +903,22 @@ inventar limite nem alterar o banco externo.
 - P2 e teste completo: pendentes.
 - Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501, versão
   temporária removida; flows/data dos contatos de teste 5924/6837 removidos.
+
+---
+
+# P2 — Biz sem estoque: CORRIGIDO E VALIDADO (2026-10-20 15:35 UTC)
+
+- O campo `moto_escolhida` no CONTATO era um espelho legado; o modelo/operador
+  gravava a moto PEDIDA (“Biz”) mesmo sem estoque.
+- Correção: guarda no `crm_update_lead` (app) + limpeza determinística no worker
+  (inbound e operator) remove `moto_escolhida`; a fonte do fluxo é
+  `contact_flow_data` e o CRM usa `moto_interesse`.
+- Teste real (5924): “Quero uma Biz” → bot respondeu que não tem Biz e ofereceu
+  similares; contato terminou com `custom_fields={}` — **sem `moto_escolhida`**.
+- Worker: `jevfix33`.
+- **P2 Biz validado.**
+- CPF em 3 tentativas: é contagem por turno; não é bug comprovado. Fica como
+  observação, não como correção.
+- **Falta apenas o teste completo de regressão.**
+- Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
+  versão temporária removida; contatos de teste sem flow/data.

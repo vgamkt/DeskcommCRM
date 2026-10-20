@@ -9131,6 +9131,21 @@ async function executarTurnoDoAgente(
       messages_sent: outcomes.length,
       model: turn.model,
     });
+
+    // P2: remove o espelho legado `moto_escolhida` do CONTATO. A fonte do fluxo
+    // é `contact_flow_data`; o CRM usa `moto_interesse`. O modelo podia gravar
+    // "Biz" mesmo sem estoque via ferramenta de lead (medido 2026-10-20).
+    if (leadId) {
+      await pool
+        .query(
+          `update contacts
+              set custom_fields = coalesce(custom_fields, '{}'::jsonb) - 'moto_escolhida',
+                  updated_at = now()
+            where organization_id = $1 and id = $2`,
+          [tenantId, leadId],
+        )
+        .catch(() => {});
+    }
   } finally {
     await mcpCleanup?.();
   }

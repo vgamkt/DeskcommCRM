@@ -254,6 +254,50 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
     const { lead_id, ...rest } = input;
+    // P2: o operador/modelo podia gravar a moto PEDIDA ("Biz") mesmo sem ela
+    // existir no estoque. Só persiste `moto_escolhida`/`moto_interesse` quando o
+    // nome está no catálogo apresentado na conversa (ou é a escolha travada).
+    const cf = rest.custom_fields;
+    if (cf !== undefined && cf !== null && typeof cf === 'object' && !Array.isArray(cf)) {
+      const campos = cf as Record<string, unknown>;
+      // `moto_escolhida` no CONTATO é um espelho legado e já causou “Biz” sem
+      // estoque. A fonte do fluxo é `contact_flow_data`; o CRM usa
+      // `moto_interesse` (espelhado por salvarCatalogoDaConversa). Remove sempre.
+      delete campos.moto_escolhida;
+      const pedida =
+        typeof campos.moto_interesse === 'string' && campos.moto_interesse.trim() !== ''
+          ? campos.moto_interesse
+          : undefined;
+      if (pedida !== undefined) {
+        try {
+          const { data: conv } = await ctx.supabase
+            .from('conversations')
+            .select('metadata')
+            .eq('organization_id', ctx.organizationId)
+            .eq('contact_id', lead_id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const categoria = (conv?.metadata as { agent_catalogo?: { motos?: unknown; escolhida?: { nome?: unknown } } } | null)
+            ?.agent_catalogo;
+          const motos = Array.isArray(categoria?.motos) ? categoria!.motos : [];
+          const nomes = motos
+            .map((m) => (m as { nome?: unknown }).nome)
+            .filter((n): n is string => typeof n === 'string' && n.trim() !== '');
+          const escolhida = categoria?.escolhida?.nome;
+          if (typeof escolhida === 'string') nomes.push(escolhida);
+          const alvo = pedida.toLowerCase().trim();
+          if (nomes.length > 0 && !nomes.some((n) => {
+            const nome = n.toLowerCase().trim();
+            return nome === alvo || nome.includes(alvo) || alvo.includes(nome);
+          })) {
+            delete campos.moto_interesse;
+          }
+        } catch {
+          // best-effort: sem catálogo, mantém o comportamento anterior
+        }
+      }
+    }
     const parsed = updateLeadSchema.parse(rest);
     const lead = await updateLeadHandler(
       ctx.supabase,

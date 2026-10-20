@@ -537,6 +537,20 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       await mcp?.cleanup();
     }
 
+    // P2: o campo legado `moto_escolhida` no CONTATO podia receber a moto
+    // PEDIDA ("Biz") mesmo sem estoque. A fonte do fluxo é `contact_flow_data`
+    // e o CRM usa `moto_interesse` (espelhado pelo catálogo); removemos o
+    // espelho legado depois do Operador.
+    await pool
+      .query(
+        `update contacts
+            set custom_fields = coalesce(custom_fields, '{}'::jsonb) - 'moto_escolhida',
+                updated_at = now()
+          where organization_id = $1 and id = $2`,
+        [tenantId, leadId],
+      )
+      .catch(() => {});
+
     const ferramentasChamadas = nomesDasFerramentasChamadas(saida);
     await registrarDesfecho(
       pool,
