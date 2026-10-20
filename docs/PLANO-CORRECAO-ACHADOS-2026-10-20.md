@@ -869,3 +869,15 @@ inventar limite nem alterar o banco externo.
   Venda; o texto continua sem preencher o campo.
 - Ambiente restaurado: Datafy `WORKING`, 0101 allowlist 2501, agente 84, versão
   temporária removida; o enrollment/flow_data de teste do 5924 foi removido.
+
+---
+
+# Validações finais sem Datafy — 2026-10-20 14:58 UTC
+
+- **P0-D mídia real: PASSOU** (foto real do 5924; `venda_fotos` com caminho, bot pediu CRLV).
+- **P0-E isolamento: PASSOU** — durante Venda, texto de Troca gravou apenas `venda_*`; nenhum `troca_*` no contato.
+- **P1-A preço/segmento: PASSOU** — “moto para cidade” trouxe 5 opções urbanas, **sem V-Strom 1000**; Factor 125 apareceu por **R$ 9.500**.
+- **P3 CPF+data/anti-alucinação: PASSOU** — CPF e `data_nascimento` gravados no mesmo turno; o bot não reperguntou a data e não afirmou dados inexistentes.
+- **P1-B RAG: FALHOU** — a resposta sobre garantia estava correta (90 dias), mas **não houve linha nova em `knowledge_searches` nem citações** no metadata. O prompt sozinho não fez o modelo chamar a tool.
+- **P2/full test:** pendentes.
+- Ambiente restaurado: Datafy `WORKING`, 0101 allowlist 2501, agente 84, versão temporária removida; flows/data de teste dos contatos 5924/6837 removidos. Sem crédito Datafy.
