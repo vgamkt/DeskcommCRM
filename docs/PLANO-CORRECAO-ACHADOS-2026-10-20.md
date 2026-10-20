@@ -1002,3 +1002,23 @@ inventar limite nem alterar o banco externo.
   worker `jevfix37`.
 - Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
   versão temporária removida; sem crédito Datafy.
+
+---
+
+# Regressão final no 5924 — 2026-10-20 19:43 UTC
+
+- **Qualificação:** concluída.
+- **Financiamento:** fluxo certo, CPF+data, entrada/parcelas, concluído.
+- **Troca:** dados + fotos + CRLV reais, concluída.
+- **Venda:** texto sem mídia NÃO diz mais que recebeu; mídia real preenche
+  fotos/CRLV; concluída; sem duplicidade no “Sim”.
+- **Catálogo:** 5 urbanas, sem V-Strom, Factor R$ 9.500.
+- **Biz:** sem estoque e contato limpo.
+- **RAG:** 3 citações + `knowledge_searches`.
+- **“Perfeito”:** não apareceu.
+- **Mídia:** drain sem espera de transcrição; respostas sem o atraso de >90s.
+- Ponto menor observado: no Financiamento a moto foi reperguntada uma vez
+  (não impedia o fluxo).
+- Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
+  versão temporária removida; flows/data dos 5924/6837 removidos. Sem crédito
+  Datafy.

@@ -4785,14 +4785,10 @@ async function executarTurnoDoAgente(
             fluxoAtendimento?.confirmacoes?.[pendenteOficial.config.key],
           );
           const semPerguntas = removerPerguntasDoModelo(body);
-          // O modelo NÃO pode afirmar que recebeu foto/CRLV quando não houve
-          // mídia. Troca a falsa confirmação pela verdade + pergunta oficial.
-          const falsaMidia =
-            pendenteOficial.config.exige_midia === true &&
-            !inboundTemMidia &&
-            /\b(recebi|chegou|chegaram)\b[\s\S]*\b(foto|fotos|crlv|documento|imagem)\b/i.test(body);
+          // O modelo NÃO pode falar em foto/CRLV recebido quando não houve
+          // mídia. Para campo `exige_midia`, o corpo é determinístico.
           const corpo =
-            falsaMidia
+            pendenteOficial.config.exige_midia === true && !inboundTemMidia
               ? 'Ainda não recebi a foto/documento.'
               : semPerguntas;
           // A pergunta oficial pode ser uma ORDEM sem “?” (“Agora me envie...”) e
