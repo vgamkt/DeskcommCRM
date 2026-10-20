@@ -773,3 +773,14 @@ inventar limite nem alterar o banco externo.
 - Worker: `jevfix25`.
 - Validação ao vivo **pendente** (0101 self-chat não gera turno; V-Strom/1000cc
   precisa ser testado com conversa real).
+
+---
+
+# P0-E — isolamento por fluxo: teste unitário (2026-10-20 14:11 UTC)
+
+- Novo `captura-de-fluxo.test.ts`: a captura contínua usa o enrollment MAIS
+  RECENTE (pointer da Venda), não a união de todos os fluxos; a gravação contém
+  `venda_fotos` e **não** contém `troca_*`.
+- Teste: **1/1**; `tsc` 0.
+- O código já estava no worker `jevfix25`; falta apenas a validação ao vivo, que
+  continua bloqueada pelo 0101 self-chat não gerar turno.
