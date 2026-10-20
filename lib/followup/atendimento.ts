@@ -384,6 +384,16 @@ export function renderBlocoDeAtendimento(
     const corrige = cfg.permite_correcao ? "" : " Não aceite correção depois de preenchida.";
     return `- ${cfg.label} (campo: ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${corrige}`;
   });
+  const dadosConfirmados = Object.entries(estado.valores)
+    .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join("; ");
+  // ANTI-ALUCINAÇÃO (medido 2026-10-20): o modelo dizia “já tenho seu CPF/data/
+  // entrada” com o fluxo/contato vazios. A lista abaixo é a ÚNICA fonte do que
+  // já foi confirmado; o que não está nela não pode ser afirmado.
+  const blocoDadosConfirmados =
+    `Dados JÁ CONFIRMADOS neste fluxo: ${dadosConfirmados === "" ? "nenhum" : dadosConfirmados}. ` +
+    "NUNCA diga que já possui um dado (CPF, nascimento, entrada, parcelas, moto etc.) que não esteja nessa lista; se faltar, pergunte.";
   const primeira = estado.situacao.pendentes[0]!;
   const campoPrimeira: CampoPendenteParaCaptura = {
     key: primeira.config.key,
@@ -410,6 +420,7 @@ export function renderBlocoDeAtendimento(
       `Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: ${venda} NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
       'Campos do fluxo (só para REGISTRAR se o cliente informar — NÃO pergunte agora):',
       ...linhas,
+      blocoDadosConfirmados,
     ].join('\n');
   }
 
@@ -436,6 +447,7 @@ export function renderBlocoDeAtendimento(
     "NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido — continue atendendo o cliente. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.",
     "Campos do fluxo (use só para REGISTRAR se o cliente informar — NUNCA pergunte os que NÃO forem a pergunta da vez):",
     ...linhas,
+    blocoDadosConfirmados,
     `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(
       campoPrimeira,
       estado.confirmacoes?.[campoPrimeira.key],

@@ -784,3 +784,25 @@ inventar limite nem alterar o banco externo.
 - Teste: **1/1**; `tsc` 0.
 - O código já estava no worker `jevfix25`; falta apenas a validação ao vivo, que
   continua bloqueada pelo 0101 self-chat não gerar turno.
+
+---
+
+# P3 — anti-alucinação de dados (2026-10-20 14:17 UTC)
+
+- Bloco `Dados JÁ CONFIRMADOS` no prompt cru e no brief: lista o que o fluxo
+  realmente tem; quando vazio, diz “nenhum” e proíbe afirmar que já possui CPF,
+  nascimento, entrada, parcelas ou moto fora da lista.
+- Testes: `fluxo-uma-pergunta-por-vez` 3/3 + `atendimento` 53/53 = **56/56**;
+  `tsc` 0.
+- Worker: `jevfix26`.
+- Validação ao vivo fica para o final, junto com o teste completo.
+
+## Checklist de pendências (atualizado)
+
+- P0-D mídia real — **último**, deferido; precisa foto real de outro telefone.
+- P0-E isolamento — teste unitário ok; validação ao vivo pendente.
+- P1-B RAG — prompt ok; validação ao vivo pendente.
+- P1-A segmento — prompt ok; validação ao vivo pendente.
+- P3 — CPF+data ok; data no mesmo turno pendente; anti-alucinação ok (unit).
+- P2 — Biz sem estoque; CPF em 3 tentativas.
+- Teste completo — pendente.

@@ -68,6 +68,7 @@ describe("com fluxo pendente, o modelo responde tudo E inclui a pergunta do flux
     expect(bloco).toMatch(/inclua a pergunta pendente do fluxo COPIADA EXATAMENTE/i);
     expect(bloco).toMatch(/NÃO abra OUTRA pergunta/i);
     expect(bloco).toContain('Pergunta do fluxo a incluir (copie exatamente este texto): "cidade?"');
+    expect(bloco).toContain('Dados JÁ CONFIRMADOS neste fluxo: nenhum');
     // Não proíbe mais o modelo de fazer a pergunta do fluxo.
     expect(bloco).not.toMatch(/NÃO faça a pergunta do fluxo/);
   });
@@ -83,6 +84,7 @@ describe("com fluxo pendente, o modelo responde tudo E inclui a pergunta do flux
     expect(brief).toMatch(/inclua a pergunta pendente do fluxo COPIADA EXATAMENTE/i);
     expect(brief).toMatch(/NÃO abra OUTRA pergunta/i);
     expect(brief).toContain('"cidade?"');
+    expect(brief).toContain('Dados JÁ CONFIRMADOS: nenhum');
   });
 
   it("sem pendentes (fluxo concluído) a regra sai do bloco", () => {

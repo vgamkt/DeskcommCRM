@@ -103,6 +103,13 @@ function blocoDoFluxoCompacto(
   }
 
   const linhas = estado.situacao.pendentes.map(linhaDaPendente);
+  const dadosConfirmados = Object.entries(estado.valores)
+    .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join('; ');
+  const blocoDadosConfirmados =
+    `Dados JÁ CONFIRMADOS: ${dadosConfirmados === '' ? 'nenhum' : dadosConfirmados}. ` +
+    'NUNCA diga que já possui um dado (CPF, nascimento, entrada, parcelas, moto etc.) fora dessa lista; se faltar, pergunte.';
   const primeira = estado.situacao.pendentes[0]!;
   // ── TURNO DE CATÁLOGO: a VENDA fecha (a pergunta do fluxo fica próxima) ──────
   // Decisão do dono (2026-10-13): quando o turno MOSTROU MOTOS, a pergunta do
@@ -122,6 +129,7 @@ function blocoDoFluxoCompacto(
       `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo, mas você ACABOU DE MOSTRAR MOTOS. Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: ${venda} NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
       'Pendentes (só para REGISTRAR se o cliente informar — NÃO pergunte agora):',
       ...linhas,
+      blocoDadosConfirmados,
     ].join('\n');
   }
 
@@ -134,6 +142,7 @@ function blocoDoFluxoCompacto(
     `Conduza SÓ o fluxo "${estado.nomeDoFluxo}" agora. Se o cliente pediu OUTRO processo junto (ex.: dar a moto na troca E financiar), os demais estão na FILA e começam SOZINHOS quando este terminar — NÃO pergunte do outro, NÃO misture os dois.`,
     'Pendentes:',
     ...linhas,
+    blocoDadosConfirmados,
     `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(campoParaPergunta(primeira))}"`,
     `Se o cliente não responder o campo em até ${estado.maxTentativas} tentativa(s), pare de perguntá-lo e SIGA a venda normalmente — NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.`,
   ].join('\n');
