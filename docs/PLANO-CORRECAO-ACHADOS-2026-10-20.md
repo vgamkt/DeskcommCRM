@@ -983,3 +983,22 @@ inventar limite nem alterar o banco externo.
   inválido porque o flow_data/enrollment já tinham sido limpos.
 - Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501, versão
   temporária removida. Sem crédito Datafy.
+
+---
+
+# Venda — correções e reteste (2026-10-20 18:58 UTC)
+
+- **Texto sem mídia:** o modelo dizia “recebi as fotos/CRLV” sem mídia. Agora
+  o motor substitui a falsa confirmação por “Ainda não recebi a foto/documento.”
+  + a pergunta oficial, uma única vez.
+- **Mídia real:** `venda_fotos` e `venda_documento_foto` gravados com a URL real;
+  Venda concluída (`completed/converted`).
+- **Drain:** não espera transcrição para campo `exige_midia`; resposta de mídia
+  sem o atraso de >90s.
+- **Duplicidade:** “Sim, pode seguir” não abriu segunda Venda.
+- **Perfeito:** não apareceu; abertura “Ainda não recebi...”.
+- Testes: `tsc` 0; catálogo/flow/RAG/CPF; Venda texto e mídia.
+- **Falta:** rodar a regressão completa final (todos os fluxos/turnos) com o
+  worker `jevfix37`.
+- Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
+  versão temporária removida; sem crédito Datafy.

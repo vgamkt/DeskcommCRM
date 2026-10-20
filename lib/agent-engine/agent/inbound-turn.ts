@@ -4785,10 +4785,20 @@ async function executarTurnoDoAgente(
             fluxoAtendimento?.confirmacoes?.[pendenteOficial.config.key],
           );
           const semPerguntas = removerPerguntasDoModelo(body);
+          // O modelo NÃO pode afirmar que recebeu foto/CRLV quando não houve
+          // mídia. Troca a falsa confirmação pela verdade + pergunta oficial.
+          const falsaMidia =
+            pendenteOficial.config.exige_midia === true &&
+            !inboundTemMidia &&
+            /\b(recebi|chegou|chegaram)\b[\s\S]*\b(foto|fotos|crlv|documento|imagem)\b/i.test(body);
+          const corpo =
+            falsaMidia
+              ? 'Ainda não recebi a foto/documento.'
+              : semPerguntas;
           // A pergunta oficial pode ser uma ORDEM sem “?” (“Agora me envie...”) e
           // o modelo pode repeti-la no corpo. Remove TODAS as ocorrências e
           // anexa uma única vez.
-          const semOficial = semPerguntas.split(oficial).join(' ').replace(/\s+/g, ' ').trim();
+          const semOficial = corpo.split(oficial).join(' ').replace(/\s+/g, ' ').trim();
           body = `${semOficial}${semOficial !== '' ? '\n\n' : ''}${oficial}`.trim();
         }
         // CONFERÊNCIA (Fase 2.2): o modelo registra QUAIS trechos da base usou. É o
