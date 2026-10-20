@@ -46,6 +46,8 @@ export async function montarConhecimentoDoTurno(
     fontes: readonly string[];
     topK: number;
     limiar: number;
+    jobId?: string | null;
+    agentId?: string | null;
     log?: Logger;
   },
 ): Promise<TrechoDeConhecimento[]> {
@@ -84,7 +86,7 @@ export async function montarConhecimentoDoTurno(
     );
 
     // 3) O LIMIAR é o portão final: abaixo dele, não injeta.
-    return rows
+    const selecionados = rows
       .filter((r) => Number(r.similarity) >= args.limiar)
       .map((r) => ({
         id: String(r.chunk_id),
@@ -93,6 +95,30 @@ export async function montarConhecimentoDoTurno(
         sim: Number(r.similarity),
       }))
       .filter((t) => t.texto !== '');
+    // P1-B: a PRÉ-BUSCA do turno também grava a telemetria (antes só a tool
+    // `search_knowledge` gravava; o conhecimento pré-buscado ficava invisível).
+    try {
+      const topScore = selecionados.length > 0
+        ? Math.max(...selecionados.map((t) => t.sim))
+        : null;
+      await db.query(
+        `insert into knowledge_searches
+           (organization_id, job_id, kb_version_id, hits, top_score, threshold, agent_id, knowledge_source_ids)
+         values ($1::uuid, $2::uuid, null, $3::int, $4, $5, $6::uuid, $7::uuid[])`,
+        [
+          organizationId,
+          args.jobId ?? null,
+          selecionados.length,
+          topScore,
+          args.limiar,
+          args.agentId ?? null,
+          fontes,
+        ],
+      );
+    } catch {
+      // telemetria best-effort: não derruba o turno
+    }
+    return selecionados;
   } catch {
     return [];
   }

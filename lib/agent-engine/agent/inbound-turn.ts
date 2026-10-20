@@ -7796,9 +7796,20 @@ async function executarTurnoDoAgente(
             fontes: agentConfig!.knowledgeSourceIds!,
             topK: agentConfig?.ragTopK ?? 5,
             limiar: agentConfig?.ragSimilarityThreshold ?? 0.4,
+            jobId: liveJob()?.id ?? null,
+            agentId: agentConfig?.agentId ?? null,
             log: runLog,
           })
         : [];
+    if (trechosDeConhecimento.length > 0) {
+      // Citações DETERMINÍSTICAS do que foi pré-buscado para este turno; o modelo
+      // pode confirmar com `fonte_ids`, mas a UI/auditoria não ficam sem nada.
+      pendingCitations = trechosDeConhecimento.map((t) => ({
+        chunk_id: t.id,
+        score: t.sim,
+        snippet: t.texto.slice(0, 240),
+      }));
+    }
     const blocoConhecimento = renderBlocoDeConhecimento(trechosDeConhecimento);
     if (blocoConhecimento !== '') {
       runLog.info('conhecimento no turno (Fase 2)', {
