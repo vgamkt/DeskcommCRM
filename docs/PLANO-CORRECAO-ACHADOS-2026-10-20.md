@@ -806,3 +806,24 @@ inventar limite nem alterar o banco externo.
 - P3 — CPF+data ok; data no mesmo turno pendente; anti-alucinação ok (unit).
 - P2 — Biz sem estoque; CPF em 3 tentativas.
 - Teste completo — pendente.
+
+---
+
+# P3 — data de nascimento no mesmo turno do CPF (2026-10-20 14:28 UTC)
+
+- O ramo do CPF agora captura a data de nascimento que veio na mesma mensagem
+  (“Meu CPF é X e nasci em 29/09/1997”) e grava `data_nascimento` no
+  `contact_flow_data`; o fluxo conclui sem perguntar a data de novo.
+- `capturarData` ganhou `aceitarNoMeio` para datas que vêm no meio de uma
+  mensagem longa (CPF + data).
+- Testes: `atendimento` **54/54** + `captura-do-fluxo` **39/39** = **93/93**;
+  `tsc` 0.
+- Worker: `jevfix27`.
+- Validação ao vivo fica para o final.
+
+## Pendências restantes de correção (sem validação)
+
+- P2 Biz: `moto_escolhida=Biz` sem estoque.
+- P2 CPF em 3 tentativas.
+- P0-D mídia real: código/config prontos, **deferido ao final**.
+- Validações de P0-E/P1-A/P1-B/P3 e teste completo: no final.

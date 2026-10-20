@@ -96,7 +96,7 @@ function contemContexto(campo: CampoPendenteParaCaptura, textoNormalizado: strin
 export function normalizarValorDoCampo(
   campo: CampoPendenteParaCaptura,
   texto: string,
-  opts: { exigirContexto: boolean },
+  opts: { exigirContexto: boolean; aceitarDataNoMeio?: boolean },
 ): CapturaDeCampo | null {
   const t = texto.trim();
   if (t === "") return null;
@@ -114,7 +114,7 @@ export function normalizarValorDoCampo(
 
   switch (campo.type) {
     case "date":
-      return capturarData(campo, t, n, temContexto);
+      return capturarData(campo, t, n, temContexto, opts.aceitarDataNoMeio === true);
     case "number":
       return capturarNumero(campo, t, n, temContexto);
     case "boolean":
@@ -132,6 +132,7 @@ function capturarData(
   bruto: string,
   n: string,
   ancorado: boolean,
+  aceitarNoMeio = false,
 ): CapturaDeCampo | null {
   const iso = RE_DATA_ISO.exec(n);
   if (iso) {
@@ -142,8 +143,9 @@ function capturarData(
   }
   const br = RE_DATA_BR.exec(n);
   if (!br) return null;
-  // Sem âncora, só aceita se parecer responda à pergunta: a data é dominante.
-  if (!ancorado && tokens(bruto).length > 6) return null;
+  // Sem âncora, só aceita se parecer resposta à pergunta: a data é dominante.
+  // `aceitarNoMeio` cobre CPF+data na MESMA mensagem (a data vem no meio).
+  if (!ancorado && !aceitarNoMeio && tokens(bruto).length > 6) return null;
   const dia = Number(br[1]);
   const mes = Number(br[2]);
   let ano = Number(br[3]);

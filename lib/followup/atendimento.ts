@@ -36,6 +36,7 @@ import type { ContactFlowEventKind } from "./contact-flow-data";
 import {
   classificarInbound,
   ehCampoCpf,
+  normalizarValorDoCampo,
   textoDaPergunta,
   type CampoPendenteParaCaptura,
   type ConfirmacaoDeCampo,
@@ -846,6 +847,55 @@ function estadoComCpf(
   return { ...estado, valores, confirmacoes, situacao };
 }
 
+/**
+ * Captura a DATA DE NASCIMENTO que veio na MESMA mensagem do CPF. Sem isto, o
+ * ramo do CPF retornava antes do validador e a data (já dita pelo cliente) era
+ * perguntada de novo no mesmo turno (medido 2026-10-20).
+ */
+async function capturarDataNascimentoDoMesmoTexto(
+  db: pg.Pool,
+  organizationId: string,
+  estado: EstadoDeAtendimento,
+  texto: string | null | undefined,
+): Promise<EstadoDeAtendimento> {
+  if (!texto || estado.valores.data_nascimento !== undefined) return estado;
+  const passo = estado.checklist.passos.find(
+    (p) => p.kind === "collect" && p.node.config.key === "data_nascimento",
+  );
+  if (passo === undefined || passo.kind !== "collect") return estado;
+  const cfg = passo.node.config;
+  const campo: CampoPendenteParaCaptura = {
+    key: cfg.key,
+    label: cfg.label,
+    type: cfg.type,
+    ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+    ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+  };
+  const captura =
+    normalizarValorDoCampo(campo, texto, { exigirContexto: true }) ??
+    normalizarValorDoCampo(campo, texto, {
+      exigirContexto: false,
+      aceitarDataNoMeio: true,
+    });
+  if (captura === null) return estado;
+  await registrarDadoDoFluxo(db, {
+    organizationId,
+    contactId: estado.enrollment.contact_id,
+    flowPointerId: estado.enrollment.pointer_id,
+    enrollmentId: estado.enrollment.id,
+    fieldKey: cfg.key,
+    value: captura.valor,
+    valueJson: { normalizado: captura.valor, tipo: "date", deterministico: true },
+    source: "deterministic",
+  }).catch(() => {});
+  const valores = { ...estado.valores, [cfg.key]: captura.valor };
+  const situacao = situacaoDoChecklist(estado.checklist, new Set(Object.keys(valores)), {
+    tentativas: estado.tentativas,
+    maxTentativas: estado.maxTentativas,
+  });
+  return { ...estado, valores, situacao };
+}
+
 function resultadoDoEstado(estado: EstadoDeAtendimento): ResultadoDoInbound {
   if (!estado.situacao.completo) return { estado, concluiu: false };
   return {
@@ -1022,7 +1072,14 @@ async function processarCpfDoFluxo(
         const valores = { ...estado.valores, [chave]: av.formatado };
         const confirmacoes = { ...(estado.confirmacoes ?? {}) };
         delete confirmacoes[chave];
-        return resultadoDoEstado(estadoComCpf(estado, valores, confirmacoes));
+        return resultadoDoEstado(
+          await capturarDataNascimentoDoMesmoTexto(
+            db,
+            args.organizationId,
+            estadoComCpf(estado, valores, confirmacoes),
+            args.texto,
+          ),
+        );
       }
       const pedir: ConfirmacaoDeCampo = {
         ...confirmacao,
@@ -1058,7 +1115,14 @@ async function processarCpfDoFluxo(
           const valores = { ...estado.valores, [chave]: av.formatado };
           const confirmacoes = { ...(estado.confirmacoes ?? {}) };
           delete confirmacoes[chave];
-          return resultadoDoEstado(estadoComCpf(estado, valores, confirmacoes));
+          return resultadoDoEstado(
+            await capturarDataNascimentoDoMesmoTexto(
+              db,
+              args.organizationId,
+              estadoComCpf(estado, valores, confirmacoes),
+              args.texto,
+            ),
+          );
         }
         const nova: ConfirmacaoDeCampo = {
           candidato: av.digitos,
@@ -1104,7 +1168,14 @@ async function processarCpfDoFluxo(
     const valores = { ...estado.valores, [chave]: av.formatado };
     const confirmacoes = { ...(estado.confirmacoes ?? {}) };
     delete confirmacoes[chave];
-    return resultadoDoEstado(estadoComCpf(estado, valores, confirmacoes));
+    return resultadoDoEstado(
+      await capturarDataNascimentoDoMesmoTexto(
+        db,
+        args.organizationId,
+        estadoComCpf(estado, valores, confirmacoes),
+        args.texto,
+      ),
+    );
   }
 
   const nova: ConfirmacaoDeCampo = {

@@ -647,6 +647,57 @@ describe("carregarEstadoDeAtendimento — pendências consideram o contato, não
   });
 });
 
+describe("P3 — CPF e data de nascimento na MESMA mensagem", () => {
+  it("grava o CPF e a data no mesmo turno e conclui o fluxo", async () => {
+    const data = no({
+      id: "c2",
+      type: "collect",
+      config: {
+        key: "data_nascimento",
+        label: "Data de nascimento",
+        type: "date",
+        required: true,
+        permite_correcao: true,
+      },
+    });
+    const built = mapearChecklist(
+      grafo(
+        [trigger("t"), collect("c1", "cpf"), data, end("e")],
+        [aresta("t", "c1"), aresta("c1", "c2"), aresta("c2", "e")],
+      ),
+    );
+    if (!built.ok) throw new Error("grafo inválido");
+    const estado: EstadoDeAtendimento = {
+      enrollment: {
+        id: "enr-1",
+        pointer_id: "p1",
+        version_id: "v1",
+        contact_id: "ct-1",
+        current_node_id: "c1",
+        status: "active",
+      },
+      nomeDoFluxo: "Financiamento",
+      checklist: built.checklist,
+      valores: {},
+      tentativas: {},
+      maxTentativas: 3,
+      situacao: situacaoDoChecklist(built.checklist, new Set()),
+    };
+    const query = async (sql: string) => {
+      if (/insert into contact_flow_data/.test(sql)) return { rows: [] };
+      return { rows: [] };
+    };
+    const r = await processarInboundDoFluxo({ query } as never, {
+      organizationId: "org",
+      estado,
+      texto: "Meu CPF é 529.982.247-25 e nasci em 29/09/1997.",
+    });
+    expect(r.estado.valores.cpf).toBe("529.982.247-25");
+    expect(r.estado.valores.data_nascimento).toBe("1997-09-29");
+    expect(r.concluiu).toBe(true);
+  });
+});
+
 describe("resposta TARDIA a campo esgotado (não se perde)", () => {
   it("grava o valor de um campo encerrado por não resposta e conclui", async () => {
     const built = mapearChecklist(
