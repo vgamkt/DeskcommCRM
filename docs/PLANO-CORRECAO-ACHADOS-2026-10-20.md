@@ -849,3 +849,23 @@ inventar limite nem alterar o banco externo.
 - **CPF em 3 tentativas:** é contagem de tentativas por turno (cada turno sem CPF
   incrementa); com CPF+data e P3 corrigidos, a tendência é reduzir. Não é um bug
   de gravação comprovado; fica para a validação final.
+
+---
+
+# P0-D — VALIDADO COM MÍDIA REAL (2026-10-20 14:44 UTC)
+
+- O 5924 (`+5512981325924`, contato “Letícia & Gustavo”) enviou uma **foto real**
+  para o 0101. Ela chegou com `media_status=stored` e
+  `media_storage_path=.../070c10ee-....jpg`.
+- Criei o estado de Venda com os dados pendentes de fotos/CRLV e processei a
+  mensagem real pelo worker.
+- Resultado no `contact_flow_data`:
+  `venda_fotos = e40dc035-.../070c10ee-....jpg`, `value_json.midia=true` — **não
+  o texto**.
+- O bot respondeu ao 5924:
+  “Recebi a foto que você me mandou. ... me envie uma foto do documento da moto
+  (CRLV), por favor.”
+- **P0-D validado com imagem real.** A exigência de mídia está ativa em Troca e
+  Venda; o texto continua sem preencher o campo.
+- Ambiente restaurado: Datafy `WORKING`, 0101 allowlist 2501, agente 84, versão
+  temporária removida; o enrollment/flow_data de teste do 5924 foi removido.
