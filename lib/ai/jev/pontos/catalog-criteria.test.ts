@@ -137,6 +137,13 @@ describe("estilo/categoria por si (ESCOPO 11)", () => {
     ],
   };
 
+  it("P1-A: 'cidade' orienta categoria urbana e exclui Adventure/Trilha/1000cc", () => {
+    const q = perguntaDeCriteriosDeJev(entradaCat);
+    const instrucao = String(q.categoria_alvo?.instructions ?? "");
+    expect(instrucao).toMatch(/cidade/i);
+    expect(instrucao).toMatch(/Adventure\/Trilha\/Off-road\/Esportiva\/Touring/i);
+  });
+
   it("cria categoria_alvo com as categorias REAIS do estoque", () => {
     const q = perguntaDeCriteriosDeJev(entradaCat);
     expect(q.categoria_alvo?.type).toBe("choice");

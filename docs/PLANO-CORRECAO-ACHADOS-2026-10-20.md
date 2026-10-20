@@ -761,3 +761,15 @@ inventar limite nem alterar o banco externo.
 - O agente consulta o banco externo em tempo real; a próxima apresentação deve
   mostrar R$ 9.500,00.
 - Datafy `WORKING`; worker `jevfix24`; sem crédito.
+
+---
+
+# P1-A — segmento urbano na JEV (2026-10-20 14:04 UTC)
+
+- Instrução do ponto `categoria_alvo` agora mapeia explicitamente “cidade/urbano/
+  dia a dia/trânsito” para categorias urbanas reais do estoque e proíbe oferecer
+  Adventure/Trilha/Off-road/Esportiva/Touring; “cidade + trilha” aceita uso misto.
+- Teste do prompt: `catalog-criteria.test.ts` **22/22**; `tsc` 0.
+- Worker: `jevfix25`.
+- Validação ao vivo **pendente** (0101 self-chat não gera turno; V-Strom/1000cc
+  precisa ser testado com conversa real).

@@ -187,7 +187,9 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     perguntas.categoria_alvo = {
       type: 'choice',
       instructions:
-        'O cliente pediu um ESTILO/CATEGORIA por si, como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha" (escolha a categoria REAL do estoque que corresponde). Se ele citou o estilo apenas DENTRO do nome de um modelo, ou não citou estilo, responda "nenhuma".',
+        'O cliente pediu um ESTILO/CATEGORIA por si, como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha" (escolha a categoria REAL do estoque que corresponde). ' +
+        'Quando o cliente descrever USO/TERRENO ("cidade", "urbano", "dia a dia", "trânsito"), escolha a categoria REAL de uso urbano (ex.: "Street", "Street, City", "Scooter", "Naked") e NÃO escolha Adventure/Trilha/Off-road/Esportiva/Touring — uma 1000cc de aventura não é resposta para "cidade" (medido no teste de 2026-10-20: V-Strom 1000 entrou numa lista urbana). Se a mensagem pedir "cidade e trilha", escolha a categoria que cubra uso misto; se só houver Adventure/Trilha, responda "nenhuma". ' +
+        'Se ele citou o estilo apenas DENTRO do nome de um modelo, ou não citou estilo, responda "nenhuma".',
       criteria: criteriaCat,
     };
   }
