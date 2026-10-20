@@ -881,3 +881,25 @@ inventar limite nem alterar o banco externo.
 - **P1-B RAG: FALHOU** — a resposta sobre garantia estava correta (90 dias), mas **não houve linha nova em `knowledge_searches` nem citações** no metadata. O prompt sozinho não fez o modelo chamar a tool.
 - **P2/full test:** pendentes.
 - Ambiente restaurado: Datafy `WORKING`, 0101 allowlist 2501, agente 84, versão temporária removida; flows/data de teste dos contatos 5924/6837 removidos. Sem crédito Datafy.
+
+---
+
+# P1-B — RAG validada com telemetria e citações (2026-10-20 15:23 UTC)
+
+- Pré-busca do turno agora grava `knowledge_searches` (job, hits, top_score,
+  threshold, agent_id) e as citações são anexadas à outbound real, inclusive no
+  caminho bufferizado (`buffer:N` não é mais tratado como message id).
+- Teste real com o 6837: pergunta de garantia → resposta com 90 dias e exclusões;
+  `knowledge_searches` criada (3 hits, top 0.798322, threshold 0.4); metadata da
+  outbound com **3 citações** (`GAR-001` etc.).
+- `KB_NO_TURNO=1` já estava no `.env`; o problema era a falta de telemetria/
+  citação no caminho pré-busca e o `buffer:1`.
+- Worker: `jevfix29`.
+- **P1-B validado.**
+
+## Status das validações
+
+- P0-D, P0-E, P1-A, P1-B e P3: **validados**.
+- P2 e teste completo: pendentes.
+- Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501, versão
+  temporária removida; flows/data dos contatos de teste 5924/6837 removidos.

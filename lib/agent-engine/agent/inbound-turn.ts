@@ -676,6 +676,10 @@ export const MAX_VETOS_DE_SPINNING = 2;
  * Diz que vai passar para uma pessoa da equipe E que o atendimento continua por
  * aqui (o cliente não fica com a impressão de abandono).
  */
+function ehUuidDeMensagem(id: unknown): id is string {
+  return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
 export const TEXTO_ATENDIMENTO_HUMANO =
   'Vou pedir para uma pessoa da nossa equipe continuar esse atendimento com você, tá? ' +
   'Já já eu volto por aqui para seguir te ajudando. Obrigado pela paciência! 😊';
@@ -6733,6 +6737,11 @@ async function executarTurnoDoAgente(
           const outcome = chain.outcome;
           outcomes.push(outcome);
           if (outcome.kind === 'sent' && pendingCitations.length > 0) {
+            // Envio BUFFERIZADO devolve `buffer:N`; a mensagem real só existe
+            // depois da liberação do buffer. Não descarta as citações aqui.
+            if (!ehUuidDeMensagem(outcome.messageId)) {
+              return { ok: true, status: 'enviada' };
+            }
             try {
               await pool.query(
                 `update messages
@@ -9079,6 +9088,30 @@ async function executarTurnoDoAgente(
         }
       }
       const desfechosReais = await canalComBuffer.liberar(finais);
+      // Citações da pré-busca: no caminho bufferizado o `send_message` devolveu
+      // `buffer:N`; anexa na mensagem REAL que acabou de sair.
+      if (pendingCitations.length > 0) {
+        for (const o of desfechosReais) {
+          if (o.kind !== 'sent') continue;
+          const messageId = (o as { messageId?: unknown }).messageId;
+          if (!ehUuidDeMensagem(messageId)) continue;
+          try {
+            await pool.query(
+              `update messages
+                 set metadata = coalesce(metadata, '{}'::jsonb)
+                   || jsonb_build_object('citations', $3::jsonb, 'ai_generated', true)
+                 where organization_id = $1 and id = $2`,
+              [tenantId, messageId, JSON.stringify(pendingCitations)],
+            );
+          } catch (err) {
+            runLog.warn('citações não anexadas à outbound (buffer)', {
+              message_id: messageId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        pendingCitations = [];
+      }
       // ⚠️ Só re-tenta quando NADA foi entregue (ver `re-tentativa-de-envio.ts`):
       // re-rodar o modelo reenvia e DUPLICA (medido ao vivo 2026-10-14).
       if (deveReTentarTurnoPorEnvio(desfechosReais)) {
