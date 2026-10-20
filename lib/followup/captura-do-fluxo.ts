@@ -20,6 +20,7 @@
  * livre NUNCA é capturado aqui — interpretar sentido não é trabalho de regex.
  */
 import type { ContactFlowFieldType } from "./graph-schema";
+import { avaliarCpf } from "./cpf";
 
 /** O mínimo que a captura precisa saber de um campo pendente. */
 export interface CampoPendenteParaCaptura {
@@ -51,6 +52,11 @@ function normalizar(s: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** O campo é CPF? (o tipo do schema é `text`; o NOME do campo é a régua). */
+export function ehCampoCpf(campo: { key: string; label: string }): boolean {
+  return /\bcpf\b/.test(normalizar(`${campo.key} ${campo.label}`));
 }
 
 const RE_DATA_BR = /\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/;
@@ -97,6 +103,14 @@ export function normalizarValorDoCampo(
   const n = normalizar(t);
   const temContexto = contemContexto(campo, n);
   if (opts.exigirContexto && !temContexto) return null;
+
+  // CPF é `text` no schema, mas tem régua própria: só a captura silenciosa de um
+  // CPF VÁLIDO (11 dígitos + verificadores). Incompleto/errado NÃO é capturado —
+  // vai para a confirmação do modelo/JEV e só entra com `confirmacao: true`.
+  if (ehCampoCpf(campo)) {
+    const av = avaliarCpf(t);
+    return av.valido ? { key: campo.key, valor: av.formatado, bruto: t } : null;
+  }
 
   switch (campo.type) {
     case "date":
@@ -258,8 +272,50 @@ export function classificarInbound(
   return { resultado: "nao_identificado" };
 }
 
+export interface ConfirmacaoDeCampo {
+  /** Só os dígitos que o cliente mandou. */
+  candidato: string;
+  /** Formatação parcial/canônica do que foi entendido. */
+  formatado: string;
+  /** faltam_digitos | sobram_digitos | digitos_verificadores | repetido */
+  motivo: string;
+  /** O cliente confirmou, mas ainda faltam/sobram dígitos: pedir o CPF completo. */
+  pedirCompleto?: boolean;
+}
+
+/**
+ * Pergunta de CONFIRMAÇÃO do CPF — o motor reformata o que entendeu e pergunta
+ * “é esse mesmo?”. O cliente confirma/corrige; só então o CPF entra.
+ */
+export function textoDaConfirmacaoCpf(confirmacao: ConfirmacaoDeCampo): string {
+  if (confirmacao.pedirCompleto === true) {
+    return confirmacao.motivo === "sobram_digitos"
+      ? "Sobraram dígitos no CPF. Me manda o CPF completo, por favor."
+      : "Ainda faltam dígitos no CPF. Me manda o CPF completo, por favor.";
+  }
+  const base = `Entendi o CPF ${confirmacao.formatado}. É esse mesmo?`;
+  switch (confirmacao.motivo) {
+    case "faltam_digitos":
+      return `${base} Se faltou algum dígito, me manda o CPF completo.`;
+    case "sobram_digitos":
+      return `${base} Se sobrou algum dígito, me manda o CPF completo.`;
+    case "repetido":
+      return `${base} Esse número parece repetido; me manda o CPF completo.`;
+    case "digitos_verificadores":
+      return `${base} Se estiver certo, me confirma; se não, me manda o CPF completo.`;
+    default:
+      return base;
+  }
+}
+
 /** Texto da pergunta a enviar quando o modelo não a incluiu (determinístico). */
-export function textoDaPergunta(campo: CampoPendenteParaCaptura): string {
+export function textoDaPergunta(
+  campo: CampoPendenteParaCaptura,
+  confirmacao?: ConfirmacaoDeCampo | null,
+): string {
+  if (confirmacao !== undefined && confirmacao !== null && ehCampoCpf(campo)) {
+    return textoDaConfirmacaoCpf(confirmacao);
+  }
   const q = campo.question?.trim();
   if (q !== undefined && q !== "") return q;
   const label = campo.label.trim();
@@ -280,7 +336,11 @@ export function textoDaPergunta(campo: CampoPendenteParaCaptura): string {
  * `boolean` exige sim/não; `date` exige data; `select` exige uma das opções;
  * `text` aceita qualquer coisa não-vazia (é o único tipo livre).
  */
-export function valorBateComTipo(campo: CampoPendenteParaCaptura, valor: unknown): boolean {
+export function valorBateComTipo(
+  campo: CampoPendenteParaCaptura,
+  valor: unknown,
+  opts?: { confirmado?: boolean },
+): boolean {
   const v = typeof valor === "string" ? valor.trim() : valor;
   if (v === null || v === undefined || v === "") return false;
   const s = String(v).trim();
@@ -300,10 +360,12 @@ export function valorBateComTipo(campo: CampoPendenteParaCaptura, valor: unknown
   // `cpf = "3 mil"` a partir de "quero dar 3 mil de entrada" (o valor da ENTRADA
   // caiu no CPF). Aqui o nome do campo (key/rótulo) manda: se espera CPF, só
   // aceita 11 dígitos válidos; o valor fica PENDENTE e o modelo repergunta.
-  const rotulo = normalizar(`${campo.key} ${campo.label}`);
-  if (/\bcpf\b/.test(rotulo)) {
-    const digitos = s.replace(/\D/g, "");
-    return digitos.length === 11 && !/^(\d)\1{10}$/.test(digitos);
+  if (ehCampoCpf(campo)) {
+    const av = avaliarCpf(s);
+    // 11 dígitos é obrigatório; verificadores errados só entram DEPOIS de o
+    // cliente confirmar o CPF reformatado (`confirmacao: true`).
+    if (av.digitos.length !== 11) return false;
+    return av.valido || opts?.confirmado === true;
   }
 
   switch (campo.type) {
@@ -340,6 +402,11 @@ function tokensDeConteudo(texto: string): Set<string> {
 }
 
 /** A pergunta saiu em algum dos textos enviados neste turno? (cobertura do conteúdo.) */
+/** Alguma bolha do turno já terminou/contém uma pergunta? (uma pergunta por turno) */
+export function algumTextoComPergunta(textos: readonly string[]): boolean {
+  return textos.some((t) => /[?？]/.test(t));
+}
+
 export function perguntaSaiuNosTextos(
   pergunta: string,
   textos: readonly string[],

@@ -82,6 +82,12 @@ describe('introducaoFactualDaApresentacao (ESCOPO 12)', () => {
 });
 
 describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
+  it('corrige "Separei mais 3" para a contagem real das motos enviadas', () => {
+    expect(
+      comQuantidadeNoTexto('Separei mais 3 opções que ficam bem nessa linha:', 5),
+    ).toContain('Separei mais 5 opções');
+  });
+
   it('troca o termo genérico pelo NÚMERO real, sem apagar a saudação', () => {
     const t = comQuantidadeNoTexto(
       'Bom dia! Sou a Marcela. Separei as opções de trail que tenho, dá uma olhada:',

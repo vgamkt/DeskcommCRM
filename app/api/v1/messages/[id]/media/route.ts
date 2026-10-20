@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUserCached, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
@@ -34,21 +34,25 @@ interface RouteCtx {
 export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: messageId } = await ctx.params;
-  const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // Uma conversa dispara uma requisição por imagem. `loadAuthUserCached` valida
+  // a sessão UMA vez por janela curta e compartilha a mesma promessa entre as
+  // requisições paralelas — sem isto, cada `<img>` virava uma (ou três) idas ao
+  // Supabase Auth e estourava o rate limit. Ver `lib/auth/server.ts`.
+  //
+  // O cliente de sessão é criado DEPOIS: se o cache precisou renovar o token,
+  // o `setAll` do Supabase atualiza o cookie desta requisição e a query abaixo
+  // já enxerga o token novo.
+  const authUser = await loadAuthUserCached();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
+  const activeOrg = await resolveActiveOrg(authUser);
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  const supabase = await createClient();
 
   // Client de sessão: RLS garante que a mensagem pertence a uma org do usuário.
   // Filtro explícito de organization_id por doutrina (defense-in-depth).

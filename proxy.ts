@@ -33,6 +33,21 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
+  // ── MÍDIA: a rota autentica, o middleware não repete ──────────────────────
+  //
+  // Uma conversa com N imagens gera N GETs nesta rota. O `getUser()` daqui é
+  // uma ida ao GoTrue POR IMAGEM e, somado às validações da própria rota,
+  // estourava o rate limit do Supabase Auth (429) e derrubava a sessão do CRM.
+  // A rota usa `loadAuthUserCached()` (uma validação por janela curta) e
+  // responde 401 sozinha quando não há sessão — então aqui não há ganho de
+  // segurança em validar de novo, só custo.
+  //
+  // O refresh de token continua acontecendo: a rota cria o cliente Supabase e
+  // o `setAll` dele grava os cookies renovados na resposta.
+  if (request.method === "GET" && /^\/api\/v1\/messages\/[^/]+\/media\/?$/.test(pathname)) {
+    return response;
+  }
+
   const supabase = createServerClient(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

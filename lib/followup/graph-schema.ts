@@ -312,6 +312,8 @@ export const collectConfigSchema = z
     options: z.array(z.string().min(1).max(80)).max(20).optional(),
     /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
     question: z.string().max(400).optional(),
+    /** Exige mídia real (foto/documento) — texto sozinho não preenche o campo. */
+    exige_midia: z.boolean().optional(),
   })
   .refine((c) => c.type !== 'select' || (c.options?.length ?? 0) > 0, {
     message: 'tipo "select" exige ao menos uma opção',

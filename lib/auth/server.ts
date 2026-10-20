@@ -8,6 +8,7 @@ import { lerInterface } from "@/lib/navigation/interface";
  * and then filter by `user_id` (a trusted source).
  */
 import { readSupportContext } from "@/lib/impersonate/support";
+import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logger } from "@/lib/logger";
@@ -259,6 +260,101 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     organizations: memberships,
     support,
   };
+}
+
+/**
+ * ─── CACHE CURTO DO USUÁRIO AUTENTICADO ──────────────────────────────────────
+ *
+ * `loadAuthUser()` fala com o GoTrue (`getUser`) e depois faz DUAS queries. Isso
+ * é o certo para uma navegação — mas não para uma conversa com 50 imagens: cada
+ * `<img src="/api/v1/messages/:id/media">` é uma requisição, e cada uma refazia
+ * `getUser()`. Medido nesta VPS: abrir a conversa de teste com centenas de
+ * imagens gerou 429 `over_request_rate_limit` no Supabase Auth e o CRM inteiro
+ * passou a responder "não autenticado" por alguns minutos.
+ *
+ * O middleware já validava a sessão de novo em cada uma dessas requisições; a
+ * rota validava outra vez. Três chamadas ao Auth por imagem.
+ *
+ * Este cache junta a rajada:
+ *   - a chave é o cookie de sessão (access + refresh) + `active_org` +
+ *     impersonation. Refresh de token troca o cookie, logo troca a chave;
+ *   - TTL CURTO (30s): mudança de papel/org aparece em no máximo meio minuto;
+ *   - a PROMESSA fica no cache, não só o resultado: as requisições paralelas da
+ *     mesma imagem compartilham a MESMA chamada em voo, que é o que impede o
+ *     "Too many concurrent token refresh requests";
+ *   - erro NÃO é cacheado: a próxima requisição tenta de novo.
+ *
+ * Sem cookie de sessão não há o que cachear (visitante deslogado é o caminho
+ * normal do login) — cai no `loadAuthUser()` direto.
+ *
+ * A rota de mídia é a consumidora hoje. Outras rotas de rajada podem usar a
+ * mesma função; a decisão de onde usar continua explícita.
+ */
+const AUTH_USER_CACHE_TTL_MS = 30_000;
+const AUTH_USER_CACHE_MAX = 256;
+const AUTH_COOKIE_NAME = "sb-deskcomm-auth";
+
+interface AuthUserCacheEntry {
+  at: number;
+  promise: Promise<AuthUser | null>;
+}
+
+const authUserCache = new Map<string, AuthUserCacheEntry>();
+
+/** Chave estável da sessão; `null` quando não há cookie de autenticação. */
+async function chaveDoCacheDeAuth(): Promise<string | null> {
+  const store = await cookies();
+  const partes = store
+    .getAll()
+    .filter(
+      (c) =>
+        (c.name === AUTH_COOKIE_NAME || c.name.startsWith(`${AUTH_COOKIE_NAME}.`)) ||
+        c.name.toLowerCase().includes("impersonate"),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => `${c.name}=${c.value}`);
+  if (!partes.length) return null;
+  const org = store.get(ACTIVE_ORG_COOKIE)?.value ?? "";
+  return createHash("sha256").update(`${partes.join(";")}|${org}`).digest("hex");
+}
+
+function podarCacheDeAuth(agora: number): void {
+  for (const [chave, entrada] of authUserCache) {
+    if (agora - entrada.at >= AUTH_USER_CACHE_TTL_MS) authUserCache.delete(chave);
+  }
+  while (authUserCache.size > AUTH_USER_CACHE_MAX) {
+    const primeira = authUserCache.keys().next().value;
+    if (primeira === undefined) break;
+    authUserCache.delete(primeira);
+  }
+}
+
+/**
+ * `loadAuthUser()` compartilhado por uma janela curta.
+ *
+ * Use em rotas chamadas em RAJADA (mídia, anexos). Para decisões de permissão
+ * que precisam refletir uma revogação no mesmo segundo, use `loadAuthUser()`.
+ */
+export async function loadAuthUserCached(): Promise<AuthUser | null> {
+  const chave = await chaveDoCacheDeAuth();
+  if (!chave) return loadAuthUser();
+
+  const agora = Date.now();
+  const existente = authUserCache.get(chave);
+  if (existente && agora - existente.at < AUTH_USER_CACHE_TTL_MS) {
+    return existente.promise;
+  }
+
+  podarCacheDeAuth(agora);
+
+  const promise = loadAuthUser().catch((err: unknown) => {
+    // Falha transitória não pode virar 30s de "deslogado" para todo mundo.
+    authUserCache.delete(chave);
+    throw err;
+  });
+
+  authUserCache.set(chave, { at: agora, promise });
+  return promise;
 }
 
 /**

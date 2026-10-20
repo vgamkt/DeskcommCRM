@@ -35,9 +35,12 @@ import {
 import type { ContactFlowEventKind } from "./contact-flow-data";
 import {
   classificarInbound,
+  ehCampoCpf,
   textoDaPergunta,
   type CampoPendenteParaCaptura,
+  type ConfirmacaoDeCampo,
 } from "./captura-do-fluxo";
+import { avaliarCpf, extrairCpfDoTexto, type AvaliacaoDeCpf, type DecisaoCpf } from "./cpf";
 
 export type PassoDeAtendimento =
   | { kind: "collect"; node: Extract<FlowNode, { type: "collect" }> }
@@ -227,9 +230,11 @@ export function valoresConhecidosDoContato(
     }
   }
   const nome = typeof contato?.name === "string" ? contato.name.trim() : "";
-  const apelido = typeof contato?.display_name === "string" ? contato.display_name.trim() : "";
-  const nomeConhecido = nome !== "" ? nome : apelido;
-  if (nomeConhecido !== "") saida.nome = nomeConhecido;
+  // P1-C: `display_name` é o nome do perfil do WhatsApp (pushName), NÃO um nome
+  // confirmado pelo cliente. Usá-lo aqui fazia o fluxo pular "Como você se
+  // chama?" e tratar "Valle Motos Vendas"/apelido como nome do cliente. O
+  // `name` (CRM/P4) e `custom_fields.nome` continuam valendo.
+  if (nome !== "") saida.nome = nome;
   return saida;
 }
 
@@ -431,7 +436,10 @@ export function renderBlocoDeAtendimento(
     "NUNCA encaminhe/transfira ao responsável só porque o campo do fluxo não foi respondido — continue atendendo o cliente. Só fale em transferir se você NÃO souber a resposta; nesse caso, avise o cliente e o sistema notifica o responsável.",
     "Campos do fluxo (use só para REGISTRAR se o cliente informar — NUNCA pergunte os que NÃO forem a pergunta da vez):",
     ...linhas,
-    `Faça SOMENTE a pergunta da vez, copiada exatamente: "${textoDaPergunta(campoPrimeira)}". NUNCA pergunte os outros campos listados acima — eles só entram quando virarem, um a um, a pergunta pendente atual.`,
+    `Pergunta do fluxo a incluir (copie exatamente este texto): "${textoDaPergunta(
+      campoPrimeira,
+      estado.confirmacoes?.[campoPrimeira.key],
+    )}". Faça SOMENTE a pergunta da vez; NUNCA pergunte os outros campos listados acima — eles só entram quando virarem, um a um, a pergunta pendente atual.`,
   ].join("\n");
 }
 
@@ -456,6 +464,12 @@ export interface EstadoDeAtendimento {
   tentativas: Record<string, number>;
   maxTentativas: number;
   situacao: SituacaoDoChecklist;
+  /**
+   * Campos com CONFIRMAÇÃO pendente (hoje só CPF): o cliente mandou um valor
+   * que o motor reformatou e ainda não confirmou. O campo segue pendente em
+   * `situacao.pendentes`; a pergunta da vez é a confirmação.
+   */
+  confirmacoes?: Record<string, ConfirmacaoDeCampo>;
   /**
    * Síntese do fluxo ANTERIOR do mesmo contato (`completion_note` do último
    * enrollment de atendimento concluído). É o "passa-bastão" do encadeamento:
@@ -510,16 +524,44 @@ export async function carregarEstadoDeAtendimento(
   const checklist = mapearChecklist(parsed.data);
   if (!checklist.ok) return null;
 
-  const dados = await db.query<{ field_key: string; value: string | null; attempts: number }>(
-    `select field_key, value, attempts from contact_flow_data
+  const dados = await db.query<{
+    field_key: string;
+    value: string | null;
+    attempts: number;
+    value_json: unknown;
+  }>(
+    `select field_key, value, attempts, value_json from contact_flow_data
       where organization_id = $1 and contact_id = $2 and flow_pointer_id = $3`,
     [args.organizationId, args.contactId, row.pointer_id],
   );
   const valores: Record<string, string> = {};
   const tentativas: Record<string, number> = {};
+  const confirmacoes: Record<string, ConfirmacaoDeCampo> = {};
   for (const v of dados.rows) {
     if (v.value !== null) valores[v.field_key] = v.value;
     tentativas[v.field_key] = v.attempts;
+    const pendente = (v.value_json as { pendente_confirmacao?: unknown } | null)
+      ?.pendente_confirmacao;
+    if (pendente !== null && typeof pendente === "object") {
+      const p = pendente as {
+        candidato?: unknown;
+        formatado?: unknown;
+        motivo?: unknown;
+        pedir_completo?: unknown;
+      };
+      if (
+        typeof p.candidato === "string" &&
+        typeof p.formatado === "string" &&
+        typeof p.motivo === "string"
+      ) {
+        confirmacoes[v.field_key] = {
+          candidato: p.candidato,
+          formatado: p.formatado,
+          motivo: p.motivo,
+          ...(p.pedir_completo === true ? { pedirCompleto: true } : {}),
+        };
+      }
+    }
   }
 
   // DADO JÁ CONHECIDO NÃO SE PERGUNTA DE NOVO: soma aos valores do fluxo os
@@ -542,6 +584,10 @@ export async function carregarEstadoDeAtendimento(
     if (passo.kind !== "collect") continue;
     const chave = passo.node.config.key;
     if (valores[chave] !== undefined) continue;
+    // CONFIRMAÇÃO PENDENTE VENCE O DADO CONHECIDO DO CONTATO: o CPF que o
+    // cliente ainda não confirmou não pode “sumir” da fila porque uma extração
+    // determinística anterior o gravou no contato (medido 2026-10-19).
+    if (confirmacoes[chave] !== undefined) continue;
     const conhecido = conhecidos[chave];
     if (conhecido !== undefined) valores[chave] = conhecido;
   }
@@ -583,6 +629,7 @@ export async function carregarEstadoDeAtendimento(
       tentativas,
       maxTentativas,
     }),
+    ...(Object.keys(confirmacoes).length > 0 ? { confirmacoes } : {}),
     ...(notaAnterior !== undefined ? { notaAnterior } : {}),
   };
 }
@@ -768,6 +815,308 @@ export interface ResultadoDoInbound {
   finalizacao?: EndFinish;
 }
 
+/** O texto parece um CPF? (8+ dígitos é o suficiente para o campo CPF). */
+function pareceCpf(texto: string | null | undefined, av: AvaliacaoDeCpf): boolean {
+  if (av.digitos.length >= 8) return true;
+  return /\b\d{3}[.\-]\d{3}[.\-]\d{3}/.test(texto ?? "");
+}
+
+/** Recalcula a situação do checklist com valores/confirmações novos. */
+function estadoComCpf(
+  estado: EstadoDeAtendimento,
+  valores: Record<string, string>,
+  confirmacoes: Record<string, ConfirmacaoDeCampo>,
+): EstadoDeAtendimento {
+  const situacao = situacaoDoChecklist(estado.checklist, new Set(Object.keys(valores)), {
+    tentativas: estado.tentativas,
+    maxTentativas: estado.maxTentativas,
+  });
+  return { ...estado, valores, confirmacoes, situacao };
+}
+
+function resultadoDoEstado(estado: EstadoDeAtendimento): ResultadoDoInbound {
+  if (!estado.situacao.completo) return { estado, concluiu: false };
+  return {
+    estado,
+    concluiu: true,
+    ...(estado.checklist.fim.config.ao_finalizar !== undefined
+      ? { finalizacao: estado.checklist.fim.config.ao_finalizar }
+      : {}),
+  };
+}
+
+/** Grava o candidato (value=null) + o estado de confirmação no value_json. */
+async function registrarConfirmacaoCpfPendente(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    contactId: string;
+    flowPointerId: string;
+    enrollmentId: string;
+    confirmacao: ConfirmacaoDeCampo;
+  },
+): Promise<void> {
+  await db.query(
+    `insert into contact_flow_data
+       (organization_id, contact_id, flow_pointer_id, enrollment_id, field_key, value, value_json, source)
+     values ($1, $2, $3, $4, 'cpf', null, $5::jsonb, 'client')
+     on conflict (organization_id, contact_id, flow_pointer_id, field_key)
+     do update set value = null,
+                   value_json = excluded.value_json,
+                   enrollment_id = excluded.enrollment_id,
+                   source = 'client',
+                   updated_at = now()`,
+    [
+      args.organizationId,
+      args.contactId,
+      args.flowPointerId,
+      args.enrollmentId,
+      JSON.stringify({
+        tipo: "text",
+        normalizado: null,
+        pendente_confirmacao: {
+          candidato: args.confirmacao.candidato,
+          formatado: args.confirmacao.formatado,
+          motivo: args.confirmacao.motivo,
+          ...(args.confirmacao.pedirCompleto === true ? { pedir_completo: true } : {}),
+        },
+      }),
+    ],
+  );
+}
+
+/** Grava o CPF confirmado/válido no formato canônico e emite o evento `resposta`. */
+async function gravarCpfDoFluxo(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    contactId: string;
+    flowPointerId: string;
+    enrollmentId: string;
+    messageId?: string | null;
+    formatado: string;
+    bruto: string;
+  },
+): Promise<void> {
+  await registrarDadoDoFluxo(db, {
+    organizationId: args.organizationId,
+    contactId: args.contactId,
+    flowPointerId: args.flowPointerId,
+    enrollmentId: args.enrollmentId,
+    fieldKey: "cpf",
+    value: args.formatado,
+    valueJson: {
+      tipo: "text",
+      normalizado: args.formatado,
+      deterministico: true,
+      bruto: args.bruto,
+    },
+    source: "deterministic",
+  });
+  void registrarEventoDoFluxo(db, {
+    organizationId: args.organizationId,
+    enrollmentId: args.enrollmentId,
+    flowPointerId: args.flowPointerId,
+    contactId: args.contactId,
+    kind: "resposta",
+    messageId: args.messageId ?? null,
+    fieldKey: "cpf",
+    payload: { normalizado: args.formatado, deterministico: true },
+  }).catch(() => {});
+}
+
+/** Fallback quando a JEV `cpf` não responde: sim/não/novo CPF/outro. */
+function classificarConfirmacaoCpf(
+  texto: string | null | undefined,
+  confirmacao: ConfirmacaoDeCampo,
+): DecisaoCpf {
+  const t = (texto ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const digitos = avaliarCpf(extrairCpfDoTexto(t) ?? t).digitos;
+  if (digitos.length >= 8 && digitos !== confirmacao.candidato) return "corrigiu";
+  if (/\b(sim|isso|e esse|correto|certo|pode|exato|confirmo|e ele)\b/.test(t)) return "confirmou";
+  if (/\b(nao|errado|nao e|esse nao)\b/.test(t)) return "negou";
+  if (digitos.length >= 8) return "corrigiu";
+  return "outro";
+}
+
+/**
+ * CPF — processo INTERNO (motor-owned). Roda antes do modelo:
+ *   - CPF válido → grava normalizado, silencioso;
+ *   - incompleto/verificadores errados → abre a confirmação (candidato no
+ *     value_json) e a pergunta da vez passa a ser “Entendi o CPF X. É esse mesmo?”;
+ *   - confirmação pendente → a JEV `cpf` decide confirmou/corrigiu/negou/outro;
+ *     o motor grava/atualiza/limpa. O modelo NÃO decide nem grava o CPF.
+ *
+ * Devolve `null` quando o primeiro pendente não é CPF ou o inbound não é um CPF —
+ * aí o fluxo segue o caminho normal.
+ */
+async function processarCpfDoFluxo(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    estado: EstadoDeAtendimento;
+    texto: string | null;
+    messageId?: string | null;
+    decisaoCpf?: DecisaoCpf | undefined;
+  },
+): Promise<ResultadoDoInbound | null> {
+  const { estado } = args;
+  const primeiro = estado.situacao.pendentes[0];
+  if (primeiro === undefined || !ehCampoCpf(primeiro.config)) return null;
+  const chave = primeiro.config.key;
+  const comum = {
+    organizationId: args.organizationId,
+    contactId: estado.enrollment.contact_id,
+    flowPointerId: estado.enrollment.pointer_id,
+    enrollmentId: estado.enrollment.id,
+    messageId: args.messageId ?? null,
+  };
+  const event = (
+    kind: "pergunta_feita" | "fora_do_fluxo",
+    payload: Record<string, unknown>,
+  ): Promise<void> =>
+    registrarEventoDoFluxo(db, {
+      ...comum,
+      kind,
+      fieldKey: chave,
+      payload,
+    }).catch(() => {});
+
+  const confirmacao = estado.confirmacoes?.[chave];
+
+  if (confirmacao !== undefined) {
+    // JEV primeiro; quando ela devolve `outro` (não entendeu), o classificador
+    // determinístico cobre os casos CLAROS ("sim", "não", CPF novo). Sem isso um
+    // "sim, é esse" podia ficar em loop de confirmação (medido 2026-10-19).
+    const fallback = classificarConfirmacaoCpf(args.texto, confirmacao);
+    const decisao =
+      args.decisaoCpf === undefined || args.decisaoCpf === "outro"
+        ? fallback !== "outro"
+          ? fallback
+          : "outro"
+        : args.decisaoCpf;
+
+    if (decisao === "confirmou") {
+      const av = avaliarCpf(confirmacao.candidato);
+      if (av.digitos.length === 11) {
+        await gravarCpfDoFluxo(db, {
+          ...comum,
+          formatado: av.formatado,
+          bruto: confirmacao.candidato,
+        });
+        const valores = { ...estado.valores, [chave]: av.formatado };
+        const confirmacoes = { ...(estado.confirmacoes ?? {}) };
+        delete confirmacoes[chave];
+        return resultadoDoEstado(estadoComCpf(estado, valores, confirmacoes));
+      }
+      const pedir: ConfirmacaoDeCampo = {
+        ...confirmacao,
+        motivo: av.digitos.length < 11 ? "faltam_digitos" : "sobram_digitos",
+        pedirCompleto: true,
+      };
+      await registrarConfirmacaoCpfPendente(db, { ...comum, confirmacao: pedir });
+      void event("pergunta_feita", {
+        origem: "motor",
+        confirmacao: true,
+        formatado: pedir.formatado,
+        motivo: pedir.motivo,
+      });
+      void event("fora_do_fluxo", { confirmacao: "pedir_completo" });
+      return {
+        estado: {
+          ...estado,
+          confirmacoes: { ...(estado.confirmacoes ?? {}), [chave]: pedir },
+        },
+        concluiu: false,
+      };
+    }
+
+    if (decisao === "corrigiu") {
+      const av = avaliarCpf(extrairCpfDoTexto(args.texto) ?? args.texto ?? "");
+      if (pareceCpf(args.texto, av)) {
+        if (av.valido) {
+          await gravarCpfDoFluxo(db, {
+            ...comum,
+            formatado: av.formatado,
+            bruto: args.texto ?? "",
+          });
+          const valores = { ...estado.valores, [chave]: av.formatado };
+          const confirmacoes = { ...(estado.confirmacoes ?? {}) };
+          delete confirmacoes[chave];
+          return resultadoDoEstado(estadoComCpf(estado, valores, confirmacoes));
+        }
+        const nova: ConfirmacaoDeCampo = {
+          candidato: av.digitos,
+          formatado: av.formatado,
+          motivo: av.motivo,
+        };
+        await registrarConfirmacaoCpfPendente(db, { ...comum, confirmacao: nova });
+        void event("pergunta_feita", {
+          origem: "motor",
+          confirmacao: true,
+          formatado: nova.formatado,
+          motivo: nova.motivo,
+        });
+        void event("fora_do_fluxo", { confirmacao: "corrigida" });
+        return {
+          estado: {
+            ...estado,
+            confirmacoes: { ...(estado.confirmacoes ?? {}), [chave]: nova },
+          },
+          concluiu: false,
+        };
+      }
+    }
+
+    if (decisao === "negou") {
+      const confirmacoes = { ...(estado.confirmacoes ?? {}) };
+      delete confirmacoes[chave];
+      void event("fora_do_fluxo", { confirmacao: "negada" });
+      return { estado: { ...estado, confirmacoes }, concluiu: false };
+    }
+
+    // outro: preserva a confirmação; o modelo responde o que o cliente disse e o
+    // `send_message` acrescenta (ou troca, se houver “CPF registrado”) a pergunta.
+    void event("fora_do_fluxo", { confirmacao: "pendente" });
+    return { estado, concluiu: false };
+  }
+
+  const av = avaliarCpf(extrairCpfDoTexto(args.texto) ?? args.texto ?? "");
+  if (!pareceCpf(args.texto, av)) return null;
+
+  if (av.valido) {
+    await gravarCpfDoFluxo(db, { ...comum, formatado: av.formatado, bruto: args.texto ?? "" });
+    const valores = { ...estado.valores, [chave]: av.formatado };
+    const confirmacoes = { ...(estado.confirmacoes ?? {}) };
+    delete confirmacoes[chave];
+    return resultadoDoEstado(estadoComCpf(estado, valores, confirmacoes));
+  }
+
+  const nova: ConfirmacaoDeCampo = {
+    candidato: av.digitos,
+    formatado: av.formatado,
+    motivo: av.motivo,
+  };
+  await registrarConfirmacaoCpfPendente(db, { ...comum, confirmacao: nova });
+  void event("pergunta_feita", {
+    origem: "motor",
+    confirmacao: true,
+    formatado: nova.formatado,
+    motivo: nova.motivo,
+  });
+  void event("fora_do_fluxo", { confirmacao: "aberta" });
+  return {
+    estado: {
+      ...estado,
+      confirmacoes: { ...(estado.confirmacoes ?? {}), [chave]: nova },
+    },
+    concluiu: false,
+  };
+}
+
 /**
  * Processa o INBOUND contra a PRIMEIRA pergunta pendente antes de o modelo rodar:
  *
@@ -804,6 +1153,12 @@ export async function processarInboundDoFluxo(
      * o cliente costuma responder a mais de uma pergunta na mesma mensagem.
      */
     validacoes?: ReadonlyArray<{ campo: string; valor: string }> | undefined;
+    /** A mensagem do cliente tem mídia real? Campos `exige_midia` só aceitam com. */
+    temMidia?: boolean | undefined;
+    /** URL/path da mídia do cliente (para campos `exige_midia`). */
+    mediaRef?: string | undefined;
+    /** Decisão da JEV `cpf` quando há confirmação de CPF pendente. */
+    decisaoCpf?: DecisaoCpf | undefined;
   },
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
@@ -826,6 +1181,73 @@ export async function processarInboundDoFluxo(
     } catch {
       // best-effort: sem a checagem, o pior caso é o comportamento anterior.
     }
+  }
+
+  // CPF: o MOTOR conduz (normaliza, abre confirmação, aplica a decisão da JEV).
+  // Roda antes do validador/modelo; se o primeiro pendente não for CPF, devolve
+  // null e o fluxo segue o caminho normal.
+  const cpfResult = await processarCpfDoFluxo(db, {
+    organizationId: args.organizationId,
+    estado,
+    texto: args.texto,
+    ...(args.messageId !== undefined ? { messageId: args.messageId } : {}),
+    ...(args.decisaoCpf !== undefined ? { decisaoCpf: args.decisaoCpf } : {}),
+  });
+  if (cpfResult !== null) return cpfResult;
+
+  // MÍDIA: campo de foto/documento é preenchido pelo MOTOR com a referência da
+  // mídia real; não depende de o modelo chamar flow_collect (ele gravava texto).
+  const primeiroMidia = estado.situacao.pendentes[0];
+  if (
+    primeiroMidia !== undefined &&
+    primeiroMidia.config.exige_midia === true &&
+    args.temMidia === true &&
+    typeof args.mediaRef === 'string' &&
+    args.mediaRef.trim() !== ''
+  ) {
+    const chave = primeiroMidia.config.key;
+    await registrarDadoDoFluxo(db, {
+      organizationId: args.organizationId,
+      contactId: estado.enrollment.contact_id,
+      flowPointerId: estado.enrollment.pointer_id,
+      enrollmentId: estado.enrollment.id,
+      fieldKey: chave,
+      value: args.mediaRef,
+      valueJson: {
+        normalizado: args.mediaRef,
+        tipo: primeiroMidia.config.type,
+        midia: true,
+      },
+      source: 'deterministic',
+    });
+    void registrarEventoDoFluxo(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      flowPointerId: estado.enrollment.pointer_id,
+      contactId: estado.enrollment.contact_id,
+      kind: 'resposta',
+      messageId: args.messageId ?? null,
+      fieldKey: chave,
+      payload: { midia: true, normalizado: args.mediaRef },
+    }).catch(() => {});
+    const valores = { ...estado.valores, [chave]: args.mediaRef };
+    const situacao = situacaoDoChecklist(estado.checklist, new Set(Object.keys(valores)), {
+      tentativas: estado.tentativas,
+      maxTentativas: estado.maxTentativas,
+    });
+    const atualizado = { ...estado, valores, situacao };
+    if (!situacao.completo) return { estado: atualizado, concluiu: false };
+    const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
+      organizationId: args.organizationId,
+      estado: atualizado,
+      messageId: args.messageId ?? null,
+      kind: 'concluido',
+    });
+    return {
+      estado: atualizado,
+      concluiu: true,
+      ...(finalizacao !== undefined ? { finalizacao } : {}),
+    };
   }
 
   // A PRIMEIRA pergunta pendente NO INÍCIO do turno. É ela que foi feita ao
@@ -855,8 +1277,24 @@ export async function processarInboundDoFluxo(
       const ehEsgotada =
         !ehPendente && estado.situacao.esgotadas.some((n) => n.config.key === v.campo);
       if (!ehPendente && !ehCorrecao && !ehEsgotada) continue;
+      // Campo de foto/documento: texto não basta; precisa de mídia na mensagem.
+      if (node.config.exige_midia === true) {
+        if (args.temMidia !== true) continue;
+      }
+      // CPF: 11 dígitos + verificadores válidos entram normalizados em silêncio.
+      // Incompleto/errado NÃO é gravado aqui — o modelo/JEV reformata e pergunta
+      // “é esse mesmo?”; só depois o `flow_collect` grava com `confirmacao: true`.
+      let valorFinal =
+        node.config.exige_midia === true ? (args.mediaRef ?? v.valor) : v.valor;
+      let brutoCpf: string | undefined;
+      if (ehCampoCpf(node.config)) {
+        const av = avaliarCpf(v.valor);
+        if (!av.valido) continue;
+        valorFinal = av.formatado;
+        brutoCpf = v.valor;
+      }
       // NO-OP: o valor não mudou (turno atrasado/reprocessado) — não é ruído novo.
-      if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
+      if (valorFinal === "" || valorFinal === (valoresNovos[v.campo] ?? "")) continue;
       try {
         await registrarDadoDoFluxo(db, {
           organizationId: args.organizationId,
@@ -864,11 +1302,12 @@ export async function processarInboundDoFluxo(
           flowPointerId: estado.enrollment.pointer_id,
           enrollmentId: estado.enrollment.id,
           fieldKey: v.campo,
-          value: v.valor,
+          value: valorFinal,
           valueJson: {
-            normalizado: v.valor,
+            normalizado: valorFinal,
             tipo: node.config.type,
             deterministico: true,
+            ...(brutoCpf !== undefined ? { bruto: brutoCpf } : {}),
             ...(ehCorrecao ? { correcao: true } : {}),
           },
           source: "deterministic",
@@ -885,12 +1324,12 @@ export async function processarInboundDoFluxo(
         messageId: args.messageId ?? null,
         fieldKey: v.campo,
         payload: {
-          normalizado: v.valor,
+          normalizado: valorFinal,
           deterministico: true,
           ...(ehCorrecao ? { correcao: true } : {}),
         },
       }).catch(() => {});
-      valoresNovos[v.campo] = v.valor;
+      valoresNovos[v.campo] = valorFinal;
       aplicou = true;
     }
     // Nada aplicado: a mensagem do cliente não respondeu a NENHUM campo — a
@@ -1445,6 +1884,7 @@ export async function listarFluxosDeAtendimentoAtivos(
 export async function camposDeColetaDosFluxosAtivos(
   db: pg.Pool,
   organizationId: string,
+  flowPointerId?: string,
 ): Promise<
   Array<{
     key: string;
@@ -1461,8 +1901,9 @@ export async function camposDeColetaDosFluxosAtivos(
       where p.organization_id = $1
         and p.surface = 'atendimento'
         and p.status = 'active'
-        and p.active_version_id is not null`,
-    [organizationId],
+        and p.active_version_id is not null
+        and ($2::uuid is null or p.id = $2::uuid)`,
+    [organizationId, flowPointerId ?? null],
   );
   const porChave = new Map<
     string,
@@ -1534,6 +1975,29 @@ export async function iniciarFluxoDeAtendimento(
   const gatilho = parsed.data.nodes.find((n) => n.type === "trigger");
   const inicio = gatilho?.id ?? checklist.checklist.passos[0]?.node.id;
   if (inicio === undefined) return null;
+
+  // IDEMPOTÊNCIA: não abre uma segunda enrollment do MESMO fluxo logo depois
+  // de concluir. O teste completo de 2026-10-20 criou duas Vendas (02:13 e
+  // 02:16) porque o cliente confirmou a venda e o gatilho reabriu o fluxo.
+  // 10 min cobre a janela de conversa; depois disso, um novo pedido é legítimo.
+  try {
+    const recent = await db.query(
+      `select 1
+         from followup_enrollments
+        where organization_id = $1::uuid
+          and contact_id = $2::uuid
+          and pointer_id = $3::uuid
+          and (
+            status = 'active'
+            or (status = 'completed' and completed_at > now() - interval '10 minutes')
+          )
+        limit 1`,
+      [args.organizationId, args.contactId, args.flowPointerId],
+    );
+    if (recent.rows.length > 0) return null;
+  } catch {
+    // best-effort: se a checagem falhar, o índice de enrollment vivo ainda protege.
+  }
 
   try {
     const { rows: created } = await db.query<{ id: string }>(

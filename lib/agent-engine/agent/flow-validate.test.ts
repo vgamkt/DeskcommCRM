@@ -272,7 +272,7 @@ describe("validarRespostaDoFluxo", () => {
 
   it("RESPOSTA TARDIA: campo encerrado por não resposta é aceito se a mensagem o informar", async () => {
     runModelCallMock.mockResolvedValue({
-      result: { text: '{"respostas":[{"campo":"cpf","valor":"12345678900"}]}' },
+      result: { text: '{"respostas":[{"campo":"cpf","valor":"52998224725"}]}' },
     } as never);
     const r = await validarRespostaDoFluxo(
       db,
@@ -282,11 +282,11 @@ describe("validarRespostaDoFluxo", () => {
         perguntas: [],
         preenchidos: [],
         esgotados: [{ key: "cpf", label: "CPF", type: "text" }],
-        mensagens: [{ de: "cliente", texto: "meu cpf é 12345678900" }],
+        mensagens: [{ de: "cliente", texto: "meu cpf é 52998224725" }],
       },
       { log: logger },
     );
-    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cpf", valor: "12345678900" }] });
+    expect(r).toEqual({ resultado: "respondeu", respostas: [{ campo: "cpf", valor: "52998224725" }] });
   });
 
   /**

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  algumTextoComPergunta,
   classificarInbound,
   detectarDesvio,
   ehAcenoOuSilencio,
@@ -241,9 +242,30 @@ describe("campo com formato próprio pelo NOME (CPF) — o tipo `text` não bast
     expect(valorBateComTipo(cpf, "3000")).toBe(false);
   });
 
-  it("aceita um CPF de 11 dígitos (com ou sem máscara)", () => {
+  it("aceita CPF de 11 dígitos com verificadores VÁLIDOS (com ou sem máscara)", () => {
+    expect(valorBateComTipo(cpf, "529.982.247-25")).toBe(true);
+    expect(valorBateComTipo(cpf, "52998224725")).toBe(true);
+  });
+
+  it("11 dígitos com verificadores errados: só entra com confirmação explícita", () => {
+    // 123.456.789-09 tem verificadores corretos; 454.444.567-22 não.
     expect(valorBateComTipo(cpf, "123.456.789-09")).toBe(true);
-    expect(valorBateComTipo(cpf, "12345678909")).toBe(true);
+    expect(valorBateComTipo(cpf, "454.444.567-22")).toBe(false);
+    expect(valorBateComTipo(cpf, "454.444.567-22", { confirmado: true })).toBe(true);
+  });
+
+  it("CPF incompleto/sobrando NÃO entra nem com confirmação", () => {
+    expect(valorBateComTipo(cpf, "454.444.567-2")).toBe(false);
+    expect(valorBateComTipo(cpf, "454.444.567-2", { confirmado: true })).toBe(false);
+    expect(valorBateComTipo(cpf, "454.444.567-220", { confirmado: true })).toBe(false);
+  });
+
+  it("normalização silenciosa: CPF válido com pontuação vira canônico", () => {
+    const c = campo("text", { key: "cpf", label: "CPF" });
+    expect(normalizarValorDoCampo(c, "52998224725", { exigirContexto: false })?.valor).toBe(
+      "529.982.247-25",
+    );
+    expect(normalizarValorDoCampo(c, "454.444.567-22", { exigirContexto: false })).toBeNull();
   });
 
   it("recusa CPF de repetição (11111111111)", () => {
@@ -254,5 +276,18 @@ describe("campo com formato próprio pelo NOME (CPF) — o tipo `text` não bast
     expect(valorBateComTipo({ key: "obs", label: "Observação", type: "text" }, "qualquer coisa")).toBe(
       true,
     );
+  });
+});
+
+
+describe('algumTextoComPergunta (P1-D)', () => {
+  it('detecta pergunta no texto', () => {
+    expect(algumTextoComPergunta(['Tudo bem?', 'Segue'])).toBe(true);
+  });
+  it('não detecta quando não há pergunta', () => {
+    expect(algumTextoComPergunta(['Tudo bem', 'Segue'])).toBe(false);
+  });
+  it('detecta interrogação fullwidth', () => {
+    expect(algumTextoComPergunta(['Tudo bem？'])).toBe(true);
   });
 });

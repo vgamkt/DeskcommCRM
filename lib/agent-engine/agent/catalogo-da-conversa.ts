@@ -196,6 +196,21 @@ function ehMoto(valor: unknown): valor is MotoDoCatalogo {
   );
 }
 
+/**
+ * O álbum desta moto já saiu na conversa? Usado para NÃO repetir as mesmas fotos
+ * quando o cliente volta a citar a moto escolhida. Diferente de `motos.length === 1`,
+ * funciona mesmo quando a conversa já apresentou várias opções (medido no teste
+ * completo de 2026-10-20: Neo 125 teve 7 fotos reenviadas em dois turnos).
+ */
+export function albumDaMotoJaFoiEnviado(
+  estado: Pick<CatalogoDaConversa, 'detalhadas'>,
+  moto: Pick<MotoDoCatalogo, 'nome'>,
+): boolean {
+  const chave = normalizarNomeDeMoto(moto.nome);
+  if (chave === '') return false;
+  return estado.detalhadas.some((d) => normalizarNomeDeMoto(d) === chave);
+}
+
 /** Lê o catálogo da conversa. Nunca lança: ausência/erro ⇒ vazio. */
 export async function carregarCatalogoDaConversa(
   db: pg.Pool,

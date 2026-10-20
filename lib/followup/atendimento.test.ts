@@ -420,14 +420,12 @@ describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)
     );
   });
 
-  it("sem `name`, o `display_name` do WhatsApp vale como nome conhecido", () => {
-    // O nome que o WhatsApp entrega no primeiro contato mora em `display_name`,
-    // não em `name`. Enquanto esta função lia só `name`, o fluxo reperguntava o
-    // nome de quem chegou com perfil do WhatsApp (medido ao vivo: saudou
-    // "Vander" e perguntou "Como você se chama?").
+  it("P1-C: `display_name` NÃO é nome confirmado", () => {
+    // O pushName do WhatsApp serve para saudação, mas não prova o nome do
+    // cliente. O fluxo deve perguntar; P4 grava em `name`/`custom_fields.nome`.
     expect(
       valoresConhecidosDoContato({ name: null, display_name: "Vander", custom_fields: {} }).nome,
-    ).toBe("Vander");
+    ).toBeUndefined();
   });
 
   it("`name` (dito pelo cliente) vence o `display_name` (perfil do WhatsApp)", () => {
@@ -619,7 +617,7 @@ describe("carregarEstadoDeAtendimento — pendências consideram o contato, não
     expect(estado!.situacao.completo).toBe(true);
   });
 
-  it("contato com só display_name (perfil do WhatsApp) não tem o nome reperguntado", async () => {
+  it("P1-C: contato com só display_name AINDA pergunta o nome", async () => {
     const estado = await carregarEstadoDeAtendimento(
       poolFake({
         contact: {
@@ -630,8 +628,8 @@ describe("carregarEstadoDeAtendimento — pendências consideram o contato, não
       }),
       { organizationId: "org", contactId: "ct-1" },
     );
-    expect(estado!.valores.nome).toBe("Vander");
-    expect(estado!.situacao.pendentes).toHaveLength(0);
+    expect(estado!.valores.nome).toBeUndefined();
+    expect(estado!.situacao.pendentes.map((n) => n.config.key)).toContain("nome");
   });
 
   it("o valor do FLUXO vence o custom_field; chave estranha é ignorada", async () => {
@@ -684,8 +682,8 @@ describe("resposta TARDIA a campo esgotado (não se perde)", () => {
     const r = await processarInboundDoFluxo({ query } as never, {
       organizationId: "org",
       estado,
-      texto: "meu cpf é 12345678900",
-      validacoes: [{ campo: "cpf", valor: "12345678900" }],
+      texto: "meu cpf é 52998224725",
+      validacoes: [{ campo: "cpf", valor: "52998224725" }],
     });
     expect(sqls.some((s) => /insert into contact_flow_data/.test(s))).toBe(true);
     expect(r.concluiu).toBe(true);

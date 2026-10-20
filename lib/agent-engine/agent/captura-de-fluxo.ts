@@ -32,8 +32,29 @@ export async function capturarDadosDosFluxosNaMensagem(
   if (args.contactId === null || texto === '') return;
 
   let campos: Awaited<ReturnType<typeof camposDeColetaDosFluxosAtivos>>;
+  let activePointer: string | null = null;
   try {
-    campos = await camposDeColetaDosFluxosAtivos(db, ids.tenantId);
+    // Usa o enrollment MAIS RECENTE (ativo ou recém-concluído), não a união de
+    // todos os fluxos. Sem isto, uma mensagem depois da Venda concluída escrevia
+    // `troca_*` porque o Troca também é um fluxo ativo da org (medido 2026-10-20).
+    const active = await db.query<{ pointer_id: string }>(
+      `select pointer_id
+         from followup_enrollments
+        where organization_id = $1::uuid and contact_id = $2::uuid
+        order by updated_at desc
+        limit 1`,
+      [ids.tenantId, args.contactId],
+    );
+    activePointer = active.rows[0]?.pointer_id ?? null;
+  } catch {
+    // sem active: mantém o comportamento antigo (união de todos)
+  }
+  try {
+    campos = await camposDeColetaDosFluxosAtivos(
+      db,
+      ids.tenantId,
+      activePointer ?? undefined,
+    );
   } catch {
     return;
   }

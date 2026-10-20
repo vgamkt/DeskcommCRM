@@ -191,6 +191,7 @@ import {
   carregarCatalogoDaConversa,
   montarPedidoDeEscolha,
   motoEscolhidaPeloClienteComJev,
+  albumDaMotoJaFoiEnviado,
   salvarCatalogoDaConversa,
   type CatalogoDaConversa,
   type FilaDeOpcoes,
@@ -242,7 +243,7 @@ import { unificarPecasDoTurno } from './juncao-do-turno';
 import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
-import { casaPerfil, filtrarPorExigencias, hipotesesDeMaiorNota, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
+import { casaPerfil, filtrarPorExigencias, hipotesesDeMaiorNota, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, pontuarPorCriterios, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
 import {
   decidirOfertaComAutoridadeDaJev,
   preferenciaDoCriterio,
@@ -300,13 +301,18 @@ import {
 } from '@/lib/followup/atendimento';
 import type { EndFinish } from '@/lib/followup/graph-schema';
 import {
+  algumTextoComPergunta,
   ehAcenoOuSilencio,
+  ehCampoCpf,
   perguntaSaiuNosTextos,
+  textoDaConfirmacaoCpf,
   textoDaPergunta,
   textosDoTurnoParaTrava,
   valorBateComTipo,
 } from '@/lib/followup/captura-do-fluxo';
+import { avaliarCpf } from '@/lib/followup/cpf';
 import { validarRespostaDoFluxo } from './flow-validate';
+import { decidirCpfComJev } from './cpf-jev';
 import { escolherFluxoIniciado, escolherFluxosPorIA } from './flow-intent';
 import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -344,6 +350,13 @@ export const AGENT_TOOL_DEFS = {
         .max(500)
         .describe('valor NORMALIZADO (ex.: true/false, número, AAAA-MM-DD, uma das opções)'),
       bruto: z.string().min(1).max(500).optional().describe('o texto cru que o cliente escreveu (opcional)'),
+      confirmacao: z
+        .boolean()
+        .optional()
+        .describe(
+          'Use true SOMENTE quando o cliente CONFIRMOU o CPF que você reformatou e perguntou "é esse mesmo?". ' +
+            'Sem isso, o sistema recusa CPF com dígitos faltando/sobrando ou verificadores errados.',
+        ),
     }),
   },
   flow_start: {
@@ -666,6 +679,17 @@ export const MAX_VETOS_DE_SPINNING = 2;
 export const TEXTO_ATENDIMENTO_HUMANO =
   'Vou pedir para uma pessoa da nossa equipe continuar esse atendimento com você, tá? ' +
   'Já já eu volto por aqui para seguir te ajudando. Obrigado pela paciência! 😊';
+
+/**
+ * Fecho factual de fluxo concluído. Usado quando o modelo não enviou nada e a
+ * mensagem dele foi vetada (ex.: semantic_promise). Não promete contato/valor:
+ * diz o que já foi registrado e qual é o próximo passo.
+ */
+export const TEXTO_DE_CONCLUSAO_DE_FLUXO =
+  'Registrei seus dados. A análise segue pelo setor responsável.';
+
+/** Acuse de mídia quando o modelo não enviou nada e a mensagem foi vetada. */
+export const TEXTO_DE_MIDIA_RECEBIDA = 'Recebi seu arquivo. Obrigado!';
 
 /**
  * Teto de mensagens FÍSICAS enviadas ao lead por turno quando `knobs.maxSendsPerTurn`
@@ -1172,6 +1196,15 @@ const CASES_SYSTEM_BLOCK =
  * FORMA (identificador técnico), não sentença comum em português — então a única
  * cura possível aqui é instrução, não filtro.
  */
+/** P1-B: quando o agente tem base, a pergunta factual deve passar pela busca. */
+const CONHECIMENTO_SYSTEM_BLOCK =
+  '## Base de conhecimento\n' +
+  'Quando o cliente fizer uma pergunta FATUAL (garantia, documentação, financiamento, preço, ' +
+  'condições, horário, endereço, procedimento), chame a ferramenta `search_knowledge` ANTES de ' +
+  'responder. Baseie a resposta APENAS nos trechos retornados e preencha `fonte_ids` em ' +
+  '`send_message` com os IDs usados. Se a busca não trouxer nada, diga que não tem essa informação; ' +
+  'NÃO responda de memória nem invente.';
+
 const TRANSPARENCIA_SYSTEM_BLOCK =
   '## Nunca narre problema interno ao lead\n' +
   'Em QUALQUER mensagem — abrindo caso ou não — NUNCA diga ao lead que "houve um problema/erro no ' +
@@ -2592,6 +2625,22 @@ async function executarTurnoDoAgente(
   // Mensagem inbound do job, lida UMA vez: alimenta o gatilho por assunto, a
   // captura determinística do fluxo e o contexto do turno (antes era lida duas
   // vezes). `null` quando o job não tem inbound (ex.: follow-up).
+  let inboundTemMidia = false;
+  let inboundMediaRef: string | null = null;
+  if (!preview && input.inboundMessageId !== undefined) {
+    try {
+      const m = await pool.query<{ media_url: string | null; media_storage_path: string | null }>(
+        `select media_url, media_storage_path from messages
+          where organization_id = $1::uuid and id = $2::uuid limit 1`,
+        [tenantId, input.inboundMessageId],
+      );
+      inboundMediaRef = m.rows[0]?.media_storage_path ?? m.rows[0]?.media_url ?? null;
+      inboundTemMidia = inboundMediaRef !== null;
+    } catch {
+      inboundTemMidia = false;
+      inboundMediaRef = null;
+    }
+  }
   const currentInboundText =
     input.inboundMessageId === undefined
       ? null
@@ -2787,6 +2836,12 @@ async function executarTurnoDoAgente(
   // tools publicadas — ver comentário de `AGENDA_SYSTEM_BLOCK`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // não depende de nenhuma feature — todo agente publicado o recebe.
   const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
+  if (
+    agentConfig !== null &&
+    ((agentConfig.knowledgeSourceIds?.length ?? 0) > 0 || agentConfig.activeKbVersionId != null)
+  ) {
+    blocosResidentes.push(CONHECIMENTO_SYSTEM_BLOCK);
+  }
   // O mapeamento do catálogo (estável) entra no PREFIXO cacheável quando a flag liga.
   if (blocoCatalogoResidente !== '') blocosResidentes.push(blocoCatalogoResidente);
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
@@ -2898,6 +2953,23 @@ async function executarTurnoDoAgente(
   //    drain coalesce no job da primeira.
   const mensagemDoJob =
     currentInboundText ?? latestInboundSignal(openingContext.context.messages);
+  /**
+   * ─── O QUE A JEV ENXERGA: O TURNO, NÃO A ÚLTIMA BOLHA ─────────────────────
+   *
+   * `mensagemDoJob` é a mensagem PINADA que o job responde. Quando o cliente
+   * manda uma rajada (“Tem moto 160” + “?”), o drain coalesce tudo no job da
+   * primeira, mas a pinada continua sendo só a última. A JEV recebia “?” e
+   * negava a oferta (`jev_negou`) mesmo com o pedido de 160 na mesma rajada —
+   * o bot então PROMETIA as fotos sem enviar (medido ao vivo 2026-10-19,
+   * conversa +55 12 97408-1455).
+   *
+   * `textoDoClienteDoTurno` já existe e é a fonte do turno inteiro (pinada +
+   * rajada + citação). Usar ele aqui é conserto de CONTEXTO, não de veredito:
+   * a JEV continua decidindo, agora com o que o cliente realmente disse no
+   * turno. O fallback determinístico também passa a ver o turno inteiro.
+   */
+  const mensagemDoTurnoParaJev =
+    textoDoClienteDoTurno.trim() || (mensagemDoJob ?? '').trim();
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
   if (
     !preview &&
@@ -3172,13 +3244,33 @@ async function executarTurnoDoAgente(
       // No turno de INÍCIO do fluxo, só gravamos o que o validador capturou —
       // sem validação, NÃO caímos no classificador puro (ele gravaria a frase de
       // gatilho como resposta). Nos demais turnos, o caminho de sempre.
+      // CPF com confirmação pendente: a JEV `cpf` decide o que o cliente fez.
+      // Sem binding/veredito, o motor usa o classificador determinístico.
+      const confirmacaoCpf = atendimento.confirmacoes?.cpf;
+      const decisaoCpf =
+        confirmacaoCpf !== undefined
+          ? (await decidirCpfComJev(
+              pool,
+              tenantId,
+              {
+                mensagem: currentInboundText ?? mensagemDoJob ?? '',
+                candidato: confirmacaoCpf.candidato,
+                formatado: confirmacaoCpf.formatado,
+                motivo: confirmacaoCpf.motivo,
+              },
+              runLog,
+            ).catch(() => null)) ?? undefined
+          : undefined;
       if (temValidacao || !fluxoIniciadoNesteTurno) {
         const r = await processarInboundDoFluxo(pool, {
           organizationId: tenantId,
           estado: atendimento,
           texto: currentInboundText,
           messageId: input.inboundMessageId,
+          temMidia: inboundTemMidia,
+          ...(inboundMediaRef !== null ? { mediaRef: inboundMediaRef } : {}),
           ...(validacoes !== undefined ? { validacoes } : {}),
+          ...(decisaoCpf !== undefined ? { decisaoCpf } : {}),
         });
         atendimento = r.estado;
         if (r.concluiu) {
@@ -3269,6 +3361,12 @@ async function executarTurnoDoAgente(
   // C-089: o filtro casou mais motos do que as oferecidas? O bloco do turno
   // instrui a IA a PERGUNTAR se o cliente quer ver mais opções (regra do dono).
   let temMaisOpcoesNesteTurno = false;
+  /**
+   * Este turno está entregando a FILA de parecidas (o “ver mais”)? Se sim, o
+   * texto de abertura recebe o aviso determinístico de que são parecidas e que
+   * não são exatamente o pedido — o dono exige isso em TODA entrega de parecidas.
+   */
+  let parecidasNoTurno = false;
   // FECHO SITUACIONAL (dono, 2026-10-16): quando o turno mostra UMA moto, o fecho
   // NÃO pode ser "qual delas" — é sobre ELA + oferta de outra do mesmo segmento de
   // outra fabricante. Guarda o nome curto e a categoria da moto oferecida.
@@ -3448,7 +3546,7 @@ async function executarTurnoDoAgente(
         ].slice(0, 6);
 
   const objecaoCtx = {
-    mensagem: mensagemDoJob,
+    mensagem: mensagemDoTurnoParaJev,
     motivoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
     temMotoEmFoco: temMotoEmFocoConversa,
   };
@@ -3456,20 +3554,23 @@ async function executarTurnoDoAgente(
     tentativasAnterior: negociacaoAnterior?.attempts ?? 0,
     motivoAnterior: motivoAnteriorPersistido,
     // A Jev decide a CONFIRMAÇÃO a partir da MENSAGEM (sem regex): ela vê se o
-    // cliente respondeu à pergunta pendente ou falou de outro assunto.
-    mensagem: mensagemDoJob ?? '',
+    // cliente respondeu à pergunta pendente ou falou de outro assunto. A rajada
+    // inteira entra aqui pelo mesmo motivo do contexto de oferta.
+    mensagem: mensagemDoTurnoParaJev,
     aguardandoConfirmacao: negociacaoEmAberto,
     desconto: descontoTurno,
   };
   const ofertaCtx = {
-    mensagem: mensagemDoJob ?? '',
-    pediuMaisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
+    // Rajada inteira, não a última bolha: é isto que impede o “?” de apagar o
+    // “Tem moto 160” e a JEV negar uma oferta que o cliente pediu.
+    mensagem: mensagemDoTurnoParaJev,
+    pediuMaisOpcoes: querMaisOpcoes(mensagemDoTurnoParaJev),
     temEscolhaTravada: catalogoDaConversa.escolhida !== null,
     temMotoEmFoco: catalogoDaConversa.motos.length > 0 || motoAtualDaConversa !== null,
     nomeMotoEmFoco: motoAtualDaConversa?.nome ?? null,
     pedidoSemCorrespondencia:
       catalogoDoTurno.length > 0 &&
-      motosCitadasNoTexto(mensagemDoJob ?? '', catalogoDoTurno).length === 0,
+      motosCitadasNoTexto(mensagemDoTurnoParaJev, catalogoDoTurno).length === 0,
     // Estimativa determinística: a Jev refina isto na ação da negociação (mesma chamada).
     clienteConfirmouOpcoes: (negociacaoAnterior?.attempts ?? 0) >= 3 && confirmouVerAberto,
     motivoObjecaoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
@@ -3477,12 +3578,12 @@ async function executarTurnoDoAgente(
     // quando o cliente confirma o convite ("sim"/"pode"/"quero").
     temOpcoesPendentes: (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0,
   };
-  const decidirTrio = !preview && mensagemDoJob.trim() !== '';
+  const decidirTrio = !preview && mensagemDoTurnoParaJev !== '';
   const vereditoTrio = decidirTrio
     ? await arbitrar({
         db: pool,
         tenantId,
-        turno: { mensagem: mensagemDoJob },
+        turno: { mensagem: mensagemDoTurnoParaJev },
         pedidos: [
           { ponto: 'objecao', contexto: objecaoCtx, perguntas: perguntaDeObjecaoJev(objecaoCtx) },
           {
@@ -3968,7 +4069,7 @@ async function executarTurnoDoAgente(
   // negociação), o `send_message` NÃO expõe `motos` — a IA não tenta enviar uma
   // oferta que a régua bloquearia. Era daí que vinha o loop
   // `breaker: same_tool_failure` → `agent_turn aborted` (medido ao vivo 2026-10-10).
-  const ofertaLiberada = decidirOfertaDoTurno(mensagemDoJob ?? '').pode;
+  const ofertaLiberada = decidirOfertaDoTurno(mensagemDoTurnoParaJev).pode;
 
   const rawTools: ToolSet = {
     read_skill: tool({
@@ -3991,7 +4092,7 @@ async function executarTurnoDoAgente(
     }),
     flow_collect: tool({
       ...AGENT_TOOL_DEFS.flow_collect,
-      execute: async ({ campo, valor, bruto }) => {
+      execute: async ({ campo, valor, bruto, confirmacao }) => {
         if (fluxoAtendimento === null || valoresDoFluxo === null) {
           return { ok: false, error: { code: 'sem_fluxo', message: 'Não há fluxo de atendimento ativo.' } };
         }
@@ -4033,6 +4134,17 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // CPF com confirmação pendente: o motor conduz; o modelo não grava.
+        if (ehCampoCpf(campoNode.config) && fluxoAtendimento.confirmacoes?.cpf !== undefined) {
+          return {
+            ok: false,
+            error: {
+              code: 'cpf_confirmacao_pendente',
+              message:
+                'O sistema está confirmando o CPF com o cliente. NÃO registre o CPF agora; responda o cliente e deixe a pergunta de confirmação.',
+            },
+          };
+        }
         // SÓ a PERGUNTA PENDENTE (a que está sendo feita agora) pode ser
         // registrada pelo modelo — é ela que o VALIDADOR (`flow_validate`)
         // controla. Sem este corte, o modelo gravava a MESMA resposta em campos
@@ -4049,18 +4161,48 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // CAMPO DE MÍDIA: foto/documento só se o cliente enviou mídia real.
+        // Sem isto, o modelo gravava o texto "frente, laterais..." como
+        // `troca_fotos`/`venda_fotos` (medido no teste de 2026-10-20).
+        if (campoNode.config.exige_midia && !inboundTemMidia) {
+          return {
+            ok: false,
+            error: {
+              code: 'midia_obrigatoria',
+              message:
+                'Este campo exige uma foto/documento real. O cliente não enviou mídia nesta mensagem; NÃO registre texto. Peça a foto/documento novamente.',
+            },
+          };
+        }
         // O valor tem que bater com o TIPO do campo. Sem isto, o modelo gravava
         // "ok" num campo `number` (medido no teste ao vivo) e a pergunta ficava
         // "respondida" com lixo. Recusar devolve ao modelo para reinterpretar;
         // `text` continua aceitando qualquer coisa (é o tipo livre).
-        if (!valorBateComTipo(campoNode.config, valor)) {          return {
+        if (!valorBateComTipo(campoNode.config, valor, { confirmado: confirmacao === true })) {
+          const ehCpfCampo = ehCampoCpf(campoNode.config);
+          return {
             ok: false,
             error: {
               code: 'valor_incompativel',
-              message: `O valor enviado não responde ao campo "${campoNode.config.key}" (tipo ${campoNode.config.type}). Se o cliente NÃO respondeu, não chame flow_collect.`,
+              message: ehCpfCampo
+                ? 'CPF inválido ou incompleto. NÃO registre ainda: reformate o CPF que você entendeu e pergunte ' +
+                  '"Entendi o CPF X. É esse mesmo? Se faltou algum dígito, me manda o CPF completo." ' +
+                  'Só chame flow_collect com `confirmacao: true` depois que o cliente confirmar um CPF de 11 dígitos.'
+                : `O valor enviado não responde ao campo "${campoNode.config.key}" (tipo ${campoNode.config.type}). Se o cliente NÃO respondeu, não chame flow_collect.`,
             },
           };
         }
+        // CPF: grava sempre no formato canônico, mesmo que o cliente tenha mandado
+        // só dígitos/pontuação. O valor cru fica em `bruto` no value_json.
+        const avaliacaoCpf = ehCampoCpf(campoNode.config) ? avaliarCpf(valor) : null;
+        // Campo de mídia: o VALOR é a referência da mídia, não o texto que o
+        // modelo escreveu no `valor`.
+        const valorFinal =
+          campoNode.config.exige_midia === true
+            ? (inboundMediaRef ?? valor)
+            : avaliacaoCpf !== null
+              ? avaliacaoCpf.formatado
+              : valor;
         // Aceno/silêncio NUNCA é resposta — vale para TODO tipo, inclusive `text`.
         // Medido no teste ao vivo: o modelo gravou "ok" em `troca_estado` e
         // "beleza" em `troca_documentacao`. Isso é dado errado no cadastro, e o
@@ -4093,8 +4235,19 @@ async function executarTurnoDoAgente(
             enrollmentId: fluxoAtendimento.enrollment.id,
             fieldKey: campoNode.config.key,
             // `value` = texto cru do cliente; `value_json` = o NORMALIZADO (o que o sistema usa).
-            value: bruto ?? valor,
-            valueJson: { normalizado: valor, tipo: campoNode.config.type },
+            // No CPF, o valor canônico vai também em `value` (o estado do fluxo lê `value`).
+            value:
+              campoNode.config.exige_midia === true
+                ? valorFinal
+                : avaliacaoCpf !== null
+                  ? valorFinal
+                  : (bruto ?? valor),
+            valueJson: {
+              normalizado: valorFinal,
+              tipo: campoNode.config.type,
+              ...(campoNode.config.exige_midia === true ? { midia: true } : {}),
+              ...(avaliacaoCpf !== null ? { bruto: bruto ?? valor } : {}),
+            },
             source: 'agent',
           });
         } catch {
@@ -4109,7 +4262,7 @@ async function executarTurnoDoAgente(
           kind: 'resposta',
           messageId: input.inboundMessageId ?? null,
           fieldKey: campoNode.config.key,
-          payload: { normalizado: valor, tipo: campoNode.config.type },
+          payload: { normalizado: valorFinal, tipo: campoNode.config.type },
         }).catch(() => {});
         const situacao = situacaoDoChecklist(fluxoAtendimento.checklist, valoresDoFluxo, {
           tentativas: fluxoAtendimento.tentativas,
@@ -4333,7 +4486,7 @@ async function executarTurnoDoAgente(
         // A régua única manda aqui também: sem sinal do cliente (pedido, rejeição
         // ou objeção que persistiu) NÃO se buscam semelhantes. Antes a IA podia
         // acionar esta ferramenta a qualquer momento.
-        const decisao = decidirOfertaDoTurno(mensagemDoJob ?? '');
+        const decisao = decidirOfertaDoTurno(mensagemDoTurnoParaJev);
         if (!decisao.pode) {
           runLog.info('oferta de semelhantes bloqueada pela régua', { motivo: decisao.motivo });
           return {
@@ -4577,7 +4730,29 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.send_message,
       // Camada 1: `motos` só existe se a decisão de oferta liberou.
       inputSchema: inputSchemaDeEnvio(AGENT_TOOL_DEFS.send_message.inputSchema, ofertaLiberada),
-      execute: async ({ body, media_url, media_urls, motos, fonte_ids }) => {
+      execute: async ({
+        body: bodyModelo,
+        media_url: mediaUrlModelo,
+        media_urls: mediaUrlsModelo,
+        motos: motosModelo,
+        fonte_ids,
+      }) => {
+        // CPF com confirmação pendente: o MOTOR é o dono da pergunta. O texto do
+        // modelo é substituído (se ele afirmou “CPF registrado”) ou completado com
+        // a confirmação; fotos/motos são suprimidas neste turno.
+        const confirmacaoCpf = fluxoAtendimento?.confirmacoes?.cpf ?? null;
+        let body = bodyModelo;
+        if (confirmacaoCpf !== null) {
+          const perguntaConfirmacao = textoDaConfirmacaoCpf(confirmacaoCpf);
+          if (/\b(cpf|registrad|registr|anotad|anot)\b/i.test(body)) {
+            body = perguntaConfirmacao;
+          } else if (!body.toLowerCase().includes(perguntaConfirmacao.toLowerCase())) {
+            body = `${body.trim()}\n\n${perguntaConfirmacao}`.trim();
+          }
+        }
+        const media_url = confirmacaoCpf !== null ? undefined : mediaUrlModelo;
+        const media_urls = confirmacaoCpf !== null ? [] : mediaUrlsModelo;
+        const motos = confirmacaoCpf !== null ? [] : motosModelo;
         // CONFERÊNCIA (Fase 2.2): o modelo registra QUAIS trechos da base usou. É o
         // elo auditável — a decisão de buscar é da Jev; aqui fica o que ele USOU.
         if ((fonte_ids ?? []).length > 0) {
@@ -4652,7 +4827,7 @@ async function executarTurnoDoAgente(
         // vazamento, além da apresentação automática. Com o sinal OK (pedido,
         // rejeição, objeção que persistiu) ou após `crm_offer_similar_motos`
         // (que já passou pela régua), segue normalmente.
-        const decisaoMotosDeclaradas = decidirOfertaDoTurno(mensagemDoJob ?? '');
+        const decisaoMotosDeclaradas = decidirOfertaDoTurno(mensagemDoTurnoParaJev);
         if (
           (motos ?? []).length > 0 &&
           !decisaoMotosDeclaradas.pode &&
@@ -4761,15 +4936,16 @@ async function executarTurnoDoAgente(
           const mapeamento = catalogoMapeamento;
           if (mapeamento === null || mapeamento.similaridadeDeterministica !== true) return null;
           const turnoDeCatalogo =
-            ofereceuSimilaresNesteTurno || decidirOfertaDoTurno(mensagemDoJob ?? '').pode;
+            ofereceuSimilaresNesteTurno || decidirOfertaDoTurno(mensagemDoTurnoParaJev).pode;
           if (!turnoDeCatalogo || ofereceuSimilaresNesteTurno || extraiuCriteriosNesteTurno) {
             return null;
           }
-          const msgCliente = mensagemDoJob ?? body;
+          // A MESMA rajada que a oferta viu. Antes o `catalog_criteria` recebia
+          // só a última bolha ("?") e devolvia hipóteses vazias — a apresentação
+          // caía em 5 motos aleatórias do estoque (medido 2026-10-19).
+          const msgCliente = mensagemDoTurnoParaJev;
           const motoAtual = motoAtualDaConversa;
-          const ehObjecaoMsg =
-            (msgCliente === mensagemDoJob ? ehObjecaoTurno : ehObjecaoValor(msgCliente)) &&
-            motoAtual !== null;
+          const ehObjecaoMsg = ehObjecaoTurno && motoAtual !== null;
           if (ehObjecaoMsg) return null;
           // Doutrina `jev-decide-sempre` (Escopo 3): o gate é a Jev (`turnoDeCatalogo`,
           // acima) — não `querMoto`/`querAlternativa`/`motosCitadasNoTexto`.
@@ -4851,7 +5027,7 @@ async function executarTurnoDoAgente(
           }
           const oferecendoCatalogo = fotosDeclaradas.some((f) => fotosDoCatalogo.has(f));
           if (oferecendoCatalogo) {
-            const d = decidirOfertaDoTurno(mensagemDoJob ?? '');
+            const d = decidirOfertaDoTurno(mensagemDoTurnoParaJev);
             if (!d.pode) {
               runLog.info('fotos do catálogo por media_urls bloqueadas pela régua', {
                 motivo: d.motivo,
@@ -4880,19 +5056,23 @@ async function executarTurnoDoAgente(
         // régua de regex é fallback. Antes esta linha chamava `podeOferecerMotos`
         // DIRETO — era o furo que deixava a objeção mandar motos mesmo com a Jev
         // negando no helper.
-        const decisaoOferta = decidirOfertaDoTurno(mensagemDoJob ?? '');
-        const turnoDeCatalogo = ofereceuSimilaresNesteTurno || decisaoOferta.pode;
+        const decisaoOferta = decidirOfertaDoTurno(mensagemDoTurnoParaJev);
+        const turnoDeCatalogo =
+          fluxoAtendimento?.confirmacoes?.cpf === undefined &&
+          (ofereceuSimilaresNesteTurno || decisaoOferta.pode);
         // DIAGNÓSTICO: registra as ENTRADAS da régua neste turno — sem isto não há
         // como saber POR QUE um turno ofereceu (o motivo sozinho não mostra qual
         // sinal disparou). Barato e observável.
         runLog.info('régua de oferta (entradas)', {
-          mensagem: (mensagemDoJob ?? '').replace(/\s+/g, ' ').slice(0, 120),
+          // A MESMA mensagem que a JEV viu (turno inteiro). Antes o log mostrava
+          // “?” e escondia o pedido de 160 da rajada.
+          mensagem: mensagemDoTurnoParaJev.replace(/\s+/g, ' ').slice(0, 240),
           motivo: ofereceuSimilaresNesteTurno ? 'ferramenta_semelhantes' : decisaoOferta.motivo,
           pode: ofereceuSimilaresNesteTurno || decisaoOferta.pode,
           criterio: decisaoOferta.criterio,
           consultouCatalogo: catalogoDoTurno.length > 0,
-          maisOpcoes: querMaisOpcoes(mensagemDoJob ?? ''),
-          pediuDiferente: ehPedidoDiferente(mensagemDoJob ?? ''),
+          maisOpcoes: querMaisOpcoes(mensagemDoTurnoParaJev),
+          pediuDiferente: ehPedidoDiferente(mensagemDoTurnoParaJev),
           pediuOutraMoto,
           ehObjecao: ehObjecaoTurno,
           temEscolhaTravada: catalogoDaConversa.escolhida !== null,
@@ -4930,8 +5110,12 @@ async function executarTurnoDoAgente(
             const chaveBase = (m: MotoDoCatalogo): string =>
               normalizarNomeDeMoto(m.valores?.nome ?? m.nome);
             const unicaApresentada = catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null;
+            // Além do caso de UMA moto apresentada, respeita a memória de álbuns já
+            // enviados. Sem isto, com 2+ motos no histórico, a mesma escolha reenviava
+            // todas as fotos em todo turno (medido no teste completo de 2026-10-20).
             const albumJaSaiu =
-              unicaApresentada !== null && chaveBase(unicaApresentada) === chaveBase(escolhidaNesteTurno);
+              (unicaApresentada !== null && chaveBase(unicaApresentada) === chaveBase(escolhidaNesteTurno)) ||
+              albumDaMotoJaFoiEnviado(catalogoDaConversa, escolhidaNesteTurno);
             if (!albumJaSaiu) {
               // C-086: `fotos_moto_escolhida` da tela (0 = TODAS as fotos da moto).
               return planoDeFotosDasMotos(
@@ -4962,8 +5146,11 @@ async function executarTurnoDoAgente(
             mapeamento.similaridadeDeterministica === true &&
             turnoDeCatalogo
           ) {
-            const termoBase = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
-            const msgCliente = mensagemDoJob ?? body;
+            // O termo de busca é o TURNO do cliente (rajada), não a última bolha
+            // nem o texto que o modelo está enviando. Sem isto, “Tem moto 160”
+            // seguido de “?” casava o estoque inteiro e apresentava 400/500cc.
+            const termoBase = mensagemDoTurnoParaJev || body;
+            const msgCliente = mensagemDoTurnoParaJev || body;
             // C-089: o cliente pediu "mais opções"? Consome a FILA pendente do
             // pedido atual (as que casaram o filtro mas ficaram fora do teto N).
             // Não repete; se a fila acabou, segue o fluxo normal (ranking).
@@ -4993,6 +5180,7 @@ async function executarTurnoDoAgente(
               const restantes = fila.pendentes.slice(lote.length);
               opcoesParaSalvar = { ...fila, pendentes: restantes };
               motosOferecidasNesteTurno = [...lote];
+              parecidasNoTurno = true;
               temMaisOpcoesNesteTurno = restantes.length > 0;
               for (const moto of lote) {
                 if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
@@ -5053,8 +5241,8 @@ async function executarTurnoDoAgente(
                     // errado (ex.: "CBX 250" no pedido "CB 250") — medido ao vivo.
                     mensagem:
                       motoAtual !== null && intencaoDoTurno === 'alternativa'
-                        ? `${msgCliente}\n(moto atual da conversa: ${motoAtual.nome})`
-                        : msgCliente,
+                        ? `${mensagemDoTurnoParaJev}\n(moto atual da conversa: ${motoAtual.nome})`
+                        : mensagemDoTurnoParaJev,
                     colunas: colunasCriterio,
                     // Valores possíveis vêm do catálogo do turno e, quando o modelo
                     // não consultou, do catálogo guardado da conversa — sem isso a
@@ -5554,6 +5742,56 @@ async function executarTurnoDoAgente(
                     pendentes: [...casadasNaoEnviadas, ...mesmoPerfil],
                   };
                 }
+                // ─── FALLBACK DA FILA: as “parecidas que não batem totalmente” ───
+                //
+                // Pedido por CILINDRADA/CRITÉRIO (ex.: “Tem moto 160”) não é
+                // modelo específico: as que batem exato vão na 1ª apresentação e
+                // as PARECIDAS (150/190/250, inclusive de OUTRAS marcas) ficam
+                // aqui, na fila do “ver mais”. Elas NÃO são enviadas agora — só
+                // entram na conversa se o cliente confirmar o convite do fecho.
+                //
+                // Antes, `nomeiaModeloEspecifico`/`exigidos` vazio deixava a fila
+                // VAZIA: o fecho saía só “Qual delas…?” e o convite às parecidas
+                // nunca aparecia (medido 2026-10-19).
+                if ((opcoesParaSalvar?.pendentes.length ?? 0) === 0) {
+                  const marcasDosExatos = new Set(
+                    selecao.motos
+                      .map((m) => String(m.valores?.marca ?? '').trim().toLowerCase())
+                      .filter((m) => m !== ''),
+                  );
+                  const cap = Math.max(1, cfgCatalogo?.similares_qtd ?? 3);
+                  const pontuadas = candidatos
+                    .filter((m) => !jaEnviadas.has(m.nome))
+                    .map((moto) => ({
+                      moto,
+                      pontos: pontuarPorCriterios(
+                        moto,
+                        hipotesesDoTurno,
+                        faixasDoTurno,
+                        cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                        principalDoTurno,
+                      ).pontos,
+                      outraMarca: !marcasDosExatos.has(
+                        String(moto.valores?.marca ?? '').trim().toLowerCase(),
+                      ),
+                    }))
+                    .filter((x) => x.pontos > 0)
+                    // OUTRAS marcas primeiro (é o que o fecho promete); depois a
+                    // mesma marca, se ainda faltar opção.
+                    .sort(
+                      (a, b) =>
+                        Number(b.outraMarca) - Number(a.outraMarca) || b.pontos - a.pontos,
+                    )
+                    .slice(0, cap)
+                    .map((x) => x.moto);
+                  if (pontuadas.length > 0) {
+                    opcoesParaSalvar = {
+                      marcas: opcoesParaSalvar?.marcas ?? selecao.perfil.marcas,
+                      categorias: opcoesParaSalvar?.categorias ?? selecao.perfil.categorias,
+                      pendentes: pontuadas,
+                    };
+                  }
+                }
               } else {
                 opcoesParaSalvar = null;
               }
@@ -5952,14 +6190,26 @@ async function executarTurnoDoAgente(
               // só RENDERIZA a variante. Nada de regex decidindo "qual delas" vs
               // "saber mais" vs outra fabricante.
               const fechoJev = vereditoOfertaJev?.fecho ?? null;
+              // A JEV decide o fecho ANTES de saber quantas motos o motor vai
+              // apresentar. Quando saem DUAS OU MAIS e há fila de parecidas, o
+              // fecho TEM de ser o combinado (escolha + “outras, inclusive de
+              // outras marcas”). Sem isto, um `saber_mais`/`nenhum` da JEV deixava
+              // o fecho cru “Qual delas…?” e o convite às parecidas desaparecia
+              // (medido ao vivo 2026-10-19).
+              const fechoEfetivo =
+                motosDistintasApresentacao > 1 &&
+                temMaisOpcoesNesteTurno &&
+                !outrosNoValorNesteTurno
+                  ? 'escolha'
+                  : fechoJev;
               const perguntaMais = outrosNoValorNesteTurno
                 ? perguntaDeOutrosNoValor({
                     modelo: motoAtualDaConversa?.nome ?? null,
                     variacao: pedidosDeOpcoesTurno,
                   })
-                : fechoJev === 'nenhum'
+                : fechoEfetivo === 'nenhum'
                   ? ''
-                  : fechoJev === 'saber_mais'
+                  : fechoEfetivo === 'saber_mais'
                     ? // Já perguntamos a forma de pagamento? Então NÃO repete a progressão
                       // (só o convite a saber mais / ver na loja).
                       formaJaPerguntada
@@ -5972,7 +6222,7 @@ async function executarTurnoDoAgente(
                           nome: effectiveContext.contact.name,
                           variacao: pedidosDeOpcoesTurno,
                         })
-                    : fechoJev === 'outra_opcao'
+                    : fechoEfetivo === 'outra_opcao'
                       ? perguntaDeOutrosNoModelo({
                           modelo: nomeModeloEspecificoDoTurno,
                           categoria: categoriaDoModeloDoTurno,
@@ -5997,12 +6247,12 @@ async function executarTurnoDoAgente(
               const combinaEscolhaComMais =
                 temMaisOpcoesNesteTurno &&
                 !outrosNoValorNesteTurno &&
-                (fechoJev === 'escolha' || fechoJev === null);
+                (fechoEfetivo === 'escolha' || fechoEfetivo === null);
               // PROGRESSÃO (moto específica, 1ª vez): o fecho TAMBÉM SUBSTITUI a pergunta
               // do modelo (ex.: "O que achou?") — senão o "?" do modelo suprimia a
               // progressão e o cliente nunca era levado à forma de pagamento.
               const substituiPorProgressao =
-                nomeModeloEspecificoDoTurno !== '' && fechoJev === 'saber_mais' && !formaJaPerguntada;
+                nomeModeloEspecificoDoTurno !== '' && fechoEfetivo === 'saber_mais' && !formaJaPerguntada;
               if (perguntaMais !== '' && (combinaEscolhaComMais || substituiPorProgressao)) {
                 // A pergunta de ESCOLHA do modelo pode ter caído na INTRODUÇÃO (antes
                 // das fotos). O motor põe a pergunta DEPOIS das fotos — tira a do
@@ -6202,13 +6452,16 @@ async function executarTurnoDoAgente(
                 const p = pendenteFecho?.config;
                 const perguntaFluxo =
                   p !== undefined
-                    ? textoDaPergunta({
-                        key: p.key,
-                        label: p.label,
-                        type: p.type,
-                        ...(p.options !== undefined ? { options: p.options } : {}),
-                        ...(p.question !== undefined ? { question: p.question } : {}),
-                      })
+                    ? textoDaPergunta(
+                        {
+                          key: p.key,
+                          label: p.label,
+                          type: p.type,
+                          ...(p.options !== undefined ? { options: p.options } : {}),
+                          ...(p.question !== undefined ? { question: p.question } : {}),
+                        },
+                        fluxoAtendimento?.confirmacoes?.[p.key],
+                      )
                     : null;
                 const ajuste = ajustarFechoDoTurnoDeCatalogo({
                   corpo: corpoFinal,
@@ -6235,6 +6488,18 @@ async function executarTurnoDoAgente(
               // Apresentação (motor escolheu as motos): 1 foto por moto com a
               // legenda dela (ou agrupada, se o toggle pedir).
               if (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) {
+                if (parecidasNoTurno) {
+                  // Aviso OBRIGATÓRIO da segunda entrega em diante: são parecidas,
+                  // não são exatamente o que o cliente pediu; algumas de outras
+                  // marcas. A frase é determinística e SUBSTITUI a narração do
+                  // modelo — que, no teste, disse “mais em conta e menos km” e
+                  // mandou uma V-Strom 1000 (contradição com o que saiu).
+                  const total = Math.max(motosOferecidasNesteTurno.length, planoAutomatico.length);
+                  corpoFinal =
+                    total === 1
+                      ? 'Essa é uma opção parecida — não é exatamente o que você pediu e pode ser de outra marca. Dá uma olhada:\n\nSe quiser, te mostro mais fotos dela.'
+                      : `Essas são ${total} opções parecidas — não são exatamente o que você pediu e algumas são de outras marcas. Dá uma olhada:\n\nSe quiser, te mostro mais fotos de alguma delas.`;
+                }
                 return enviarApresentacao(planoAutomatico, corpoFinal, cfg?.foto_por_moto === false);
               }
               // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
@@ -7337,16 +7602,18 @@ async function executarTurnoDoAgente(
     // moto/alternativa — em "bom dia", "qual o endereço" etc. a extração da Jev
     // seria uma chamada `catalog_criteria` jogada fora. Mesma régua conservadora
     // do extrator interno (`querMoto`, que já ignora acenos).
+    // Rajada inteira: o “Tem moto 160” não pode sumir porque a última bolha
+    // foi “?”. Mesmo contexto da oferta e do catalog_criteria.
     const prefetchRelevante =
-      querMoto(mensagemDoJob) ||
-      mencionaMoto(mensagemDoJob) ||
-      (motoAtualDaConversa !== null && querAlternativa(mensagemDoJob));
+      querMoto(mensagemDoTurnoParaJev) ||
+      mencionaMoto(mensagemDoTurnoParaJev) ||
+      (motoAtualDaConversa !== null && querAlternativa(mensagemDoTurnoParaJev));
     let blocoCandidatas = '';
     if (
       usaPrefetchDaJev &&
       catalogoMapeamento !== null &&
       prefetchRelevante &&
-      mensagemDoJob.trim() !== ''
+      mensagemDoTurnoParaJev !== ''
     ) {
       const colunasCriterioPrefetch = camposDeBusca(catalogoMapeamento, {
         dinamico: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
@@ -7372,8 +7639,8 @@ async function executarTurnoDoAgente(
               provider: agentConfig?.provider ?? null,
               mensagem:
                 motoAtualDaConversa !== null && preEscolhaDescricao !== undefined
-                  ? `${mensagemDoJob}\n(moto atual da conversa: ${motoAtualDaConversa.nome})`
-                  : mensagemDoJob,
+                  ? `${mensagemDoTurnoParaJev}\n(moto atual da conversa: ${motoAtualDaConversa.nome})`
+                  : mensagemDoTurnoParaJev,
               colunas: colunasCriterioPrefetch,
               valores: valoresDasColunas(candidatasPrefetch, colunasCriterioPrefetch),
               estoque: candidatasPrefetch,
@@ -7384,7 +7651,7 @@ async function executarTurnoDoAgente(
             { log: runLog },
           );
           const selecaoPrefetch = selecionarPorIntencao({
-            termoBase: mensagemDoJob,
+            termoBase: mensagemDoTurnoParaJev,
             criterios: extraidosPrefetch.criterios,
             intencao: extraidosPrefetch.intencao,
             motoAtual: motoAtualDaConversa,
@@ -7406,8 +7673,8 @@ async function executarTurnoDoAgente(
             toleranciaPct: agentConfig?.catalogConfig?.tolerancia_preco_pct ?? 30,
             criteriosDinamicos: agentConfig?.catalogConfig?.criterios_dinamicos !== false,
             nomeiaModelo:
-              pedeMotoExplicito(mensagemDoJob) ||
-              motosCitadasNoTexto(mensagemDoJob, candidatasPrefetch).length > 0,
+              pedeMotoExplicito(mensagemDoTurnoParaJev) ||
+              motosCitadasNoTexto(mensagemDoTurnoParaJev, candidatasPrefetch).length > 0,
           });
           for (const moto of selecaoPrefetch.motos) {
             if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
@@ -7474,7 +7741,7 @@ async function executarTurnoDoAgente(
       acaoNegociacao !== null && acaoNegociacao !== 'mostrar_opcoes' && acaoNegociacao !== 'nenhuma';
     // A decisão de oferta DESTE turno (a MESMA usada no envio) — alimenta o brief
     // (catálogo liberado/bloqueado) e o "turno de catálogo" (a venda fecha).
-    const decisaoDeOfertaDoTurno = decidirOfertaDoTurno(mensagemDoJob ?? currentInboundText ?? '');
+    const decisaoDeOfertaDoTurno = decidirOfertaDoTurno(mensagemDoTurnoParaJev);
     const blocoBriefDaJev = usaBriefDaJev
       ? renderBriefDoTurno({
           estagioHint: stageHintBlock,
@@ -7666,6 +7933,11 @@ async function executarTurnoDoAgente(
       // A DIRETRIZ (ação da Jev) entra SEMPRE — com ou sem brief. É a instrução
       // que faz o GLM seguir a decisão (ex.: 3ª objeção = convencer E perguntar).
       diretrizDoTurno,
+      // MÍDIA PENDENTE (foto/documento): o cliente não enviou mídia; o modelo não
+      // pode dizer "recebi as fotos". (medido 2026-10-20)
+      fluxoAtendimento?.situacao.pendentes[0]?.config.exige_midia === true && !inboundTemMidia
+        ? '## Mídia pendente\nO cliente NÃO enviou foto/documento nesta mensagem. NÃO diga que recebeu as fotos ou o documento; peça a mídia real novamente.'
+        : '',
       usaBriefDaJev ? blocoBriefDaJev : blocoEstadoCru,
       usaBriefDaJev ? '' : blocoFluxoCru,
       usaBriefDaJev ? '' : blocoObjecaoTurno,
@@ -8124,13 +8396,16 @@ async function executarTurnoDoAgente(
       const pendenteDoTurno = estadoDoFluxo.situacao.pendentes[0];
       if (pendenteDoTurno !== undefined && !valoresDoFluxo.has(pendenteDoTurno.config.key)) {
         const cfg = pendenteDoTurno.config;
-        const pergunta = textoDaPergunta({
-          key: cfg.key,
-          label: cfg.label,
-          type: cfg.type,
-          ...(cfg.options !== undefined ? { options: cfg.options } : {}),
-          ...(cfg.question !== undefined ? { question: cfg.question } : {}),
-        });
+        const pergunta = textoDaPergunta(
+          {
+            key: cfg.key,
+            label: cfg.label,
+            type: cfg.type,
+            ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+            ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+          },
+          estadoDoFluxo.confirmacoes?.[cfg.key],
+        );
         const eventoPergunta = (origem: 'modelo' | 'motor'): void => {
           void registrarEventoDoFluxo(pool, {
             organizationId: tenantId,
@@ -8162,6 +8437,11 @@ async function executarTurnoDoAgente(
         );
         if (perguntaSaiuNosTextos(pergunta, textosDoTurno)) {
           eventoPergunta('modelo');
+        } else if (algumTextoComPergunta(textosDoTurno)) {
+          // P1-D: já houve UMA pergunta neste turno (ex.: fecho de venda). Não
+          // acrescenta a pergunta do fluxo por cima; ela fica pendente para o
+          // próximo turno. Antes saíam duas perguntas na mesma mensagem.
+          runLog.info('trava da pergunta: já houve pergunta no turno — fluxo espera o próximo');
         } else {
           // G3.7: a JEV decide se a pergunta do roteiro sai agora. Sem binding/erro
           // (`null`) → cai no comportamento de sempre (o motor reenvia).
@@ -8627,7 +8907,45 @@ async function executarTurnoDoAgente(
           : negociacao !== ''
             ? negociacao
             : TEXTO_ATENDIMENTO_HUMANO;
-      const desfecho = await enviarTextoDoMotor(texto);
+      let desfecho = await enviarTextoDoMotor(texto);
+      // FLUXO CONCLUÍDO: o modelo pode ter sido vetado (ex.: semantic_promise)
+      // e o cliente ficava sem nenhuma mensagem. Tenta um fecho factual, sem
+      // promessa de contato/valor; se também não passar, o handoff abaixo cobre.
+      if (desfecho !== 'sent' && finalizacaoDoFluxo !== undefined) {
+        const desfechoConclusao = await enviarTextoDoMotor(TEXTO_DE_CONCLUSAO_DE_FLUXO, {
+          semNeutroSeVetado: true,
+        });
+        if (desfechoConclusao === 'sent') {
+          desfecho = 'sent';
+          runLog.info('fluxo concluído — fecho factual do motor enviado após veto do modelo', {
+            texto: TEXTO_DE_CONCLUSAO_DE_FLUXO,
+          });
+        }
+      }
+      // MÍDIA: se o cliente mandou foto/documento e o modelo não respondeu (ou foi
+      // vetado), um acuse neutro evita o silêncio. Não promete nada.
+      if (desfecho !== 'sent' && input.inboundMessageId !== undefined) {
+        let temMidia = false;
+        try {
+          const m = await pool.query<{ media_url: string | null }>(
+            `select media_url from messages
+              where organization_id = $1::uuid and id = $2::uuid limit 1`,
+            [tenantId, input.inboundMessageId],
+          );
+          temMidia = Boolean(m.rows[0]?.media_url);
+        } catch {
+          temMidia = false;
+        }
+        if (temMidia) {
+          const ack = await enviarTextoDoMotor(TEXTO_DE_MIDIA_RECEBIDA, {
+            semNeutroSeVetado: true,
+          });
+          if (ack === 'sent') {
+            desfecho = 'sent';
+            runLog.info('mídia recebida — acuse neutro do motor enviado após veto do modelo');
+          }
+        }
+      }
       if (desfecho === 'sent') {
         runLog.info('turno sem envio pela ferramenta — resposta do modelo passou pela régua e saiu', {
           tinha_texto_livre: textoDoModelo !== '',
@@ -8685,17 +9003,20 @@ async function executarTurnoDoAgente(
           pendenteDoTurno !== undefined &&
           valoresDoFluxo !== null &&
           !valoresDoFluxo.has(pendenteDoTurno.config.key)
-            ? textoDaPergunta({
-                key: pendenteDoTurno.config.key,
-                label: pendenteDoTurno.config.label,
-                type: pendenteDoTurno.config.type,
-                ...(pendenteDoTurno.config.options !== undefined
-                  ? { options: pendenteDoTurno.config.options }
-                  : {}),
-                ...(pendenteDoTurno.config.question !== undefined
-                  ? { question: pendenteDoTurno.config.question }
-                  : {}),
-              })
+            ? textoDaPergunta(
+                {
+                  key: pendenteDoTurno.config.key,
+                  label: pendenteDoTurno.config.label,
+                  type: pendenteDoTurno.config.type,
+                  ...(pendenteDoTurno.config.options !== undefined
+                    ? { options: pendenteDoTurno.config.options }
+                    : {}),
+                  ...(pendenteDoTurno.config.question !== undefined
+                    ? { question: pendenteDoTurno.config.question }
+                    : {}),
+                },
+                atendimento?.confirmacoes?.[pendenteDoTurno.config.key],
+              )
             : null;
         const unificado = await unificarPecasDoTurno(
           pool,

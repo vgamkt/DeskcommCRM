@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
 import {
+  albumDaMotoJaFoiEnviado,
   carregarCatalogoDaConversa,
   montarPedidoDeEscolha,
   motoEscolhidaPeloCliente,
@@ -391,5 +392,32 @@ describe('salvarCatalogoDaConversa', () => {
       null,
     );
     expect(payloadDe(query2).objecao).toBeNull();
+  });
+});
+
+
+describe('albumDaMotoJaFoiEnviado', () => {
+  it('reconhece o álbum já enviado mesmo com várias motos na conversa', () => {
+    expect(
+      albumDaMotoJaFoiEnviado(
+        { detalhadas: ['cb 300 f twister'] },
+        TWISTER,
+      ),
+    ).toBe(true);
+  });
+
+  it('não considera enviado quando só outra moto foi detalhada', () => {
+    expect(
+      albumDaMotoJaFoiEnviado({ detalhadas: ['cb 300'] }, TWISTER),
+    ).toBe(false);
+  });
+
+  it('compara pelo nome canônico da moto (o mesmo gravado em `detalhadas`)', () => {
+    expect(
+      albumDaMotoJaFoiEnviado(
+        { detalhadas: ['neo 125 ubs'] },
+        { nome: 'Neo 125 UBS' },
+      ),
+    ).toBe(true);
   });
 });

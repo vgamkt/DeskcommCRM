@@ -137,3 +137,6 @@ backups/
 # commit posterior de remoção não tira o blob.
 .qa-backups/
 *.dump
+
+# Artefatos locais de teste (backups/transcrições com dados de teste)
+.test-artifacts/

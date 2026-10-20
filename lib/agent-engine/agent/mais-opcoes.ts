@@ -36,10 +36,10 @@ export function perguntaDeMaisOpcoes(args: {
   // Junta a ESCOLHA com o convite a ver as demais (dono, 2026-10-16): o "ver mais"
   // não anda sozinho — vem na MESMA pergunta, e deixa claro que são parecidas.
   const opcoes = [
-    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras que temos na loja?',
-    'Alguma dessas te agradou, ou quer que eu te mostre mais opções que temos na loja?',
-    'Alguma delas é a sua praia, ou prefere ver outras opções que temos aqui (parecidas no mesmo estilo ou de outras marcas)?',
-    'Alguma delas te chamou atenção, ou prefere que eu separe outras que temos na loja?',
+    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras opções parecidas, inclusive de outras marcas?',
+    'Alguma dessas te agradou, ou quer que eu te mostre mais opções parecidas, inclusive de outras marcas?',
+    'Alguma delas é a sua praia, ou prefere ver outras opções parecidas (no mesmo estilo ou de outras marcas)?',
+    'Alguma delas te chamou atenção, ou prefere que eu separe outras opções parecidas, inclusive de outras marcas?',
   ];
   return opcoes[v % opcoes.length]!;
 }
@@ -72,6 +72,22 @@ export function comQuantidadeNoTexto(
   const n = Math.max(0, Math.floor(quantidade));
   const t = texto.trim();
   if (n < 2 || t === '') return texto;
+  // O convite ao “ver mais” fala da FILA, não da apresentação: “mais opções”
+  // não recebe a contagem das motos que já saíram (medido: “mais 2 opções” com
+  // 5 na fila). A contagem apresentada é injetada na ABERTURA.
+  if (/\b(mais|outras)\s+(op[çc][õo]es|motos?|modelos?|alternativas?)\b/i.test(t)) return texto;
+  // O modelo pode escrever “Separei 3” quando saíram 2. Corrige o NÚMERO colado
+  // ao verbo de separar/mostrar ANTES do early-return de “já tem contagem” —
+  // senão um “2 opções” correto no início escondia o “Separei 3” errado no fim.
+  const verboNumero =
+    /(\b(?:separei|selecionei|separamos|selecionamos|trouxe|trouxemos|mostrei|mostramos|juntei|juntamos|peguei|pegamos)\s+)(\d+)\b/i;
+  if (verboNumero.test(t)) return t.replace(verboNumero, `$1${n}`);
+  // “Separei MAIS 3” (fila do ver mais) também é contagem de motos: o “mais”
+  // entre o verbo e o número fazia o early-return de “já tem contagem” respeitar
+  // o 3 errado com 5 fotos na tela (medido 2026-10-19).
+  const verboMaisNumero =
+    /(\b(?:separei|selecionei|separamos|selecionamos|trouxe|trouxemos|mostrei|mostramos|juntei|juntamos|peguei|pegamos)\s+mais\s+)(\d+)\b/i;
+  if (verboMaisNumero.test(t)) return t.replace(verboMaisNumero, `$1${n}`);
   if (/\b\d+\s+(op[çc]|motos?|modelos?|alternativas?|unidades?)/i.test(t)) return texto;
   // Cobre artigos/pronomes, quantificadores e números por extenso ("as opções",
   // "várias opções", "duas opções", "três motos") — o modelo escreve "duas"/"várias"
