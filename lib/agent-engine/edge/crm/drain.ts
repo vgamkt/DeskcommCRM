@@ -360,10 +360,49 @@ async function processEvent(
     [event.organization_id, p.inbound_message_id],
   );
   const msg = msgRows[0];
+  // FOTO/DOCUMENTO de um campo `exige_midia` do fluxo: NÃO espera transcrição.
+  // A mídia já está armazenada (`media_storage_path`) e o fluxo usa a referência,
+  // não o texto derivado. Sem isto, a Venda/Troca esperava >90s e o cliente
+  // ficava sem resposta (medido 2026-10-20).
+  let midiaDeFluxo = false;
+  if (
+    msg !== undefined &&
+    (msg.type === 'image' || msg.type === 'document') &&
+    p.contact_id !== null
+  ) {
+    try {
+      const { rows: fluxo } = await pool.query(
+        `select 1
+           from followup_enrollments e
+           join followup_flow_versions v on v.id = e.version_id
+          where e.organization_id = $1 and e.contact_id = $2 and e.status = 'active'
+            and exists (
+              select 1
+                from jsonb_array_elements(coalesce(v.graph->'nodes', '[]'::jsonb)) n
+               where n->'config'->>'exige_midia' = 'true'
+                 and not exists (
+                   select 1 from contact_flow_data d
+                    where d.organization_id = e.organization_id
+                      and d.contact_id = e.contact_id
+                      and d.enrollment_id = e.id
+                      and d.field_key = n->'config'->>'key'
+                      and d.value is not null
+                      and btrim(d.value) <> ''
+                 )
+            )
+          limit 1`,
+        [event.organization_id, p.contact_id],
+      );
+      midiaDeFluxo = fluxo.length > 0;
+    } catch {
+      midiaDeFluxo = false;
+    }
+  }
   if (
     msg !== undefined &&
     TIPOS_DERIVAVEIS.has(msg.type) &&
-    !DERIVACAO_TERMINADA.has(msg.media_derived_status ?? '')
+    !DERIVACAO_TERMINADA.has(msg.media_derived_status ?? '') &&
+    !midiaDeFluxo
   ) {
     const esperandoHa = Date.now() - new Date(event.created_at).getTime();
     if (esperandoHa < TETO_ESPERA_DERIVACAO_MS) {
@@ -378,6 +417,13 @@ async function processEvent(
       event_id: event.id,
       tipo: msg.type,
       esperando_ha_ms: esperandoHa,
+    });
+  }
+
+  if (midiaDeFluxo) {
+    log.info('drain: mídia de campo do fluxo — não espera transcrição', {
+      event_id: event.id,
+      tipo: msg?.type ?? null,
     });
   }
 

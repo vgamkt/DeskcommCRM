@@ -962,3 +962,24 @@ inventar limite nem alterar o banco externo.
 - **Teste completo não passou.**
 - Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501,
   versão temporária removida; flows/data dos 5924/6837 removidos.
+
+---
+
+# Implementações estruturais aplicadas (2026-10-20 18:40 UTC)
+
+- **flow-intent:** prompt agora recebe rajada + fluxo ativo + fila; escolha de
+  moto não inicia Qualificação quando há processo específico.
+- **P1-D:** pergunta oficial do fluxo é a única; remove perguntas do modelo e
+  deduplica a pergunta oficial (inclusive ordens sem “?”).
+- **Perfeito:** bloco de estilo + sanitizador de abertura; frase fixa de objeção
+  trocada para “Certo!”.
+- **P0-D/Venda mídia:** drain não espera transcrição quando o campo do fluxo é
+  `exige_midia` e a mídia já está armazenada.
+- **P2:** `moto_escolhida` legado removido do contato; guarda no app + cleanup
+  no worker.
+- Testes: `captura-do-fluxo` 41/41; `flow-intent` ok; `tsc` 0.
+- **Ainda falta revalidar ao vivo:** Venda texto (dedupe), Venda mídia
+  (bypass de transcrição) e o teste completo. O último teste da Venda ficou
+  inválido porque o flow_data/enrollment já tinham sido limpos.
+- Ambiente restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501, versão
+  temporária removida. Sem crédito Datafy.
