@@ -6227,13 +6227,17 @@ async function executarTurnoDoAgente(
             orcamentoTurno !== (catalogoDaConversa.orcamento ?? null) ||
             pedidosDeOpcoesTurno !== (catalogoDaConversa.pedidosDeOpcoes ?? 0))
         ) {
-          // Regra do dono: pergunta a forma de pagamento UMA vez. Se ESTE turno mostrou
-          // uma moto específica/escolha (e ainda não perguntamos), marca como perguntada.
+          // Regra do dono: pergunta a forma de pagamento UMA vez. Só marca quando o
+          // fecho deste turno é REALMENTE o de aquisição: houve escolha, ou saiu
+          // UMA moto só. Mostrar DUAS opções não pergunta pagamento (o fecho é
+          // "qual delas?"/ver mais) — marcar aí fazia o turno da escolha não
+          // perguntar nada (medido no repro 0101: turno 3 saiu sem fecho).
+          const motosDoTurno = motosApresentadasParaSalvar.length + catalogoDoTurno.length;
           if (
             !formaJaPerguntada &&
-            (nomeModeloEspecificoDoTurno !== '' ||
-              escolhaDetectadaNesteTurno !== undefined ||
-              catalogoDaConversa.escolhida !== null)
+            (escolhaDetectadaNesteTurno !== undefined ||
+              catalogoDaConversa.escolhida !== null ||
+              (nomeModeloEspecificoDoTurno !== '' && motosDoTurno <= 1))
           ) {
             formaDePagamentoPerguntadaParaSalvar = true;
           }
