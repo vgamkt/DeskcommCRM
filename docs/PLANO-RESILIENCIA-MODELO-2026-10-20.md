@@ -229,3 +229,33 @@ Lendo os `ai_purpose_bindings` da UI (sem hardcode de modelo), os 9 purposes
 `promise_semantic` foi o mais lento (~49s); os demais ~1,3–1,9s. Preflight do
 agente/auxiliares: **ok**. Próximo: pesado com o harness esperando o turno
 inteiro (não só a primeira bolha).
+
+## 14. Pesado pós-UI — 2026-10-21
+
+**9/10 turnos OK.** O modelo configurado na UI (`deepseek-v4-flash`) funcionou em
+todos os auxiliares do preflight e nos turnos 1, 2, 4–10. O único silêncio foi o
+turno 3 (escolha + objeção), e **não foi o DeepSeek**:
+
+- `send_message` recusado: “send_message após apresentação automática — recusado
+  (anti-duplicação)” (primeiro envio);
+- o agente chamou `open_human_case` (caso “Analisar condição de preço na CB 300 R
+  2011”);
+- a JEV classificou o texto final como **narração interna** (`ehNarracao: true`);
+- o motor bloqueou o envio (`envio do motor bloqueado — a Jev detectou narração
+  interna`) e **não mandou contingência**; `messages_sent=0`;
+- o turno 4 respondeu à objeção; o caso ficou `awaiting_human`.
+
+**Passaram:** genérico (sem nome, 0 fotos), cidade (5, sem V-Strom, sem “outras
+marcas”), objeção persistente, ver mais (3), nome (“Prazer, Letícia”, sem
+contradição), multi-informação (sem fluxo), Lander (5 trail, sem Qualificação),
+troca+financiamento (Troca ativa + Financiamento na fila) e handoff (comportamento
+atual).
+
+**Pendência nova/real:** quando o único envio do modelo é vetado por
+anti-duplicação/narração, o motor precisa mandar **contingência determinística**
+(ou liberar o texto válido de transferência) e não deixar o cliente mudo. É o
+item 4.3 na prática; o caso humano já foi aberto, então a mensagem de transferência
+é legítima.
+
+Ambiente restaurado: Datafy `open`, agente 84, 0101 allowlist 2501, 5924 limpo;
+UI segue `deepseek-v4-flash`; sem crédito Datafy.
