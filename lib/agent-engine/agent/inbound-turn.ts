@@ -6232,7 +6232,14 @@ async function executarTurnoDoAgente(
           // UMA moto só. Mostrar DUAS opções não pergunta pagamento (o fecho é
           // "qual delas?"/ver mais) — marcar aí fazia o turno da escolha não
           // perguntar nada (medido no repro 0101: turno 3 saiu sem fecho).
-          const motosDoTurno = motosApresentadasParaSalvar.length + catalogoDoTurno.length;
+          // A contagem que vale é a das motos APRESENTADAS (plano automático ou
+          // lote enviado), não a do catálogo consultado pelo modelo. `catalogoDoTurno`
+          // fica vazio no caminho de apresentação automática e mascarava o caso de
+          // 2 opções (marcava pagamento como perguntado sem ter perguntado).
+          const motosDoTurno = Math.max(
+            motosOferecidasNesteTurno.length,
+            motosApresentadasParaSalvar.length,
+          );
           if (
             !formaJaPerguntada &&
             (escolhaDetectadaNesteTurno !== undefined ||
