@@ -348,3 +348,17 @@ decisão do dono sobre o handoff e sobre commit/deploy desta correção.
 - **Pendente:** commit/deploy desta rodada e repetir o smoke real **no worker
   implantado** (a persistência da mensagem no harness depende do runtime real;
   no worker temporário o admin client não montava).
+
+### 16.5 Correção do buffer da junção (medida no worker implantado)
+
+O primeiro deploy mostrou o turno de handoff **sem mensagem persistida**: os gates
+passaram e o log dizia `kind: sent`, mas `messages`/`send_ledger` ficaram vazios. O
+aviso entrava no `CanalComBuffer` (junção) e o `return` do desvio determinístico
+acontecia antes do `liberar()` do fim do turno — o `sent` era sintético. Antes o
+ramo não retornava, então o flush do turno normal entregava; ao parar no handoff,
+a peça ficou presa.
+
+- `liberarAvisoDeterministico(motivo)` libera o buffer antes do `return`, no
+  pedido de humano **e** na suspeita de opt-out (mesmo defeito latente).
+- Trava em `multi-pergunta-uma-mensagem.test.ts`: o ramo precisa chamar
+  `liberarAvisoDeterministico('pedido_de_humano')`.

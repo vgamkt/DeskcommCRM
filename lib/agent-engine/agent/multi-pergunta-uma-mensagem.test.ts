@@ -49,6 +49,9 @@ describe("pedido de humano abre caso, avisa e encerra o turno", () => {
     expect(bloco).toMatch(/detectHumanHandoffRequest\(mensagemDoTurnoParaJev\)/);
     expect(bloco).toMatch(/avisarLeadDaEscalacao\(/);
     expect(bloco).toMatch(/motivo: 'pediu_humano'/);
+    // O aviso é guardado pelo buffer da junção: sem liberar, o turno termina
+    // com `sent` sintético e o cliente não recebe nada.
+    expect(bloco).toMatch(/liberarAvisoDeterministico\('pedido_de_humano'\)/);
     expect(bloco).toMatch(/return; \/\/ bot para aqui/);
     // Não pode gravar force_human: o próximo inbound precisa poder ser respondido.
     expect(bloco).not.toMatch(/await performHumanHandoff\(/);

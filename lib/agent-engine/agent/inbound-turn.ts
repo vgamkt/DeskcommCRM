@@ -2921,6 +2921,28 @@ async function executarTurnoDoAgente(
     if (!channel) throw new Error('preview_transport_forbidden');
     return channel;
   };
+  /**
+   * O buffer da junção só entrega no FIM do turno (linha ~9221). Os desvios
+   * determinísticos que AVISAM e RETORNAM (pedido de humano, suspeita de
+   * opt-out) precisam liberar a própria peça antes de sair — sem isto o canal
+   * devolve `sent` sintético, o turno termina e o cliente nunca recebe o aviso
+   * (medido 2026-10-21: `send_ledger` vazio e `messages` só com o inbound).
+   */
+  const liberarAvisoDeterministico = async (motivo: string): Promise<void> => {
+    if (canalComBuffer === null) return;
+    try {
+      const desfechos = await canalComBuffer.liberar();
+      runLog.info('aviso determinístico liberado do buffer da junção', {
+        motivo,
+        desfechos: desfechos.map((d) => d.kind),
+      });
+    } catch (err) {
+      runLog.warn('aviso determinístico: falha ao liberar o buffer', {
+        motivo,
+        erro: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
+      });
+    }
+  };
   // STOP lido no turno (fonte: CRM via get_lead_context) — combinado com o cache
   // durável leads.is_opted_out no gate 1 da cadeia (F2-13).
   const optedOutThisTurn = openingContext.context.contact.is_blocked;
@@ -3030,6 +3052,7 @@ async function executarTurnoDoAgente(
       ...avisoDaEscalacao().base,
       motivo: 'pediu_humano',
     });
+    await liberarAvisoDeterministico('pedido_de_humano');
     runLog.info('caso humano aberto por pedido explícito do lead — aviso enviado; turno encerrado', {
       kind: liveJob().kind,
       lead_avisado: aviso.avisado,
@@ -3064,6 +3087,7 @@ async function executarTurnoDoAgente(
         log: runLog,
       },
     );
+    await liberarAvisoDeterministico('suspeita_de_opt_out');
     runLog.info('possível opt-out detectado no inbound — bot silenciado e escalado ao humano', {
       kind: liveJob().kind,
       lead_avisado: aviso.avisado,
