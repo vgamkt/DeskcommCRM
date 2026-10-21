@@ -336,3 +336,53 @@ definitiva: mandou transferência, fez handoff e silenciou a conversa — os tur
 - Restaurado: Marcela **v84** no canal de produção, agente/versão de QA
   removidos, allowlist 0101 = `["+5512981672501"]`, contato 5924 limpo.
   **CONFIRMADO.**
+
+---
+
+## 9. Regressões do teste real 2501 — análise e correção (2026-10-21 ~19h)
+
+Dois defeitos observados na conversa real de produção (Datafy 2501):
+
+### 9.1 Resposta de campo do fluxo virou oferta de 5 motos
+
+- **Cena:** "Voce tem moto 160?" → 2 opções; "Gostei dessa" escolheu a CG 160 Fan e
+  iniciou a Qualificação; na resposta **"Tenho sim"** (CNH) o bot enviou **5 motos
+  não pedidas** (Dominar 400, BMW G 310 R, V-Strom 1000, Fazer 250, FZ15).
+- **Causa raiz (sonda JEV real):** `temOpcoesPendentes=true` + mensagem "Tenho sim"
+  fazia a JEV de oferta responder **oferecer=true / continuacao=true**. O "sim" que
+  respondia a CNH era lido como confirmação do "quer ver mais?". A escolha travada
+  e a moto em foco não impediam o veredito.
+- **Correção (no contexto/prompt da JEV, sem regex):** a oferta recebe
+  `respondendoPerguntaDoFluxo` + `perguntaPendenteDoFluxo`; a JEV manda **não
+  mostrar** e a pergunta de continuação **nem entra** nesse caso. Um "sim" que
+  confirma "ver mais" de verdade (sem fluxo) continua oferecendo.
+- **Sonda:** antes `oferecer=true/continuacao=true`; depois `false/false`.
+- **Ao vivo:** "Vander" → 1 texto, "São Paulo" → 1 texto, "Tenho sim" → 1 texto.
+  **Zero fotos/motos** nos três turnos. **CONFIRMADO.**
+
+### 9.2 Moto escolhida sem as fotos dela
+
+- **Cena:** "Gostei da CG 160 Fan" → o bot respondeu só texto; nenhuma foto da moto
+  escolhida. O fluxo Qualificação entrou no mesmo turno e o modelo respondeu como
+  **texto livre**, fora do `send_message`; o álbum da escolhida só existe nesse
+  caminho.
+- **Causa raiz:** o brief do fluxo mandava incluir a pergunta pendente na mesma
+  mensagem (o modelo respondeu texto livre) e o brief de "moto escolhida" dizia
+  "nem ofereça mais fotos" — contradizendo a regra de **TODAS as fotos**.
+- **Correção:** na escolha, o brief manda usar `send_message` com `motos` (o sistema
+  envia **TODAS** as fotos) e adiar a pergunta do fluxo; o `send_message` reforça a
+  regra; o texto antigo virou "se o álbum ainda não saiu, TODAS as fotos dela; se
+  já saiu, não repita".
+- **Ao vivo (WAHA 0101 → 5924, agente QA isolado):** "Gostei da CG 160 Fan" →
+  **10 fotos, 10 URLs distintas**, todas da CG 160 Fan, na ordem texto → fotos →
+  fecho. **CONFIRMADO.**
+- **Ao vivo (continuação):** "Vander", "São Paulo" e "Tenho sim" responderam sobre
+  a CG 160 Fan, **sem** outras motos. **CONFIRMADO.**
+
+### 9.3 Estado
+
+- No ar: **`50e97e79`** (app/worker/scheduler healthy).
+- Testes: oferta **9/9**, brief **20/20**, funcional **1614/1614**, `tsc` 0, lint 0.
+- Produção intacta: Marcela **v84** no 2501/Datafy; o teste usou agente QA
+  temporário só no 0101/WAHA, removido ao final. Allowlist 0101 = 2501; contato
+  5924 limpo.
