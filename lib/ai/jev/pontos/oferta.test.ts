@@ -146,4 +146,20 @@ describe('offer_motos Jev', () => {
     const r: RespostasDeJev = { oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} } };
     expect(vereditoDeOfertaDaJev(r).criterio).toBe('nenhum');
   });
+
+  it('resposta de campo do FLUXO não é confirmação de "ver mais" (medido 2026-10-21)', () => {
+    const p = perguntaDeOfertaJev({
+      ...ctx,
+      mensagem: 'Tenho sim',
+      temOpcoesPendentes: true,
+      temEscolhaTravada: true,
+      temMotoEmFoco: true,
+      nomeMotoEmFoco: 'HONDA CG 160 FAN FLEX ONE',
+      respondendoPerguntaDoFluxo: true,
+      perguntaPendenteDoFluxo: 'Tem CNH?',
+    });
+    expect(p.continuacao).toBeUndefined();
+    expect(p.oferta?.instructions).toContain('RESPONDENDO A UM CAMPO DO FLUXO');
+    expect(p.oferta?.instructions).toMatch(/não mostrar motos/i);
+  });
 });

@@ -149,6 +149,28 @@ describe('renderBriefDoTurno', () => {
     expect(brief).toContain('opções: azul, vermelha.');
   });
 
+  it('ESCOLHA de moto: manda usar send_message com TODAS as fotos e adia a pergunta do fluxo', () => {
+    const f = estado({
+      situacao: {
+        pendentes: [pendente({ key: 'nome', label: 'Nome', type: 'text', required: true, permite_correcao: true, question: 'Como você se chama?' })],
+        obrigatoriosPendentes: [],
+        esgotadas: [],
+        skills: [],
+        completo: false,
+      },
+    });
+    const brief = renderBriefDoTurno({
+      estagioHint: '',
+      objecaoBloco: '',
+      contact: { name: null, custom_fields: {} },
+      escolhida: null,
+      fluxo: f,
+    });
+    expect(brief).toContain('ACABOU DE ESCOLHER UMA MOTO');
+    expect(brief).toContain('TODAS as fotos');
+    expect(brief).toContain('NÃO responda como texto livre');
+  });
+
   it('fluxo concluído informa a skill final', () => {
     const f = estado({ situacao: { pendentes: [], obrigatoriosPendentes: [], esgotadas: [], skills: [], completo: true } });
     const brief = renderBriefDoTurno({
@@ -196,7 +218,7 @@ describe('renderBriefDoTurno', () => {
     // O brief DEDUPLICA/compacta os 4 blocos crus, mas também acrescenta REGRAS
     // FIXAS (tom/robô, não repetir, não fazer pitch, um fluxo por vez…) que não
     // existem nos blocos crus. Comparamos com uma folga pequena para essas regras.
-    expect(brief.length).toBeLessThan(crus.length + 900);
+    expect(brief.length).toBeLessThan(crus.length + 1300);
   });
 });
 
@@ -272,6 +294,7 @@ describe('turno de CATÁLOGO — a venda fecha (mostrouMotos)', () => {
     });
     expect(t).toContain('JÁ ESCOLHEU');
     expect(t).toContain('ADQUIRIR');
+    expect(t).toContain('TODAS as fotos dela');
     expect(t).not.toContain('convide a ESCOLHA');
   });
 });

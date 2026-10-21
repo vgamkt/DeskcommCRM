@@ -123,7 +123,7 @@ function blocoDoFluxoCompacto(
     // modelo repetia "qual delas chamou mais atenção?" DEPOIS da escolha (bug
     // medido ao vivo 2026-10-15: a moto já tinha sido escolhida e as fotos já saíram).
     const venda = temEscolha
-      ? 'o cliente JÁ ESCOLHEU uma moto — NÃO pergunte "qual delas chamou mais atenção" nem ofereça mais fotos (não há mais o que escolher). Conduza o PRÓXIMO passo: pergunte como ele pretende ADQUIRIR (à vista, financiado, no cartão, ou com uma moto na troca).'
+      ? 'o cliente JÁ ESCOLHEU uma moto — NÃO pergunte "qual delas chamou mais atenção". Se o álbum DELA ainda NÃO saiu, o sistema envia TODAS as fotos dela neste turno; se já saiu, NÃO repita. Depois conduza o PRÓXIMO passo: pergunte como ele pretende ADQUIRIR (à vista, financiado, no cartão, ou com uma moto na troca).'
       : 'convide a ESCOLHA ("qual delas chamou mais atenção?" ou "quer ver mais opções?").';
     return [
       `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo, mas você ACABOU DE MOSTRAR MOTOS. Atenda o cliente PRIMEIRO (responda TUDO o que ele disse) e feche conduzindo a VENDA: ${venda} NÃO faça a pergunta do fluxo neste turno — ela fica para o PRÓXIMO (o campo continua pendente, não se perde).`,
@@ -135,6 +135,10 @@ function blocoDoFluxoCompacto(
 
   return [
     `${contexto}Fluxo de atendimento "${estado.nomeDoFluxo}" ativo — conclua-o e atenda o cliente PRIMEIRO. Responda TUDO o que ele disse nesta conversa (cada dúvida/pedido) e, AO FINAL da sua MESMA mensagem, inclua a pergunta pendente do fluxo COPIADA EXATAMENTE (abaixo). Se você NÃO a incluir, o SISTEMA a envia sozinho numa mensagem separada — inclua-a para sair tudo em UMA mensagem. Faça UMA pergunta por vez (não despeje o roteiro) e conduza a venda normalmente. Enquanto houver campo pendente, NÃO abra OUTRA pergunta além da pergunta do fluxo (visita, detalhes, fechamento, pagamento, cor). Só registre com flow_collect o que ele já disser (valor normalizado em \`valor\`, texto cru em \`bruto\`); correção de dado é automática.`,
+    // ESCOLHA DE MOTO: o álbum dela é obrigatório e o fluxo CEDE neste turno.
+    // Medido 2026-10-21: "Gostei dessa" com Qualificação ativa → o modelo respondeu
+    // como TEXTO LIVRE, a pergunta do fluxo entrou e as fotos da escolhida NÃO saíram.
+    'EXCEÇÃO — CLIENTE ACABOU DE ESCOLHER UMA MOTO: NÃO faça a pergunta do fluxo neste turno e NÃO responda como texto livre; use `send_message` com `motos` (o sistema envia TODAS as fotos dela). O campo do fluxo fica para o próximo turno.',
     // (dono, 2026-10-18) UM FLUXO POR VEZ: se o cliente pediu mais de um processo
     // (ex.: troca + financiamento), os OUTROS ficam na FILA e começam quando ESTE
     // terminar — o modelo NÃO pode perguntar do outro no meio (medido: intercalou a

@@ -401,6 +401,7 @@ export const AGENT_TOOL_DEFS = {
       'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
       'NÃO envie fotos e NÃO MENCIONE fotos ("seguem as fotos", "veja a foto", "olha a imagem"): quem envia as fotos das motos é o SISTEMA, automaticamente. Escreva só o TEXTO (abertura + pergunta), sem falar de foto. ' +
       'APRESENTAR MOTOS DO CATÁLOGO: escreva em `body` a abertura SEM citar/listar as motos + a pergunta final, e preencha `motos` com os nomes exatos. ' +
+      'ESCOLHA DE UMA MOTO JÁ APRESENTADA ("gostei dessa", "quero essa"): preencha `motos` com ela — o sistema envia TODAS as fotos dela; NÃO responda como texto livre. ' +
       'A PERGUNTA DE FECHO tem de ser a ÚLTIMA frase do `body`; NÃO escreva pergunta no meio do texto. ' +
       'O sistema envia a foto de CADA moto com a legenda dela (nome/ano, cor, km, preço) entre o seu texto de abertura e a sua pergunta final. ' +
       'BASE DE CONHECIMENTO: se o prompt tiver um bloco "Base de conhecimento (fatos)", OBRIGATÓRIO preencher `fonte_ids` com os [ID]s dos trechos que você USOU (ex.: ["PRE-002"]); se não usou nenhum, deixe `fonte_ids` vazio.',
@@ -3280,6 +3281,10 @@ async function executarTurnoDoAgente(
   // validador precisa das últimas mensagens). Resposta e desvio NÃO contam
   // tentativa; aceno/silêncio conta; ao teto, o fluxo esgota e conclui.
   let finalizacaoDoFluxo: EndFinish | undefined;
+  // Este turno é a RESPOSTA a um campo do fluxo? Vira contexto da JEV de oferta:
+  // "Tenho sim" (CNH) não é confirmação do "quer ver mais?" (medido 2026-10-21).
+  let respondeuCampoDoFluxo = false;
+  let campoPendenteDoFluxo: string | null = null;
   if (
     atendimento !== null &&
     !preview &&
@@ -3400,6 +3405,8 @@ async function executarTurnoDoAgente(
         );
         if (leitura.resultado === 'respondeu') {
           validacoes = leitura.respostas;
+          respondeuCampoDoFluxo = leitura.respostas.length > 0;
+          campoPendenteDoFluxo = pendentesDoFluxo[0]?.label ?? null;
         }
         // `indefinido` → sem validação; o classificador puro decide abaixo.
         validadorDecidiuNesteTurno = leitura.resultado !== 'indefinido';
@@ -3758,6 +3765,9 @@ async function executarTurnoDoAgente(
     // Já perguntamos "quer ver mais?" e há opções na fila — a Jev decide OFERECER
     // quando o cliente confirma o convite ("sim"/"pode"/"quero").
     temOpcoesPendentes: (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0,
+    // "Tenho sim" respondendo CNH NÃO é confirmação do "quer ver mais?".
+    respondendoPerguntaDoFluxo: respondeuCampoDoFluxo,
+    perguntaPendenteDoFluxo: campoPendenteDoFluxo,
   };
   const decidirTrio = !preview && mensagemDoTurnoParaJev !== '';
   const vereditoTrio = decidirTrio

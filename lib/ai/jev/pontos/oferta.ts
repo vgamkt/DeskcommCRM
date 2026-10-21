@@ -57,6 +57,15 @@ export interface ContextoDeOferta {
   clienteConfirmouOpcoes: boolean;
   /** Tipo da objeção anterior, se houver (contexto para a Jev). */
   motivoObjecaoAnterior: string | null;
+  /**
+   * A mensagem deste turno é a RESPOSTA a um campo do fluxo de atendimento
+   * (nome/cidade/CNH/CPF/…)? Um "sim"/"tenho"/nome respondendo ao fluxo NÃO é
+   * confirmação do convite "quer ver mais?" — medido 2026-10-21: "Tenho sim"
+   * (CNH) foi lido como confirmação e o bot mandou 5 motos sem o cliente pedir.
+   */
+  respondendoPerguntaDoFluxo?: boolean;
+  /** Rótulo do campo do fluxo que a mensagem respondeu (ex.: "CNH"). */
+  perguntaPendenteDoFluxo?: string | null;
 }
 
 export interface VereditoDeOferta {
@@ -97,7 +106,18 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         `escolha travada=${ctx.temEscolhaTravada}, ` +
         `pedido sem correspondência no estoque=${ctx.pedidoSemCorrespondencia}, ` +
         `cliente pediu mais opções=${ctx.pediuMaisOpcoes}, confirmou ver opções=${ctx.clienteConfirmouOpcoes}, ` +
-        `temos opções pendentes (já perguntamos "quer ver mais?")=${ctx.temOpcoesPendentes}. ` +
+        `temos opções pendentes (já perguntamos "quer ver mais?")=${ctx.temOpcoesPendentes}, ` +
+        `respondendo a uma pergunta do fluxo=${ctx.respondendoPerguntaDoFluxo === true}` +
+        `${ctx.perguntaPendenteDoFluxo ? ` (campo "${ctx.perguntaPendenteDoFluxo}")` : ''}. ` +
+        // Medido 2026-10-21: "Tenho sim" respondendo "Você tem CNH?" foi lido como
+        // confirmação do "quer ver mais?" e o bot despejou 5 motos que o cliente
+        // não pediu, mesmo com a moto escolhida em foco. Resposta de campo do
+        // fluxo NÃO é convite para catálogo.
+        'SE ESTE TURNO ESTÁ RESPONDENDO A UM CAMPO DO FLUXO (nome, cidade, CNH, CPF, ' +
+        'nascimento, entrada, parcelas…): a resposta é "não mostrar motos", MESMO que existam ' +
+        'opções pendentes e que a mensagem contenha "sim"/"tenho"/"pode". Exceção única: se a ' +
+        'MESMA mensagem também pedir motos com todas as letras ("sim, quero ver mais opções"), ' +
+        'aí sim mostrar. ' +
         // Escopo 2: distinguir "fala DELA" de "pede OUTRA" (evita re-ofertar com moto em foco).
         // Correção (medida ao vivo): um PEDIDO por CILINDRADA ("quero uma 250") era lido como
         // "falar da moto em foco" e negava — mesmo sendo pedido claro. Pedido por critério
@@ -108,7 +128,8 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         'CILINDRADA/cc — ex.: "quero uma 250", "quero uma 300cc" —, CATEGORIA/estilo, faixa de preço, ' +
         '"tem uma XRE?", "quero ver outra") → responda "sim, mostrar motos agora". ' +
         'REGRA: se "temos opções pendentes" for verdadeiro E o cliente CONFIRMA o convite ("sim", ' +
-        '"pode", "quero", "manda", "mostra"), a resposta é "sim, mostrar motos agora". ' +
+        '"pode", "quero", "manda", "mostra") — e NÃO está respondendo a um campo do fluxo —, a ' +
+        'resposta é "sim, mostrar motos agora". ' +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +
         'ou se uma objeção ainda está sendo contornada. ' +
         'REGRA INEGOCIÁVEL: se o cliente PERGUNTA se temos uma moto/modelo específico ' +
@@ -197,7 +218,10 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
     // Só quando HÁ opções pendentes (já perguntamos "quer ver mais?"): a Jev decide
     // se o cliente quer CONTINUAR a lista ou pediu algo diferente. Ela lê a intenção
     // — QUALQUER forma de confirmar conta (não é regex de palavra).
-    ...(ctx.temOpcoesPendentes
+    // Resposta de campo do fluxo NÃO é confirmação do "quer ver mais?" — omitir a
+    // pergunta de continuação impede que um "sim"/"tenho" respondendo CNH seja
+    // lido como "mostrar_mais" (medido 2026-10-21).
+    ...(ctx.temOpcoesPendentes && ctx.respondendoPerguntaDoFluxo !== true
       ? {
           continuacao: {
             type: 'choice' as const,
