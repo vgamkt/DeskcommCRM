@@ -187,3 +187,32 @@ estável.
 **Ação recomendada:** trocar default/auxiliares de `deepseek-v4.1-flash` para
 `glm-5.1` (ou `deepseek-v4-flash`, que está respondendo) e validar o
 `jailbreak_detect` real. Não é necessário mexer no formato/`thinking`; manter.
+
+## 12. Correção via UI (não no código) e teste simples — 2026-10-21
+
+**Feito na configuração da UI/org (sem escolher modelo no código):**
+- `organizations.settings.llm.default_model`: `deepseek-v4.1-flash` →
+  **`deepseek-v4-flash`**;
+- 9 `ai_purpose_bindings` de `opencode_go` que estavam em
+  `deepseek-v4.1-flash` → **`deepseek-v4-flash`**: checkpoint, compaction,
+  flow_summary, flow_validate, followup_classify, followup_decide_timing,
+  jailbreak_detect, promise_semantic, stage_classifier.
+- JEV (`typesafe/jev`) e o agente 84 (`deepseek-v4-flash`) não mudaram.
+
+**Teste simples ao vivo (5924, sem Datafy):**
+- “Oi, boa tarde! Queria ver as motos.” → bot respondeu, pediu critério, sem
+  fotos.
+- `llm_calls` do turno:
+  - `jailbreak_detect` → `opencode_go/deepseek-v4-flash`;
+  - `agent_turn` → `opencode_go/deepseek-v4-flash`;
+  - `checkpoint` → `opencode_go/deepseek-v4-flash`;
+  - `operator_turn` → `opencode_go/deepseek-v4-flash`;
+  - nenhum `deepseek-v4.1-flash`.
+
+**Conclusão:** a seleção de modelo agora vem da configuração da UI; o código
+continua só com o retry genérico e as regras de fluxo. Não foi adicionado
+fallback/modelo hardcoded. O ajuste `thinking` por família DeepSeek é
+pré-existente e não escolhe modelo; se o dono quiser, pode ser removido/movido,
+mas não foi mexido nesta rodada.
+Ambiente restaurado: Datafy `open`, agente 84, 0101 allowlist 2501, 5924 limpo;
+sem crédito Datafy.
