@@ -98,3 +98,38 @@ A JEV (`typesafe/jev`) continuou respondendo; só o modelo do turno caiu.
 - Pesado completo ainda **não** repetido; os pontos pendentes (preflight,
   fallback, contingência integrada e harness esperando o turno inteiro) estão nas
   seções 4.1–4.5.
+
+## 9. Investigação do provedor — 2026-10-21
+
+**Sonda direta** (`runModelCall`, mesma credencial `opencode_go`, org e40dc035,
+sem WhatsApp/Datafy):
+
+| modelo | resultado |
+|---|---|
+| `deepseek-v4-flash` (agente) | ✅ ok, ~7,7s (também falhou 1x antes: intermitente) |
+| `deepseek-v4.1-flash` (auxiliares) | ❌ `Endpoint is unavailable` consistente |
+| `glm-5.1` | ✅ ok, ~1,7s |
+| `gpt-5.6-luna` | ❌ protocolo não suportado |
+
+**Configuração da org:**
+- `organizations.settings.llm.default_model = deepseek-v4.1-flash`;
+- `ai_agent_versions` do agente 84 = `opencode_go/deepseek-v4-flash`;
+- `jailbreak_detect`, `stage_classifier` (fallback), `flow_validate`,
+  `checkpoint`, `compaction`, `promise_semantic`, `followup_*` estão todos
+  bound em `opencode_go/deepseek-v4.1-flash`;
+- os pontos `*__jev` usam `typesafe/jev-latest` e seguem funcionando.
+
+**Conclusão:** o turno 3/7/8 do pesado morre **antes do agente**, no
+`jailbreak_detect` (e pode morrer no checkpoint), porque o modelo auxiliar
+`deepseek-v4.1-flash` está indisponível. O `chamarTurnoComResiliencia` só envolve
+o `agent_turn`; o retry `30633f78` não cobre os auxiliares. O harness depois manda
+outra mensagem; o turno é superado e não há contingência.
+
+**Correções pendentes (não aplicar em produção sem o dono):**
+1. Trocar `default_model`/bindings auxiliares para `glm-5.1` (ou
+   `deepseek-v4-flash` se estabilizar) e testar `jailbreak_detect` real.
+2. Adicionar fallback de modelo para TODOS os `runModelCall` auxiliares (não só
+   `agent_turn`) ou um resolvedor de fallback por purpose.
+3. Preflight por purpose antes do pesado.
+4. Harness esperando o turno inteiro; repetir turno falho.
+5. Repetir o pesado funcional com mock e o smoke real com o modelo escolhido.
