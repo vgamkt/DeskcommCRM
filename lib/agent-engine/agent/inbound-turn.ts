@@ -3373,6 +3373,11 @@ async function executarTurnoDoAgente(
   // NO MÁXIMO UMA VEZ por turno. O modelo lite às vezes chama `send_message`
   // duas vezes com o mesmo texto; sem esta trava a apresentação saía dobrada.
   let jaApresentouAutomatico = false;
+  // Corpo da apresentação automática do turno. O anti-duplicação só pode recusar
+  // a REPETIÇÃO desse texto; uma resposta NOVA (ex.: objeção de preço) tem de
+  // passar. Medido 2026-10-21: "Gostei da CB 300 R, mas achei caro" era
+  // recusada como duplicação e o cliente ficava mudo.
+  let corpoApresentacaoAutomatica: string | null = null;
   // C-071: a IA chamou `crm_offer_similar_motos` neste turno (o cliente quer ver
   // outras opções)? Dispara a busca do MOTOR e limpa o estado de objeção.
   let ofereceuSimilaresNesteTurno = false;
@@ -4868,11 +4873,16 @@ async function executarTurnoDoAgente(
         // vivo: "Lander 250" saiu com a intro duplicada). A apresentação automática
         // já inclui texto e pergunta; uma 2ª mensagem SEM mídia/motos novas é
         // redundante. Recusa com instrução para encerrar (não repete a bolha).
+        const corpoNovo = body.trim();
+        const repeteApresentacao =
+          corpoApresentacaoAutomatica !== null &&
+          corpoApresentacaoAutomatica.trim().toLowerCase() === corpoNovo.toLowerCase();
         if (
           jaApresentouAutomatico &&
           (media_urls ?? []).length === 0 &&
           media_url === undefined &&
-          (motos ?? []).length === 0
+          (motos ?? []).length === 0 &&
+          (corpoApresentacaoAutomatica === null || repeteApresentacao)
         ) {
           runLog.info('send_message após apresentação automática — recusado (anti-duplicação)', {
             job_id: liveJob().id,
@@ -4883,7 +4893,7 @@ async function executarTurnoDoAgente(
               code: 'apresentacao_ja_enviada',
               message:
                 'O sistema já enviou a apresentação das motos e a pergunta de venda neste turno. ' +
-                'NÃO envie outra mensagem de texto agora — encerre o turno e aguarde a resposta do cliente.',
+                'NÃO repita a mesma apresentação — encerre o turno e aguarde a resposta do cliente.',
             },
           };
         }
@@ -5975,7 +5985,10 @@ async function executarTurnoDoAgente(
           return planoDeFotos(motosDoModelo, body, catalogoParaFotos, legendaConfig);
         })();
         // Marca que as fotos automáticas já saíram neste turno (não repetir).
-        if (planoAutomatico.length > 0) jaApresentouAutomatico = true;
+        if (planoAutomatico.length > 0) {
+          jaApresentouAutomatico = true;
+          corpoApresentacaoAutomatica = body.trim();
+        }
         // Persiste o catálogo apresentado (motos deste turno) e a moto detalhada —
         // best-effort, não bloqueia o envio. `preview` não grava.
         // TRAVA DE DECISÃO: escolha nova grava; "pediu para ver outras" destrava;
@@ -7194,6 +7207,23 @@ async function executarTurnoDoAgente(
             error: {
               code: 'invalid_payload',
               message: 'campos do caso inválidos — informe title, summary e blocker (texto).',
+            },
+          };
+        }
+        // 1ª/2ª objeção são de PERSUASÃO (skill §7): abrir caso humano aqui é
+        // cedo demais. A partir da 3ª (`oferecer`/`encaminhar`) pode. Medido
+        // 2026-10-21: o modelo abriu caso na 1ª objeção de preço e o turno ficou
+        // sem resposta.
+        if (
+          motivoNegociacao !== null &&
+          (faseObjecaoTurno === 'persuadir' || faseObjecaoTurno === 'persuadir2')
+        ) {
+          return {
+            ok: false,
+            error: {
+              code: 'objecao_em_persuasao',
+              message:
+                'Ainda é a 1ª/2ª objeção: NÃO abra caso humano agora. Responda ao cliente com persuasão e uma pergunta; a partir da 3ª tentativa o responsável pode entrar.',
             },
           };
         }
@@ -9040,12 +9070,22 @@ async function executarTurnoDoAgente(
         });
       } else {
         // 'neutro' (texto vetado) ou 'falhou': o cliente NÃO recebeu a resposta do
-        // modelo. AVISA o responsável (com a causa) — o cliente recebeu a neutra.
-        runLog.warn(
-          'turno sem envio pela ferramenta — resposta do modelo não saiu; aviso ao responsável',
-          { desfecho },
-        );
-        await enviarHandoffPorLentidao(pool, {
+        // modelo. Se NENHUMA bolha saiu, manda a contingência determinística — o
+        // cliente não pode ficar mudo por veto de narração/anti-duplicação.
+        if (corposEnviados.length === 0) {
+          const saiu = await enviarTextoDoMotor(TEXTO_ATENDIMENTO_HUMANO);
+          if (saiu === 'sent') {
+            desfecho = 'sent';
+            runLog.warn('turno sem envio pelo modelo — contingência determinística enviada', {});
+          }
+        }
+        if (desfecho !== 'sent') {
+          runLog.warn(
+            'turno sem envio pela ferramenta — resposta do modelo não saiu; aviso ao responsável',
+            { desfecho },
+          );
+        }
+        if (desfecho !== 'sent') await enviarHandoffPorLentidao(pool, {
           tenantId,
           channelSessionId: input.channelSessionId,
           notificationNumber: null,
