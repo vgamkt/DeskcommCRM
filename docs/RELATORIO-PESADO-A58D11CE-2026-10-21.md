@@ -27,11 +27,13 @@ A sessão do opencode caiu às **14:53**, logo depois de disparar o deploy via
   disparado pelo botão devolveu **200** (antes: 422), persistiu
   `{openrouter, z-ai/glm-5.1}` e o card mostrou badge, selects e **Remover**.
   Prova em `.superpowers/evidence-pos-deploy/reserva-prova.json` + PNGs.
+  **Superada:** o dono corrigiu a reserva para **`opencode_go/glm-5.2`** (nunca
+  pediu OpenRouter); a conta OpenRouter está com saldo negativo. Ver 7.2.
 - **Revalidação ao vivo feita** (seção seguinte): turno 3 com ordem correta e
   "ver mais" com contagem correta; o turno 5 da primeira rodada foi capturado
   pelo handoff de sentimento e foi refeito numa conversa limpa.
-- **Push:** os 32 commits foram enviados em 2026-10-21 15:58;
-  `origin/feat/fluxos-de-atendimento` = **`d8fa91b1`**. **CONFIRMADO.**
+- **Push:** os commits foram enviados; `origin/feat/fluxos-de-atendimento`
+  acompanha este relatório. **CONFIRMADO.**
 
 ### Revalidação ao vivo (turnos 1–5 e 8, 15:30–15:45)
 
@@ -177,15 +179,13 @@ Métricas do card: `x=352 y=326 w=976 h=174` (dentro de 1440×950, sem corte).
 - **Causa raiz:** o `corpoDoPut` da rota mantinha `provider` e `model_id`
   **obrigatórios** em qualquer corpo. O `safeParse` reprovava **antes** do ramo da
   reserva; o card existia, explicava e nunca gravava.
-- **Correção no working tree (NÃO implantada):**
+- **Correção (implantada em `fbfba95b`, provada ao vivo em `d8fa91b1`):**
   - schema extraído para `lib/ai/pontos/corpo-do-put.ts` com `provider`/`model_id`
     opcionais (a obrigatoriedade é da **operação**);
   - `app/api/v1/ai/providers/route.ts` ganhou o guard do ramo do ponto
     (`informe o provedor e o modelo do ponto`);
-  - regressão em `lib/ai/pontos/corpo-do-put.test.ts` — **8/8**.
-- **Até o deploy da correção**, o único caminho que grava é o `PUT` com os quatro
-  campos (`provider`/`model_id`/`fallback_*`), que foi o usado para configurar a
-  reserva sem mudar o build no ar — mesma rota, mesma auditoria, mesmo ramo.
+  - regressão em `lib/ai/pontos/corpo-do-put.test.ts` — **8/8**;
+  - no build novo, o botão da tela devolveu **200** (antes 422).
 
 ---
 
@@ -202,15 +202,78 @@ Métricas do card: `x=352 y=326 w=976 h=174` (dentro de 1440×950, sem corte).
 
 ---
 
-## 6. Pendências
+## 6. Pendências desta rodada (histórico — resolvidas nas atualizações)
 
-1. **Deploy da correção da reserva** (o botão da tela continua 422 até subir).
-   Commit/push/deploy só com pedido do dono.
-2. **Decisão sobre as quebras 3.1 e 3.2** (ordem do fecho e contagem no turno 5).
-3. Os 4 commits locais seguem **sem push**.
+1. Deploy da correção da reserva — **feito** (`fbfba95b`).
+2. Decisão sobre as quebras 3.1 e 3.2 — **corrigidas** (`d8fa91b1`) e revalidadas
+   ao vivo (turno 3 e "ver mais").
+3. Push dos commits — **feito** (branch em `d8fa91b1` e depois `b23df636`).
 
-### O que não foi provado
-- A reserva **sendo acionada em runtime** (exigiria derrubar o provedor primário).
-  A cadeia está coberta por `reserva-no-seam`, `reserva-de-modelo` e
-  `breaker-de-modelo`; o que se provou aqui foi a **configuração e a persistência**.
-- Ordem/contagem dos turnos 3 e 5 ficaram **abaixo da regra** nesta execução.
+### O que não foi provado (atualizado)
+- A reserva **acionada em runtime** foi provada na seção 7.2, já com
+  `opencode_go/glm-5.2`.
+- Ordem/contagem dos turnos 3 e 5 ficaram **abaixo da regra** na execução
+  original; foram corrigidas e revalidadas depois (seções de atualização).
+
+---
+
+## 7. Atualização 2 — sentimento, reserva `glm-5.2` e contingência
+
+### 7.1 Pedido neutro não herda o sentimento negativo — `95ef8794`
+
+- **Sonda da JEV (formato real), ANTES:** com histórico de duas reclamações de
+  preço, "Quero ver mais opções." pontuava **1,19–1,37** (0,30–0,34 na escala
+  normalizada) — no limiar de 0,3 do agente, caía no handoff `low_sentiment`.
+- **Correção:** o prompt do ponto `sentiment_classify` (e o fallback de chat)
+  passou a mandar **a mensagem atual prevalecer**: pedido neutro/positivo é no
+  mínimo neutro (índice 2), mesmo que mensagens anteriores tenham reclamado de
+  preço.
+- **DEPOIS:** **2,01–2,02** (0,50–0,51) nas mesmas conversas. **CONFIRMADO.**
+- **Ao vivo** (turnos 1–5, duas objeções de preço): o turno 5 **não** foi para
+  handoff; respondeu "Separei **3** opções urbanas…" → **3 fotos** → fecho.
+  O turno 3 seguiu texto → **7 fotos** → pergunta. **CONFIRMADO.**
+- Também ficou explícito no `send_message`: a pergunta de fecho é a **última
+  frase** do `body` — nada de pergunta no meio do texto.
+
+### 7.2 Reserva em runtime com `opencode_go/glm-5.2` — **CONFIRMADO**
+
+> Correção do dono: a reserva **não** é OpenRouter. A configuração anterior
+> (`openrouter/glm-5.1`) foi escolha da sessão anterior, não do dono. A conta
+> OpenRouter está com **saldo negativo** (10 de crédito total, 10,16 usado) —
+> por isso a primeira prova de runtime falhou. A reserva em vigor agora é
+> **`opencode_go / glm-5.2`**.
+
+- Prova: primário forçado a falhar (gateway falso devolvendo **503**) no
+  `jailbreak_detect`. A cadeia tentou o primário (erro), depois a reserva
+  **`opencode_go/glm-5.2`** e **respondeu** (`origem=reserva_configurada`).
+  O turno saiu normalmente. Artefato: `.test-artifacts/reserva-glm52/`.
+
+### 7.3 Turno que morre sem enviar não fica mudo — `69e2b03c`
+
+- **Defeito medido:** primário e reserva indisponíveis → o job esgotava as
+  tentativas e virava `dead` **sem uma bolha ao cliente**.
+- **Correção:** em `inbound_turn`, se o turno lança antes de qualquer envio
+  (`send_ledger` sem linha para o job) e não é desfecho intencional
+  (`JobSettledError`) nem teto de orçamento (que já tem escolta), o motor avisa
+  o lead pela cadeia `before_send` e executa o **handoff humano** (caso + inbox
+  + silêncio), concluindo o job.
+- **Prova ao vivo** (todos os candidatos derrubados): **1** mensagem de
+  transferência, `contact.force_human=true`, item de inbox
+  "Atendimento interrompido — assumir conversa" **aberto**, job **`done`** na
+  1ª tentativa (antes: `dead` e silêncio). Artefato: `.test-artifacts/contingencia3/`.
+
+### 7.4 Testes e estado
+
+- Funcional: **1607/1607**, `tsc` 0, lint 0.
+- No ar: **`69e2b03c`** (app/worker/scheduler healthy).
+- Restaurado: agente **84** (`dea42fb8…`), v85 apagada, allowlist 0101 =
+  `["+5512981672501"]`, contato 5924 limpo, credencial `opencode_go` ativa,
+  binding `jailbreak_detect` = `opencode_go/deepseek-v4-flash`, reserva =
+  `opencode_go/glm-5.2`. **CONFIRMADO.**
+
+### Observação operacional
+- `limpar-teste-completo.sh` usa o container **`deskcommcrm-worker-1`**; durante o
+  teste esse worker fica parado e a limpeza falha (o erro aparece como
+  "container … is not running"). Para limpar durante o teste, rode uma cópia do
+  script com `WORKER="qa-worker-temp"`. Não afeta produção, mas já contaminou
+  contexto entre rodadas desta sessão.
