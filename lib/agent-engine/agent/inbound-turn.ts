@@ -6447,6 +6447,7 @@ async function executarTurnoDoAgente(
               ).size;
               introducao = comQuantidadeNoTexto(introducao, motosNaApresentacao, {
                 variacao: pedidosDeOpcoesTurno,
+                daApresentacao: true,
               });
               // A CONTAGEM vale também para o FECHO do modelo ("Qual dessas DUAS…?"
               // com 5 na tela) — só troca o número, nunca prepende abertura no fecho.

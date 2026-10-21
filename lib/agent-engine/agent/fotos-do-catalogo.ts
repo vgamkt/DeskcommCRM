@@ -616,8 +616,31 @@ export function separarTextoApresentacao(
     i -= 1;
   }
   if (finalPartes.length === 0) {
-    // Tinha "?" no meio, mas não como fecho — não arrisca: tudo na introdução.
-    return { introducao: paragrafos.join('\n\n'), final: '' };
+    // A pergunta pode estar no meio do parágrafo com uma frase DEPOIS dela
+    // ("…o que ficaria confortável no seu bolso? A gente vê o que encaixa.").
+    // O laço acima só colhe perguntas ENCADEADAS no fim; nesse caso ele volta
+    // vazio e a pergunta ia para ANTES das fotos (medido 2026-10-21, turno 3:
+    // "T …" seguido de 7 fotos). Aqui a ÚLTIMA pergunta (e o que vier depois
+    // dela) vira `final`; o resto fica na introdução.
+    //
+    // Exceção: saudação interrogativa no começo ("Boa tarde! Tudo bem? Sou a
+    // Marcela…") não é fecho — arrancá-la jogaria a apresentação para depois
+    // das fotos. Por isso a pergunta tem de ter texto ANTES dela e não pode ser
+    // uma saudação.
+    const ultimaPergunta = sentencas.reduce(
+      (achado, sentenca, indice) => (sentenca.includes('?') ? indice : achado),
+      -1,
+    );
+    const ehSaudacao =
+      ultimaPergunta >= 0 &&
+      /^(tudo bem|tudo bom|como vai|beleza|oi|ol[áa]|bom dia|boa tarde|boa noite)\b[^.!?]*\?$/i.test(
+        sentencas[ultimaPergunta]!,
+      );
+    if (ultimaPergunta <= 0 || ehSaudacao) {
+      return { introducao: paragrafos.join('\n\n'), final: '' };
+    }
+    finalPartes.push(...sentencas.slice(ultimaPergunta));
+    i = ultimaPergunta - 1;
   }
   const introDoUltimo = sentencas.slice(0, i + 1).join(' ');
   const introPartes = [

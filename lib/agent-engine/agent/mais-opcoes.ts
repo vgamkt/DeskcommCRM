@@ -68,7 +68,7 @@ export function perguntaDeMaisOpcoes(args: {
 export function comQuantidadeNoTexto(
   texto: string,
   quantidade: number,
-  opts: { nome?: string | null; variacao?: number } = {},
+  opts: { nome?: string | null; variacao?: number; daApresentacao?: boolean } = {},
 ): string {
   const n = Math.max(0, Math.floor(quantidade));
   const t = texto.trim();
@@ -76,7 +76,16 @@ export function comQuantidadeNoTexto(
   // O convite ao “ver mais” fala da FILA, não da apresentação: “mais opções”
   // não recebe a contagem das motos que já saíram (medido: “mais 2 opções” com
   // 5 na fila). A contagem apresentada é injetada na ABERTURA.
-  if (/\b(mais|outras)\s+(op[çc][õo]es|motos?|modelos?|alternativas?)\b/i.test(t)) return texto;
+  //
+  // `daApresentacao` marca a ABERTURA: ali “Temos outras opções no estoque, sim.
+  // Separei umas…” é uma chamada que PRECISA da contagem real (medido no turno 5
+  // de 2026-10-21: 5 motos saíram e o texto não dizia o número). No FECHO a
+  // mesma expressão continua sendo a fila e não é tocada.
+  if (
+    !opts.daApresentacao &&
+    /\b(mais|outras)\s+(op[çc][õo]es|motos?|modelos?|alternativas?)\b/i.test(t)
+  )
+    return texto;
   // O modelo pode escrever “Separei 3” quando saíram 2. Corrige o NÚMERO colado
   // ao verbo de separar/mostrar ANTES do early-return de “já tem contagem” —
   // senão um “2 opções” correto no início escondia o “Separei 3” errado no fim.
@@ -94,8 +103,11 @@ export function comQuantidadeNoTexto(
   // "várias opções", "duas opções", "três motos") — o modelo escreve "duas"/"várias"
   // e a troca deixava "duas 5". SÓ troca quando precedido de DETERMINANTE (evita
   // casar "Motos" do nome da loja, ex.: "Valle Motos").
+  // `outras`/`mais` entram porque a ABERTURA (`daApresentacao`) pode dizer
+  // "Temos outras opções no estoque" ANTES de apresentar — ali o número real
+  // substitui o termo. No fecho o early-return acima já devolve o texto intacto.
   const det =
-    'as|algumas|essas|umas|uns|os|alguns|esses|dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|v[áa]rias|tantas|diversas';
+    'as|algumas|essas|umas|uns|os|alguns|esses|outras|mais|dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|v[áa]rias|tantas|diversas';
   const termo = new RegExp(`\\b(${det})\\s+(op[çc][õo]es|motos?|modelos?|alternativas?)\\b`, 'i');
   const casado = t.match(termo);
   if (casado !== null) return texto.replace(casado[0], `${n} ${casado[2]}`);

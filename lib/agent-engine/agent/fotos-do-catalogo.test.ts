@@ -364,6 +364,32 @@ describe('separarTextoApresentacao', () => {
     expect(final).toBe('Gostou de alguma? Como pretende adquirir?');
   });
 
+  it('pergunta com uma frase DEPOIS dela também vai para o final (turno 3)', () => {
+    // Medido em 2026-10-21: o modelo escreveu "…o que ficaria confortável no seu
+    // bolso? A gente vê o que encaixa." no mesmo parágrafo da chamada. O laço de
+    // perguntas ENCADEADAS no fim não colhia nada e a pergunta saía ANTES das 7
+    // fotos. O fecho tem de sair depois delas.
+    const texto =
+      'Essa CB 300 R é de 2011 e já rodou 104.000 km. Pra eu te ajudar de verdade: o que ficaria confortável no seu bolso? A gente vê o que encaixa.';
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    expect(introducao).toBe('Essa CB 300 R é de 2011 e já rodou 104.000 km.');
+    expect(final).toBe(
+      'Pra eu te ajudar de verdade: o que ficaria confortável no seu bolso? A gente vê o que encaixa.',
+    );
+    expect(introducao).not.toContain('?');
+  });
+
+  it('NÃO arranca saudação interrogativa do começo ("Tudo bem?")', () => {
+    // A apresentação inteira iria para depois das fotos se "Tudo bem?" fosse
+    // tratada como fecho: a saudação não é pergunta de avanço.
+    const { introducao, final } = separarTextoApresentacao(
+      'Boa tarde! Tudo bem? Sou a Marcela, da Valle Motos.',
+      catalogo,
+    );
+    expect(final).toBe('');
+    expect(introducao).toBe('Boa tarde! Tudo bem? Sou a Marcela, da Valle Motos.');
+  });
+
   it('sem pergunta, final fica vazio (não inventa)', () => {
     const { final } = separarTextoApresentacao('Segue a moto.', catalogo);
     expect(final).toBe('');

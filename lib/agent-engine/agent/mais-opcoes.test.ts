@@ -98,6 +98,22 @@ describe('introducaoFactualDaApresentacao (ESCOPO 12)', () => {
 });
 
 describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
+  it('injeta a contagem na ABERTURA que fala em "outras opções" (turno 5)', () => {
+    // Medido em 2026-10-21: 5 motos saíram e o texto dizia "Separei umas…". O
+    // early-return do "ver mais" (fila) engolia a contagem também na abertura.
+    const t = comQuantidadeNoTexto(
+      'Temos outras opções no estoque, sim. Separei umas que ficam abaixo do valor da CB 300 R:',
+      5,
+      { daApresentacao: true },
+    );
+    expect(t).toContain('5 opções');
+  });
+
+  it('no FECHO, "mais opções" continua sendo FILA e não recebe a contagem', () => {
+    const t = 'Alguma delas chamou atenção, ou prefere ver mais opções?';
+    expect(comQuantidadeNoTexto(t, 5)).toBe(t);
+  });
+
   it('corrige "Separei mais 3" para a contagem real das motos enviadas', () => {
     expect(
       comQuantidadeNoTexto('Separei mais 3 opções que ficam bem nessa linha:', 5),
