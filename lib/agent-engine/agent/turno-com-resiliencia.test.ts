@@ -69,6 +69,31 @@ describe("chamarTurnoComResiliencia", () => {
     expect(aoEsgotar.mock.calls[0]?.[0]).toMatchObject({ tentativas: 2 });
   });
 
+  it("upstream indisponível é transitório: retenta em vez de desistir", async () => {
+    // Medido 2026-10-20 no pesado: AI_APICallError "Endpoint is unavailable"
+    // era tratado como não-retentável e o turno não tentava de novo.
+    const tentar = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          'Failed after 3 attempts. Last error: AI_APICallError: Upstream request failed: Endpoint is unavailable.',
+        ),
+      )
+      .mockResolvedValueOnce('depois do retry');
+    const aoEsgotar = vi.fn().mockResolvedValue(undefined);
+
+    const out = await chamarTurnoComResiliencia(tentar, {
+      timeoutMs: 45_000,
+      maxTentativas: 2,
+      aoEsgotar,
+      log: fakeLog(),
+    });
+
+    expect(out).toBe('depois do retry');
+    expect(tentar).toHaveBeenCalledTimes(2);
+    expect(aoEsgotar).not.toHaveBeenCalled();
+  });
+
   it("erro não-retentável não repete — cai direto em aoEsgotar", async () => {
     const tentar = vi.fn().mockRejectedValue(new Error("invalid_api_key"));
     const aoEsgotar = vi.fn().mockResolvedValue(undefined);

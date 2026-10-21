@@ -30,6 +30,18 @@ describe('buildFlowIntentPrompt (multi-fluxo por intenção)', () => {
     expect(p).toMatch(/objeção|objeç/i);
   });
 
+  it('pergunta/informação sobre processo NÃO abre fluxo (2026-10-20)', () => {
+    const p = buildFlowIntentPrompt(FLUXOS, 'Vocês financiam? Aceitam cartão? Onde fica a loja?');
+    expect(p).toMatch(/Pergunta|PERGUNTA/i);
+    expect(p).toMatch(/N[ÃA]O abre|lista VAZIA/i);
+  });
+
+  it('escolha + objeção de preço JUNTAS não iniciam Qualificação', () => {
+    const p = buildFlowIntentPrompt(FLUXOS, 'Gostei da CB 300 R 2011, mas achei um pouco caro.');
+    expect(p).toMatch(/escolha.*objeção|JUNTO.*preço/i);
+    expect(p).toMatch(/N[ÃA]O inicie Qualificação/i);
+  });
+
   it('ensina o exemplo de SEQUÊNCIA (troca + financiar)', () => {
     const p = buildFlowIntentPrompt(FLUXOS, 'quero dar minha moto na troca e financiar o resto');
     expect(p).toMatch(/Troca.*Financiamento|Financiamento.*Troca/);

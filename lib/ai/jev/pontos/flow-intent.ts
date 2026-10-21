@@ -46,16 +46,25 @@ export function perguntasDeFluxosDeJev(fluxos: readonly FluxoParaJev[]): Pergunt
         // processo ("vocês aceitam troca?", "dá pra financiar?") NÃO abre sozinha.
         'ABRA o fluxo Qualificação quando o cliente demonstrar INTERESSE REAL por UMA moto ' +
         'específica ("gostei dessa", "quero essa", "qual o ano dessa?", "quanto custa a X?"). ' +
+        'PERGUNTA DE DISPONIBILIDADE ("tem uma X?", "vocês têm X?", "tem X aí?") é ' +
+        'CATÁLOGO/INFORMAÇÃO → "none"; NÃO abra Qualificação. Só abra Qualificação quando o ' +
+        'cliente DECIDE/GOSTA/QUER a moto ("quero essa", "gostei dessa", "vou levar essa"). ' +
         'Um pedido GENÉRICO sem moto definida ("quero uma moto até 15 mil", "moto pra trabalhar", ' +
         '"me mostra opções") ainda NÃO é interesse por uma moto → "none". ' +
         'ABRA um fluxo de PROCESSO somente quando o cliente PEDIR EXPLICITAMENTE para fazer o ' +
         'processo: financiar/parcelar → Financiamento; dar a moto na troca → Troca; vender/consignar → ' +
         'Venda ou Consignação ("quero financiar", "quero dar minha moto na troca", "quero vender minha moto"). ' +
+        'EXCEÇÃO DE PROCESSO: se a mensagem PEDE um processo, o fluxo PRINCIPAL é o PRIMEIRO processo ' +
+        'citado, NUNCA Qualificação — mesmo que cite uma moto. ' +
         'Uma MERA PERGUNTA ou comentário sobre o processo ("vocês fazem financiamento?", "como funciona ' +
         'o financiamento?", "dá pra financiar?", "vocês aceitam troca?") NÃO abre o fluxo → "none" ' +
         '(responda a dúvida e só abra quando ele quiser de fato). ' +
         'ATENÇÃO: uma OBJEÇÃO ou comentário sobre PREÇO ("achei caro", "tá caro", "acima do que ' +
         'posso pagar", "não tenho condições") NÃO é pedido → responda "none". ' +
+        'EXCEÇÃO (objeção JUNTO da escolha): se a mensagem GOSTA/ESCOLHE uma moto e, na MESMA frase, ' +
+        'reclama do preço/ano/km ("gostei dessa, mas achei caro", "é boa, porém tá caro"), NÃO abra ' +
+        'Qualificação — responda "none". A objeção é tratada no turno; o fluxo não deve começar. ' +
+        'Qualificação só quando o interesse por uma moto vier SEM objeção. ' +
         'Se a mensagem apenas reclama, comenta ou agradece — sem PEDIR um processo e sem mostrar ' +
         'interesse por uma moto — responda "none".',
       criteria,

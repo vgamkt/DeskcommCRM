@@ -59,10 +59,12 @@ export function buildFlowIntentPrompt(
     '- CATÁLOGO / INFORMAÇÃO (o cliente quer VER ou SABER MAIS: modelo, preço, faixa, fotos, detalhes — ex.: "quero uma moto até 20 mil", "tem uma CB 300?", "me fala mais da CB 300"): responda lista VAZIA [].',
     '- ESCOLHA da moto (o cliente DECIDE/GOSTA de uma moto específica — ex.: "gostei dessa", "quero essa", "vou levar essa"): inicie QUALIFICAÇÃO.',
     '- Outros processos: financiamento/parcelar → Financiamento; dar a moto na troca → Troca; vender/consignar → Venda ou Consignação.',
-    // Decisão do dono 2026-10-09: PERGUNTA/INTERESSE sobre o processo ABRE o fluxo.
-    // (Reverte a regra de 2026-10-08, em que "vocês aceitam troca?" não abria.)
-    '- INICIE quando o cliente QUER/PEDE o processo ("quero financiar", "quero dar minha moto na troca") OU quando ele PERGUNTA/SE INTERESSA por ele ("vocês fazem financiamento?", "como funciona o financiamento?", "dá pra parcelar?", "vocês aceitam troca?").',
+    // Regra alinhada ao contrato atual (2026-10-20): pergunta/informação sobre
+    // processo NÃO abre sozinha; só o pedido explícito. A JEV já era assim; o
+    // fallback de chat estava contradizendo e abria Financiamento em "vocês financiam?".
+    '- INICIE SOMENTE quando o cliente QUER/PEDE o processo ("quero financiar", "quero dar minha moto na troca", "quero vender minha moto"). PERGUNTA/INFORMAÇÃO sobre o processo ("vocês financiam?", "aceitam cartão?", "onde fica a loja?", "como funciona?", "dá pra parcelar?") NÃO abre → lista VAZIA [].',
     '- OBJEÇÃO/comentário de preço ("achei caro", "não tenho condições") NÃO é pedido nem pergunta sobre o processo: lista VAZIA [].',
+    '- EXCEÇÃO: se a mensagem GOSTA/ESCOLHE uma moto e JUNTO reclama de preço/ano/km ("gostei dessa, mas achei caro"), NÃO inicie Qualificação: lista VAZIA []. A objeção é tratada no turno; Qualificação só sem objeção.',
     '- Se a mensagem pede MAIS de um processo, liste TODOS na ordem citada. Ex.: "quero dar minha moto na troca e financiar o resto" → ["Troca","Financiamento"].',
     '- Sem processo pedido nem perguntado (saudação, catálogo, agradecimento), lista VAZIA [].',
     '- A mensagem pode ser uma RAJADA (várias bolhas): leia TUDO junto com o CONTEXTO abaixo; NUNCA classifique só a última bolha.',

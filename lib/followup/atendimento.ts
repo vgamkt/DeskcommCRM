@@ -207,10 +207,11 @@ function valorComoTexto(valor: unknown): string | null {
  * `contacts.display_name` (o `notify_name` do WAHA); `contacts.name` só é
  * preenchido quando o cliente DIZ o nome. Enquanto esta função lia só `name`,
  * um contato que chegou com o perfil do WhatsApp tinha `name = null` e
- * `display_name = "Vander"` — o agente saudava "Vander" (o contexto do turno lê
- * `display_name`) e depois perguntava "Como você se chama?", porque o fluxo
- * achava o nome desconhecido. O comentário anterior já descrevia esse sintoma
- * como o defeito que a função vinha matar; faltava ler a coluna certa.
+ * `display_name = "Vander"` — o agente saudava "Vander" (o contexto do turno
+ * lia `display_name`) e depois perguntava "Como você se chama?" (medido
+ * 2026-10-20). Agora o contexto do turno também lê só `name`: a saudação e a
+ * pendência do fluxo têm a MESMA fonte, então ou o bot sabe o nome e não
+ * pergunta, ou pergunta e não chama pelo nome.
  *
  * É a fonte que o motor SOMA aos valores de `contact_flow_data` para calcular as
  * pendências — a regra é: dado já gravado (em qualquer das origens) NÃO é

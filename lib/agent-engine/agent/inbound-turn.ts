@@ -364,8 +364,10 @@ export const AGENT_TOOL_DEFS = {
   flow_start: {
     description:
       'Inicia um FLUXO DE ATENDIMENTO para este cliente — o roteiro de perguntas cadastrado (ex.: "Qualificação", ' +
-      '"Financiamento", "Troca"). Use quando o assunto do cliente pedir esse roteiro; depois de iniciar, siga as ' +
-      'perguntas que vierem no bloco do fluxo, uma por vez. Não use se já houver um fluxo ativo.',
+      '"Financiamento", "Troca"). Use SOMENTE quando o cliente PEDIR explicitamente esse processo; pergunta/' +
+      'informação ("vocês financiam?", "onde fica a loja?") NÃO inicia. Depois de iniciar, siga as perguntas ' +
+      'que vierem no bloco do fluxo, uma por vez. Não use se já houver um fluxo ativo: ele permanece pendente ' +
+      'até concluir, mesmo que você responda outras coisas antes.',
     inputSchema: z.object({
       fluxo: z
         .string()
@@ -2713,6 +2715,12 @@ async function executarTurnoDoAgente(
   // pelo assunto da mensagem — não depende do modelo chamar flow_start. Só no
   // inbound e quando a mensagem casa as palavras-gatilho de um fluxo ativo.
   let fluxoIniciadoNesteTurno = false;
+  // Fluxos que a INTENÇÃO do turno autorizou (JEV/fallback). O `flow_start`
+  // explícito do modelo NÃO pode abrir um fluxo que a JEV negou (ex.: pergunta
+  // "vocês financiam?" → none; medido 2026-10-20, abriu Financiamento e
+  // contaminou o catálogo seguinte). A autorização é por turno; com fluxo ativo,
+  // ela não cancela nem reinicia o fluxo — apenas impede um segundo.
+  let fluxosAutorizadosNoTurno: Array<{ id: string; nome: string }> = [];
   // O VALIDADOR rodou neste turno? Se sim, ele é a FONTE da gravação do fluxo e
   // o `flow_collect` do modelo vira no-op. Motivo medido (2026-09-19): com o
   // modelo lento, um turno de abertura atrasado ainda chamava `flow_collect` e
@@ -2757,6 +2765,7 @@ async function executarTurnoDoAgente(
             texto: textoDoGatilho,
             contactId: leadId,
           });
+      fluxosAutorizadosNoTurno = acionados;
       if (atendimento !== null) {
         // JÁ HÁ FLUXO ATIVO. Não dá para iniciar o segundo agora (o índice
         // `idx_followup_enrollments_one_live` admite um enrollment vivo por
@@ -4421,6 +4430,19 @@ async function executarTurnoDoAgente(
               },
             };
           }
+        }
+        // A JEV/engine é AUTORITATIVA: o modelo não pode abrir um fluxo que a
+        // intenção do turno não autorizou. Sem isto, "vocês financiam?" virava
+        // `flow_start('Financiamento')` mesmo com a JEV dizendo `none`.
+        if (!fluxosAutorizadosNoTurno.some((f) => f.id === alvo.id)) {
+          return {
+            ok: false,
+            error: {
+              code: 'fluxo_nao_autorizado',
+              message:
+                'A intenção deste turno não autorizou iniciar fluxo. NÃO inicie roteiro; responda a pergunta do cliente e mantenha o fluxo ativo (se houver) pendente.',
+            },
+          };
         }
         let enrollmentId: string | null;
         try {
@@ -6532,12 +6554,13 @@ async function executarTurnoDoAgente(
               // Apresentação (motor escolheu as motos): 1 foto por moto com a
               // legenda dela (ou agrupada, se o toggle pedir).
               if (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) {
-                if (parecidasNoTurno) {
-                  // Aviso OBRIGATÓRIO da segunda entrega em diante: são parecidas,
-                  // não são exatamente o que o cliente pediu; algumas de outras
-                  // marcas. A frase é determinística e SUBSTITUI a narração do
-                  // modelo — que, no teste, disse “mais em conta e menos km” e
-                  // mandou uma V-Strom 1000 (contradição com o que saiu).
+                if (parecidasNoTurno && modeloCitadoAusente !== '') {
+                  // Aviso OBRIGATÓRIO só quando o cliente pediu um MODELO que não
+                  // está no estoque: as que saem são parecidas, não exatas, e
+                  // podem ser de outras marcas. No “ver mais” genérico (uso/
+                  // categoria/faixa) NÃO existe “não é o que você pediu” nem
+                  // “outras marcas” — foi o que deixava a frase repetitiva e falsa
+                  // (medido 2026-10-20).
                   const total = Math.max(motosOferecidasNesteTurno.length, planoAutomatico.length);
                   corpoFinal =
                     total === 1
@@ -7993,6 +8016,11 @@ async function executarTurnoDoAgente(
       // A DIRETRIZ (ação da Jev) entra SEMPRE — com ou sem brief. É a instrução
       // que faz o GLM seguir a decisão (ex.: 3ª objeção = convencer E perguntar).
       diretrizDoTurno,
+      // DADOS DE VEÍCULO: NUNCA afirmar que o cliente já informou/possui um veículo
+      // (modelo/ano/km/placa) sem estar no contexto/flow_data/histórico. Medido
+      // 2026-10-20: o bot disse "você já me passou os dados da sua CG 160 2019"
+      // quando o cliente nunca disse isso.
+      '## Dados do veículo — NÃO inventar\nNUNCA diga que o cliente já informou ou possui um veículo (modelo, ano, quilometragem, placa, documentação) se isso NÃO estiver no contexto, em `custom_fields`/`contact_flow_data` ou nas mensagens desta conversa. Se a moto de troca ainda não foi dita, PERGUNTE qual é; não presuma modelo/ano.',
       // MÍDIA PENDENTE (foto/documento): o cliente não enviou mídia; o modelo não
       // pode dizer "recebi as fotos". (medido 2026-10-20)
       fluxoAtendimento?.situacao.pendentes[0]?.config.exige_midia === true && !inboundTemMidia
@@ -8040,7 +8068,7 @@ async function executarTurnoDoAgente(
       // C-089: o filtro casou mais motos do que as oferecidas — o cliente deve ser
       // convidado a ver as demais. Determinístico (motor), por-lead.
       temMaisOpcoesNesteTurno
-        ? '## Ainda há outras opções que combinam\nApresente as que casaram, mas saiba que o sistema AINDA tem outras motos que combinam com o pedido. Feche o turno com UMA pergunta que JUNTA a escolha com o convite a ver as demais — nunca repita sempre a mesma frase (não liste os nomes das demais).\n- Se o cliente citou um MODELO específico: pergunte se ele quer EXATAMENTE esse modelo ou se prefere ver opções parecidas (ex.: "Quer que eu procure essa <modelo> mesmo, ou prefere que eu te mostre outras parecidas?").\n- Senão: pergunte, na MESMA frase, se alguma delas chamou a atenção OU se ele prefere ver as outras que temos (ex.: "Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras que temos na loja?"). Sempre deixe claro que são opções parecidas (mesmo estilo ou de outras fabricantes) — não invente a contagem.'
+        ? '## Ainda há outras opções que combinam\nApresente as que casaram, mas saiba que o sistema AINDA tem outras motos que combinam com o pedido. Feche o turno com UMA pergunta que JUNTA a escolha com o convite a ver as demais — nunca repita sempre a mesma frase (não liste os nomes das demais).\n- Se o cliente citou um MODELO específico: pergunte se ele quer EXATAMENTE esse modelo ou se prefere ver opções parecidas (ex.: "Quer que eu procure essa <modelo> mesmo, ou prefere que eu te mostre outras parecidas?").\n- Senão: pergunte, na MESMA frase, se alguma delas chamou a atenção OU se ele prefere ver as outras que temos (ex.: "Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras que temos na loja?"). Se o cliente NÃO citou modelo/marca, NÃO fale em "outras marcas/fabricantes": são só outras opções que temos. Só quando ele pediu um MODELO/marca específica as alternativas podem ser de outras fabricantes. Não invente a contagem.'
         : '',
       caseAwaitingLeadBlock,
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',

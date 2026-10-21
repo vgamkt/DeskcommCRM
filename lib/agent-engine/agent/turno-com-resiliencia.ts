@@ -22,7 +22,7 @@ export interface OpcoesDeResiliencia {
 /** O erro é transitório (vale retentar)? Timeout/rede/5xx/overloaded. */
 function retentavel(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /timeout|abort|ECONNRESET|ECONNREFUSED|ETIMEDOUT|fetch failed|network|overloaded|rate limit|429|502|503|504|500/i.test(
+  return /timeout|abort|ECONNRESET|ECONNREFUSED|ETIMEDOUT|fetch failed|network|overloaded|rate limit|429|502|503|504|500|unavailable|upstream request failed|service unavailable|bad gateway|gateway timeout/i.test(
     msg,
   );
 }

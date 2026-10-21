@@ -283,7 +283,11 @@ export async function getLeadContext(
       lead_id: input.leadId,
       contact_id: input.leadId,
       contact: {
-        name: contact.display_name ?? contact.name,
+        // P1-C: `display_name` é o pushName do WhatsApp, NÃO nome confirmado.
+        // O agente só chama o cliente pelo nome que ele/CRM confirmou (`name`).
+        // Se saudasse com display_name e o fluxo pedisse o nome, chamaria e
+        // perguntaria na mesma conversa (medido 2026-10-20).
+        name: contact.name,
         phone: contact.phone_number,
         email: contact.email,
         tags: contact.tags ?? [],

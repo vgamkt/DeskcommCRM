@@ -21,8 +21,9 @@ export function perguntaDeMaisOpcoes(args: {
   const v = Math.abs(Math.floor(args.variacao ?? 0));
 
   // O "VER MAIS" NUNCA anda sozinho (dono, 2026-10-16): sempre vem COM a
-  // explicação de que há opções parecidas no MESMO estilo e/ou de OUTRAS
-  // fabricantes — o que sobra para mostrar.
+  // explicação do que sobra para mostrar. "Outras marcas/fabricantes" SÓ quando
+  // o cliente pediu um modelo/marca específica (dono, 2026-10-20); no pedido
+  // genérico (uso/categoria/faixa) a frase fala apenas em outras opções que temos.
   if (modelo !== '') {
     const opcoes = [
       `Tem mais ${modelo} e opções parecidas no mesmo estilo, além de outras fabricantes. Quer que eu te mostre essas outras?`,
@@ -36,10 +37,10 @@ export function perguntaDeMaisOpcoes(args: {
   // Junta a ESCOLHA com o convite a ver as demais (dono, 2026-10-16): o "ver mais"
   // não anda sozinho — vem na MESMA pergunta, e deixa claro que são parecidas.
   const opcoes = [
-    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras opções parecidas, inclusive de outras marcas?',
-    'Alguma dessas te agradou, ou quer que eu te mostre mais opções parecidas, inclusive de outras marcas?',
-    'Alguma delas é a sua praia, ou prefere ver outras opções parecidas (no mesmo estilo ou de outras marcas)?',
-    'Alguma delas te chamou atenção, ou prefere que eu separe outras opções parecidas, inclusive de outras marcas?',
+    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras opções parecidas que temos?',
+    'Alguma dessas te agradou, ou quer que eu te mostre mais opções parecidas que temos?',
+    'Alguma delas é a sua praia, ou prefere ver outras opções parecidas que temos?',
+    'Alguma delas te chamou atenção, ou prefere que eu separe outras opções parecidas que temos?',
   ];
   return opcoes[v % opcoes.length]!;
 }

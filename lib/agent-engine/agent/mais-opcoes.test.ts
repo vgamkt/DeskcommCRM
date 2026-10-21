@@ -20,6 +20,22 @@ describe('perguntaDeMaisOpcoes', () => {
     expect(a).not.toBe(b); // não é a mesma frase sempre
   });
 
+  it('sem modelo: NUNCA fala de outras marcas/fabricantes', () => {
+    for (let i = 0; i < 4; i++) {
+      expect(perguntaDeMaisOpcoes({ variacao: i })).not.toMatch(
+        /outras? marcas?|outras? fabricantes?|outro fabricante|outra marca/i,
+      );
+    }
+  });
+
+  it('com modelo citado: pode oferecer outras fabricantes (pedido específico)', () => {
+    for (let i = 0; i < 4; i++) {
+      expect(perguntaDeMaisOpcoes({ modeloCitado: 'CB 300', variacao: i })).toMatch(
+        /outras? marcas?|outras? fabricantes?|outro fabricante|outra marca/i,
+      );
+    }
+  });
+
   it('com modelo citado: distingue "esse modelo" de "outras parecidas"', () => {
     const p = perguntaDeMaisOpcoes({ modeloCitado: 'CB 250', variacao: 0 });
     expect(p).toContain('CB 250');

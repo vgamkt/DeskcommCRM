@@ -53,3 +53,23 @@ anti-“Perfeito”) seguem válidas.
 Restaurado: Datafy `WORKING`, agente 84, 0101 allowlist 2501, versão temporária
 removida; flows/data dos contatos 5924/6837 removidos; `force_human=false`.
 Nenhum crédito Datafy.
+
+
+## Correção de diagnóstico (2026-10-20, depois do teste)
+
+- **Multi-intenção:** o fluxo errado não nasceu na mensagem
+  “Vocês financiam? Aceitam cartão? Onde fica a loja?”. A **Qualificação já
+  estava ativa** desde “Gostei da CB 300 R 2011, mas achei um pouco caro.” (JEV
+  0,44/0,61). O prompt da JEV foi corrigido para escolha+objeção → `none`;
+  sonda real: `none` 1,00. O teste ao vivo seguinte (5924) respondeu as três
+  perguntas sem cidade/Qualificação.
+- **Handoff:** NÃO é `force_human`. O desenho atual abre **caso**
+  (`agent_cases`) e o bot segue; o relatório anterior mediu o critério errado.
+  Validar o caso, não `force_human`; mudar para silêncio é decisão de produto.
+- **Novos achados do teste ao vivo:** “Tem uma Lander 250?” (disponibilidade)
+  abria Qualificação (0,44) e contaminava o turno seguinte; e o bot alegou
+  “você já me passou os dados da sua CG 160 2019” sem o cliente ter dito. Ambos
+  foram corrigidos no prompt (JEV/agente), com sonda/testes; **live pendente de
+  deploy**.
+- **“Outras marcas”:** cidade e “ver mais” genéricos agora saem sem a frase;
+  Lander (modelo específico) pode oferecê-la. Teste ao vivo no 5924.

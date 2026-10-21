@@ -421,8 +421,9 @@ describe("valoresConhecidosDoContato (dado já gravado não se pergunta de novo)
   });
 
   it("P1-C: `display_name` NÃO é nome confirmado", () => {
-    // O pushName do WhatsApp serve para saudação, mas não prova o nome do
-    // cliente. O fluxo deve perguntar; P4 grava em `name`/`custom_fields.nome`.
+    // O pushName do WhatsApp NÃO é nome confirmado nem serve para o agente
+    // chamar o cliente: o contexto do turno também lê só `name`. O fluxo deve
+    // perguntar; P4 grava em `name`/`custom_fields.nome`.
     expect(
       valoresConhecidosDoContato({ name: null, display_name: "Vander", custom_fields: {} }).nome,
     ).toBeUndefined();

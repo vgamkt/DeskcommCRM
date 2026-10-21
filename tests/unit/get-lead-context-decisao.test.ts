@@ -21,7 +21,10 @@ interface Chamada {
   params: unknown[];
 }
 
-function dbFalso(decisoes: unknown[], contato = [{ name: "Carlos" }]) {
+function dbFalso(
+  decisoes: unknown[],
+  contato: Array<{ name: string | null; display_name?: string | null }> = [{ name: "Carlos" }],
+) {
   const chamadas: Chamada[] = [];
   return {
     chamadas,
@@ -30,9 +33,9 @@ function dbFalso(decisoes: unknown[], contato = [{ name: "Carlos" }]) {
         chamadas.push({ sql, params });
         if (sql.includes("from contacts")) {
           return {
-            rows: contato.map(() => ({
-              name: "Carlos",
-              display_name: null,
+            rows: contato.map((c) => ({
+              name: c.name,
+              display_name: c.display_name ?? null,
               email: null,
               phone_number: "+5511900000000",
               tags: [],
@@ -96,6 +99,20 @@ describe("last_human_decision no contexto do turno", () => {
     const r = await getLeadContext(db as never, {} as never, ENTRADA, KNOBS);
     if (!r.ok) throw new Error("contexto falhou");
     expect(r.context.last_human_decision).toBeNull();
+  });
+
+  it("P1-C: o agente só chama pelo nome confirmado (`name`), nunca pelo display_name", async () => {
+    const soWhatsapp = dbFalso([], [{ name: null, display_name: "Letícia & Gustavo" }]);
+    const semNome = await getLeadContext(soWhatsapp.db as never, {} as never, ENTRADA, KNOBS);
+    if (!semNome.ok) throw new Error("contexto falhou");
+    // Sem `name`, o agente NÃO chama por Letícia; o fluxo pergunta e não há
+    // contradição (o defeito medido chamava e perguntava na mesma conversa).
+    expect(semNome.context.contact.name).toBeNull();
+
+    const confirmado = dbFalso([], [{ name: "Letícia", display_name: "Letícia & Gustavo" }]);
+    const comNome = await getLeadContext(confirmado.db as never, {} as never, ENTRADA, KNOBS);
+    if (!comNome.ok) throw new Error("contexto falhou");
+    expect(comNome.context.contact.name).toBe("Letícia");
   });
 
   it("a busca é escopada por org E contato — decisão de outro não vaza", async () => {

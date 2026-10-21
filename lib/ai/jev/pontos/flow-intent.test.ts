@@ -47,6 +47,15 @@ describe("perguntasDeFluxosDeJev", () => {
     expect(instr).toMatch(/GEN[EÉ]RICO sem moto definida/);
     // Pergunta de processo não abre sozinha.
     expect(instr).toMatch(/MER[AA] PERGUNTA[\s\S]*N[ÃA]O abre o fluxo/);
+    // Escolha + objeção de preço na MESMA frase não abre Qualificação (medido 2026-10-20).
+    expect(instr).toMatch(/objeção JUNTO da escolha/i);
+    expect(instr).toMatch(/N[ÃA]O abra[\s\S]*Qualificação/);
+    // Disponibilidade ("tem uma X?") é catálogo, não Qualificação (medido 2026-10-20).
+    expect(instr).toMatch(/PERGUNTA DE DISPONIBILIDADE/i);
+    expect(instr).toMatch(/N[ÃA]O abra Qualificação/i);
+    // Processo explícito vence Qualificação.
+    expect(instr).toMatch(/EXCEÇÃO DE PROCESSO/i);
+    expect(instr).toMatch(/NUNCA Qualificação/i);
   });
 });
 
