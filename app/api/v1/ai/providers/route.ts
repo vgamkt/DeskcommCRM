@@ -13,8 +13,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * perdido.
  */
 import { enxergaImagem } from "@/lib/ai/pontos/capacidade-em-vigor";
+import { corpoDoPut, ehCorpoDeReserva } from "@/lib/ai/pontos/corpo-do-put";
 import type { NextRequest } from "next/server";
-import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -34,7 +34,6 @@ import {
   PROVEDORES_DE_JEV,
   SUFIXO_DE_JEV,
   ehAlvoDeJev,
-  ehProvedorDeJev,
   modeloPadraoDeJev,
   pontoDeJev,
   purposeDeJev,
@@ -246,32 +245,6 @@ export async function GET(): Promise<Response> {
   });
 }
 
-const corpoDoPut = z.object({
-  // Duas operações no mesmo endpoint: gravar um ponto (purpose) ou a reserva
-  // global (fallback_*). A reserva é o modelo que entra quando o provedor do
-  // ponto auxiliar falha; ver `run-model-call.ts`.
-  purpose: z.string().min(1).optional(),
-  fallback_provider: z.string().min(1).nullable().optional(),
-  fallback_model: z.string().min(1).nullable().optional(),
-  // A migration 0127 removeu os CHECKs do banco dizendo que "a garantia de que
-  // a tela não oferece opção inválida passa a morar" na lista de provedores —
-  // mas a lista não era aplicada em NENHUM ponto de escrita. Um PUT direto (e a
-  // API é pública) gravava `provider: "foobar"`, a rota respondia 200, e todo
-  // uso daquele ponto morria em produção com provedor desconhecido. Metade da
-  // defesa transferida e nunca instalada.
-  provider: z
-    .string()
-    .min(1)
-    .refine((id: string) => ehProvedorSuportado(id) || ehProvedorDeJev(id), {
-      message:
-        "provedor não suportado por esta instalação — escolha um da lista em Agente de IA → Provedores",
-    }),
-  model_id: z.string().min(1),
-  credential_id: z.string().uuid().nullable().optional(),
-  base_url: z.string().url().nullable().optional(),
-  is_enabled: z.boolean().optional(),
-});
-
 export async function PUT(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
@@ -292,7 +265,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // ── RESERVA GLOBAL ────────────────────────────────────────────────────────
   // Grava em organizations.settings.llm, não em ai_purpose_bindings: reserva
   // não é um ponto, é o degrau de segurança de todos os pontos auxiliares.
-  if (corpo.fallback_provider !== undefined || corpo.fallback_model !== undefined) {
+  if (ehCorpoDeReserva(corpo)) {
     const provider = corpo.fallback_provider ?? null;
     const model = corpo.fallback_model ?? null;
     if ((provider === null) !== (model === null)) {
@@ -331,6 +304,11 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   if (corpo.purpose === undefined) {
     return fail("ponto_desconhecido", t("informe o ponto ou a reserva"), 422);
+  }
+  // A obrigatoriedade é da OPERAÇÃO: quem grava um ponto precisa de provedor e
+  // modelo. O schema os aceita opcionais porque a reserva não os usa.
+  if (corpo.provider === undefined || corpo.model_id === undefined) {
+    return fail("invalid_body", t("informe o provedor e o modelo do ponto"), 422);
   }
 
   // O binding de Jev de um ponto é `<ponto>__jev`. O ponto do sistema é a BASE.
