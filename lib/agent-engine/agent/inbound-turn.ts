@@ -4877,12 +4877,19 @@ async function executarTurnoDoAgente(
         const repeteApresentacao =
           corpoApresentacaoAutomatica !== null &&
           corpoApresentacaoAutomatica.trim().toLowerCase() === corpoNovo.toLowerCase();
+        // Fora de objeção/negociação, a apresentação automática já entregou texto
+        // + fotos + fecho: uma 2ª bolha de texto é redundante e vira pergunta
+        // dupla. Medido 2026-10-21 no pesado: o turno "moto para cidade" saiu com
+        // dois fechos ("Alguma delas é a sua praia...?" + "Desculpa, ficou
+        // faltando..."). Quem libera a resposta nova é a objeção (estado decidido
+        // pela JEV), não regex.
+        const emObjecaoNoTurno = faseObjecaoTurno !== null || motivoNegociacao !== null;
         if (
           jaApresentouAutomatico &&
           (media_urls ?? []).length === 0 &&
           media_url === undefined &&
           (motos ?? []).length === 0 &&
-          (corpoApresentacaoAutomatica === null || repeteApresentacao)
+          (corpoApresentacaoAutomatica === null || repeteApresentacao || !emObjecaoNoTurno)
         ) {
           runLog.info('send_message após apresentação automática — recusado (anti-duplicação)', {
             job_id: liveJob().id,

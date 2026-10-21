@@ -259,3 +259,42 @@ item 4.3 na prática; o caso humano já foi aberto, então a mensagem de transfe
 
 Ambiente restaurado: Datafy `open`, agente 84, 0101 allowlist 2501, 5924 limpo;
 UI segue `deepseek-v4-flash`; sem crédito Datafy.
+
+## 15. Continuidade — pesado pós-anti-duplicação (2026-10-21 ~04h)
+
+**Pré-condições medidas:** app/worker/scheduler em `94ba686e`; preflight dos 9
+purposes `opencode_go` verde (`deepseek-v4-flash`, ~1,3–1,9s); agente 84
+(versão `dea42fb8`, canal 2501) com versão temporária 85 vinculada ao 0101;
+allowlist 0101 = 2501 + 5924; contato 5924 limpo antes do teste.
+
+**Pesado completo (10 turnos, harness esperando o turno + 45s de silêncio):**
+**10/10 turnos com outbound**, nenhum silêncio. Artefatos:
+`.test-artifacts/heavy-dup-01..10.json`.
+
+- **Turno 3 (escolha + objeção), antes mudo:** agora responde à objeção, manda
+  as fotos da CB 300 R e pergunta a faixa de valor. Correção `94ba686e`
+  confirmada ao vivo.
+- **Regressão medida no turno 2 (cidade):** saíram **dois fechos** —
+  "Alguma delas é a sua praia...?" e "Desculpa, ficou faltando uma coisa: qual
+  dessas você quer que eu te conte mais?". O anti-duplicação passou a liberar
+  qualquer texto novo, não só resposta de objeção.
+- **Correção aplicada:** a 2ª bolha de texto após a apresentação automática só
+  passa quando há objeção/negociação no turno (`faseObjecaoTurno`/
+  `motivoNegociacao`, estado decidido pela JEV). Fora disso, continua barrada.
+  Teste de trava em `multi-pergunta-uma-mensagem.test.ts`.
+- **Validação em worker temporário (fonte local, prod parado e restaurado):**
+  turnos 1–3 — turno 2 voltou a **7 bolhas / 1 fecho**; turno 3 continua
+  respondendo com fotos e pergunta. Artefatos: `heavy-fix-01..03.json`.
+  `tsc` 0; `vitest` dos dois arquivos: **10/10**.
+- **Turno 10 (handoff):** responde e transfere, mas ainda pergunta "Qual moto
+  você pretende dar na troca?" depois de dizer que passa para o consultor —
+  comportamento pré-existente (também no `heavy-ui-10`); não alterado, pois
+  handoff é decisão do dono.
+
+**Estado:** ambiente restaurado (agente 84 na 2501, versão 85 removida,
+allowlist 0101 = 2501, 5924 limpo, worker de prod healthy na `94ba686e`).
+**A correção do 2º fecho está no working tree, NÃO commitada nem implantada.**
+
+**Pendências que continuam:** 4.2 fallback/circuit breaker dos auxiliares
+(hoje só `agent_turn` tem retry), 4.5 pesado em duas camadas (mock + smoke),
+decisão do dono sobre o handoff e sobre commit/deploy desta correção.

@@ -49,3 +49,24 @@ describe("pedido de humano abre caso e o bot segue respondendo", () => {
     expect(bloco).not.toMatch(/return; \/\/ bot silencia/);
   });
 });
+
+/**
+ * ANTI-DUPLICAÇÃO NÃO PODE VIRAR 2º FECHO (medido 2026-10-21, pesado).
+ *
+ * A trava que impediu o turno "escolha + objeção" de ficar mudo não pode deixar
+ * passar uma 2ª bolha de texto fora de objeção: o turno "moto para cidade" saiu
+ * com dois fechos ("Alguma delas é a sua praia...?" e "Desculpa, ficou
+ * faltando..."). Quem libera a resposta nova é o estado de objeção/negociação
+ * decidido pela JEV — nunca regex.
+ */
+describe("anti-duplicação: resposta nova só em objeção/negociação", () => {
+  const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+
+  it("a 2ª bolha de texto após apresentação automática é barrada fora de objeção", () => {
+    const i = src.indexOf("const emObjecaoNoTurno");
+    expect(i).toBeGreaterThan(-1);
+    const bloco = src.slice(i, i + 900);
+    expect(bloco).toMatch(/faseObjecaoTurno !== null \|\| motivoNegociacao !== null/);
+    expect(bloco).toMatch(/repeteApresentacao \|\| !emObjecaoNoTurno/);
+  });
+});
