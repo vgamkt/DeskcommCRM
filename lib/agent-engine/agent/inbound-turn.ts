@@ -2179,6 +2179,34 @@ function precoNumericoDaMoto(m: MotoDoCatalogo): number | null {
 
 
 
+/**
+ * Decide se a falha do turno vira contingência humana AGORA.
+ *
+ * Regra (medida em 2026-10-21): só no ÚLTIMO attempt. Antes disso o job ainda
+ * vai ser re-tentado pela fila — e muitos erros são transitórios (ex.: "JSON de
+ * checkpoint inválido no fechamento do turno — run re-tentado pela fila"). Tratar
+ * a 1ª falha como definitiva mandava transferência e silenciava uma conversa que
+ * o retry teria respondido (medido no pesado real de 2026-10-21, turno 7).
+ *
+ * Também não é contingência: desfecho INTENCIONAL (`JobSettledError`), teto de
+ * orçamento (já tem escolta própria) e turno que já tentou enviar (haveria risco
+ * de 2ª mensagem).
+ */
+export function deveContingenciaDoTurno(input: {
+  kind: JobRow['kind'];
+  erro: unknown;
+  tentativa: number;
+  maxTentativas: number;
+  jaTentouEnviar: boolean;
+}): boolean {
+  if (input.kind !== 'inbound_turn') return false;
+  if (input.erro instanceof JobSettledError || input.erro instanceof LlmBudgetExceededError) {
+    return false;
+  }
+  if (input.jaTentouEnviar) return false;
+  return input.tentativa >= input.maxTentativas;
+}
+
 export async function runAgentTurn(
   deps: InboundTurnDeps,
   job: JobRow,
@@ -2244,11 +2272,7 @@ export async function runAgentTurn(
     // intencional (JobSettledError) nem o teto de orçamento (que já tem a própria
     // escolta), avisamos o cliente e passamos a conversa ao humano — abrindo caso
     // e silenciando o bot — em vez de deixar o lead esperando no vazio.
-    if (
-      job.kind === 'inbound_turn' &&
-      !(err instanceof JobSettledError) &&
-      !(err instanceof LlmBudgetExceededError)
-    ) {
+    if (job.kind === 'inbound_turn') {
       let jaTentouEnviar = true; // sem leitura confiável, não arrisca 2ª mensagem
       try {
         const ledger = await pool.query(
@@ -2259,7 +2283,15 @@ export async function runAgentTurn(
       } catch {
         jaTentouEnviar = true;
       }
-      if (!jaTentouEnviar) {
+      if (
+        deveContingenciaDoTurno({
+          kind: job.kind,
+          erro: err,
+          tentativa: job.attempts,
+          maxTentativas: job.max_attempts,
+          jaTentouEnviar,
+        })
+      ) {
         try {
           const aviso = await avisarLeadLendoOContato(
             pool,
