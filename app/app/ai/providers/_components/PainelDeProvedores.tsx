@@ -108,6 +108,8 @@ interface Dados {
   credenciais: Credencial[];
   modelos: Modelo[];
   provedoresJev: ProvedorJev[];
+  /** Reserva global: entra se o provedor de um ponto auxiliar falhar. */
+  reserva: { provider: string | null; model: string | null };
   podeEditar: boolean;
 }
 
@@ -220,6 +222,8 @@ export function PainelDeProvedores() {
         </Card>
       )}
 
+      <CartaoDeReserva dados={dados} aoSalvar={carregar} />
+
       <div className="space-y-8">
         {porPapel.map(({ papel, info, pontos }) => (
           <section key={papel} data-testid={`papel-${papel}`}>
@@ -283,6 +287,132 @@ export function PainelDeProvedores() {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * RESERVA GLOBAL — o modelo que entra quando o provedor de um ponto auxiliar
+ * falha (429/503/timeout). Sem ela, o motor ainda tenta o modelo do agente
+ * publicado e o padrão da organização; a reserva é o degrau explícito, para o
+ * dono escolher um provedor diferente do principal.
+ */
+function CartaoDeReserva({
+  dados,
+  aoSalvar,
+}: {
+  dados: Dados;
+  aoSalvar: () => Promise<void>;
+}) {
+  const t = useT();
+  const [provider, setProvider] = useState(dados.reserva.provider ?? "");
+  const [modelId, setModelId] = useState(dados.reserva.model ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const modelos = dados.modelos.filter((m) => m.provider === provider);
+  const temReserva = dados.reserva.provider !== null && dados.reserva.model !== null;
+
+  async function gravar(novoProvider: string, novoModel: string) {
+    setSalvando(true);
+    try {
+      const res = await fetch("/api/v1/ai/providers", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fallback_provider: novoProvider || null,
+          fallback_model: novoModel || null,
+        }),
+      });
+      const json = (await res.json()) as { error?: { message?: string } };
+      if (!res.ok) {
+        toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
+        return;
+      }
+      toast.success(t("Reserva salva"));
+      await aoSalvar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Card className="mb-6 p-4" data-testid="reserva-de-modelo">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">{t("Modelo de reserva")}</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            {t(
+              "Se o provedor escolhido em um ponto auxiliar ficar indisponível, o atendimento tenta este modelo antes de desistir. Escolha um provedor diferente do principal para a reserva valer.",
+            )}
+          </p>
+        </div>
+        {temReserva && (
+          <Badge variant="secondary" className="font-mono text-xs">
+            {dados.reserva.model}
+          </Badge>
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div className="min-w-44">
+          <Label className="text-xs">{t("Provedor")}</Label>
+          <Select
+            value={provider}
+            onValueChange={(v) => {
+              setProvider(v);
+              setModelId("");
+            }}
+            disabled={!dados.podeEditar}
+          >
+            <SelectTrigger data-testid="reserva-provider">
+              <SelectValue placeholder={t("escolha")} />
+            </SelectTrigger>
+            <SelectContent>
+              {dados.provedores.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.rotulo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="min-w-56">
+          <Label className="text-xs">{t("Modelo")}</Label>
+          <Select value={modelId} onValueChange={setModelId} disabled={!dados.podeEditar || modelos.length === 0}>
+            <SelectTrigger data-testid="reserva-modelo">
+              <SelectValue placeholder={t("escolha")} />
+            </SelectTrigger>
+            <SelectContent>
+              {modelos.map((m) => (
+                <SelectItem key={m.model_id} value={m.model_id}>
+                  {m.display_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          size="sm"
+          disabled={!dados.podeEditar || salvando || (provider !== "" && modelId === "")}
+          onClick={() => void gravar(provider, modelId)}
+          data-testid="reserva-salvar"
+        >
+          {t("Salvar reserva")}
+        </Button>
+        {temReserva && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!dados.podeEditar || salvando}
+            onClick={() => {
+              setProvider("");
+              setModelId("");
+              void gravar("", "");
+            }}
+            data-testid="reserva-limpar"
+          >
+            {t("Remover")}
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
 

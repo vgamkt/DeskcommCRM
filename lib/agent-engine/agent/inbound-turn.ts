@@ -2993,18 +2993,29 @@ async function executarTurnoDoAgente(
   const mensagemDoTurnoParaJev =
     textoDoClienteDoTurno.trim() || (mensagemDoJob ?? '').trim();
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  // O pedido explícito pode estar SÓ na mensagem pinada deste job: o histórico
+  // (`context.messages`) termina no outbound anterior, e `inboundsPendentes`
+  // fica vazio. Medido 2026-10-21: "Quero falar com um humano." não passou pelo
+  // ramo determinístico e o modelo abriu handoff duro no meio do turno.
+  const pediuHumanoNoTurno =
+    detectHumanHandoffRequest(mensagemDoTurnoParaJev) ||
+    (agentConfig !== null &&
+      matchesHandoffKeyword(mensagemDoTurnoParaJev, agentConfig.handoffKeywords));
   if (
     !preview &&
-    inboundsPendentes.some(
-      (texto) =>
-        detectHumanHandoffRequest(texto) ||
-        (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
-    )
+    (pediuHumanoNoTurno ||
+      inboundsPendentes.some(
+        (texto) =>
+          detectHumanHandoffRequest(texto) ||
+          (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
+      ))
   ) {
-    // PEDIDO DE HUMANO → abre um CASO. NÃO silencia o bot: ele SEGUE respondendo
-    // e um humano entra quando puder. Antes, isto chamava `performHumanHandoff` +
-    // `return` — SILENCIAVA o bot e deixava o cliente sem resposta para sempre
-    // (medido 2026-10-08: "prefiro conversar com uma pessoa" → bot mudo).
+    // PEDIDO DE HUMANO → abre um CASO, AVISA e ENCERRA o turno (decisão do dono,
+    // 2026-10-21). Antes o bot seguia com o modelo e emendava uma pergunta de
+    // venda depois de dizer que ia transferir ("Qual moto você pretende dar na
+    // troca?"). O cliente só volta a receber resposta no PRÓXIMO inbound — se
+    // ele perguntar outra coisa ou fizer outra solicitação. Não gravamos
+    // `force_human`: o silêncio é deste turno, não um bloqueio permanente.
     await openCase(
       pool,
       { tenantId, conversationId: input.conversationId, agentId: agentConfig?.agentId ?? null },
@@ -3015,10 +3026,15 @@ async function executarTurnoDoAgente(
         source: 'guardrail_autofallback',
       },
     ).catch(() => {});
-    runLog.info('caso humano aberto por pedido explícito do lead — o bot SEGUE respondendo', {
-      kind: liveJob().kind,
+    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+      ...avisoDaEscalacao().base,
+      motivo: 'pediu_humano',
     });
-    // NÃO retorna: o turno segue e o modelo responde normalmente.
+    runLog.info('caso humano aberto por pedido explícito do lead — aviso enviado; turno encerrado', {
+      kind: liveJob().kind,
+      lead_avisado: aviso.avisado,
+    });
+    return; // bot para aqui: só responde de novo se o cliente mandar outra mensagem
   }
 
   // F4-07: STOP AMBÍGUO ("para de me mandar isso", "não quero mais receber", "me tira da

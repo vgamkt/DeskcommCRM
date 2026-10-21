@@ -9,6 +9,7 @@
  *
  * NUNCA lança. Erro fatal (não-retentável) também cai em `aoEsgotar`.
  */
+import { ehFalhaTransitoria } from '../edge/llm/falha-transitoria';
 import type { Logger } from '../obs/logger';
 
 export interface OpcoesDeResiliencia {
@@ -17,14 +18,6 @@ export interface OpcoesDeResiliencia {
   /** Chamado UMA vez quando todas as tentativas falham. Best-effort. */
   aoEsgotar: (info: { tentativas: number; ultimoErro: unknown }) => Promise<void>;
   log: Logger;
-}
-
-/** O erro é transitório (vale retentar)? Timeout/rede/5xx/overloaded. */
-function retentavel(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /timeout|abort|ECONNRESET|ECONNREFUSED|ETIMEDOUT|fetch failed|network|overloaded|rate limit|429|502|503|504|500|unavailable|upstream request failed|service unavailable|bad gateway|gateway timeout/i.test(
-    msg,
-  );
 }
 
 export async function chamarTurnoComResiliencia<T>(
@@ -38,7 +31,7 @@ export async function chamarTurnoComResiliencia<T>(
       return await tentar(tentativa);
     } catch (err) {
       ultimoErro = err;
-      const podeRetentar = tentativa < max && retentavel(err);
+      const podeRetentar = tentativa < max && ehFalhaTransitoria(err);
       opts.log.warn('turno: tentativa do modelo falhou', {
         tentativa,
         max,

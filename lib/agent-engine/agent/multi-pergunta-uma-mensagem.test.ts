@@ -30,23 +30,28 @@ describe("bloco de tarefas do turno (uma mensagem)", () => {
 });
 
 /**
- * PEDIDO DE HUMANO → ABRE CASO, NÃO SILENCIA (decisão do dono, 2026-10-08).
+ * PEDIDO DE HUMANO → ABRE CASO, AVISA E ENCERRA O TURNO (decisão do dono,
+ * 2026-10-21).
  *
- * O bot deve SEMPRE responder. Antes, o pedido explícito de humano (detecção
- * determinística) chamava `performHumanHandoff` + `return`, SILENCIANDO o bot e
- * deixando o cliente mudo para sempre. Agora abre um caso e o turno segue.
+ * O cliente pediu uma pessoa: o bot manda a mensagem de transferência e para.
+ * Não emenda pergunta de venda ("Qual moto você pretende dar na troca?" foi
+ * medido no pesado). Só volta a responder se o cliente mandar outra mensagem —
+ * por isso o ramo não grava `force_human`.
  */
-describe("pedido de humano abre caso e o bot segue respondendo", () => {
+describe("pedido de humano abre caso, avisa e encerra o turno", () => {
   const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
 
-  it("o ramo do pedido de humano abre CASO e NÃO silencia", () => {
-    const i = src.indexOf("detectHumanHandoffRequest(texto)");
-    const bloco = src.slice(i, i + 1600);
+  it("o ramo do pedido de humano abre CASO, envia o aviso e retorna", () => {
+    const i = src.indexOf("const inboundsPendentes = inboundsNaoRespondidos");
+    const bloco = src.slice(i, i + 2600);
     expect(bloco).toMatch(/openCase\(/);
-    expect(bloco).toMatch(/o bot SEGUE respondendo/);
-    // Não pode mais CHAMAR o handoff que silencia neste ramo.
+    expect(bloco).toMatch(/pediuHumanoNoTurno/);
+    expect(bloco).toMatch(/detectHumanHandoffRequest\(mensagemDoTurnoParaJev\)/);
+    expect(bloco).toMatch(/avisarLeadDaEscalacao\(/);
+    expect(bloco).toMatch(/motivo: 'pediu_humano'/);
+    expect(bloco).toMatch(/return; \/\/ bot para aqui/);
+    // Não pode gravar force_human: o próximo inbound precisa poder ser respondido.
     expect(bloco).not.toMatch(/await performHumanHandoff\(/);
-    expect(bloco).not.toMatch(/return; \/\/ bot silencia/);
   });
 });
 

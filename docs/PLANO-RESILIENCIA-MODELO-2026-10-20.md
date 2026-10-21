@@ -298,3 +298,53 @@ allowlist 0101 = 2501, 5924 limpo, worker de prod healthy na `94ba686e`).
 **Pendências que continuam:** 4.2 fallback/circuit breaker dos auxiliares
 (hoje só `agent_turn` tem retry), 4.5 pesado em duas camadas (mock + smoke),
 decisão do dono sobre o handoff e sobre commit/deploy desta correção.
+
+## 16. Continuidade 2 — reserva de modelo, teste em duas camadas e handoff (2026-10-21 ~04h)
+
+### 16.1 Reserva de modelo para os auxiliares (item 4.2)
+
+- `runModelCall` agora tenta, em falha **transitória**, a cadeia: modelo do ponto →
+  **reserva configurada na tela** → **modelo do agente publicado** → **padrão da
+  organização**. Nenhum modelo hardcoded; `agent_turn`/`connection_test` ficam de
+  fora (o primeiro já tem timeout/retry/handoff próprios).
+- `breaker-de-modelo.ts`: 3 falhas transitórias seguidas de um `(provider, model)`
+  abrem cooldown de 60s; sucesso zera. Em memória, de propósito.
+- UI: card **“Modelo de reserva”** em Provedores de IA (`PUT /api/v1/ai/providers`
+  com `fallback_provider`/`fallback_model`, auditado). O GET passou a devolver
+  `reserva`.
+- Cada candidato que falha é gravado em `llm_calls`; a resposta vencedora leva a
+  origem (`reserva_configurada`, `modelo_do_agente`, `padrao_da_organizacao`).
+- Provas: `reserva-no-seam.test.ts` (primário 503 → reserva; erro fatal não gasta
+  reserva; `agent_turn` intacto; reserva da tela na frente), `reserva-de-modelo.test.ts`
+  (ordem/dedupe) e `breaker-de-modelo.test.ts`.
+
+### 16.2 Teste pesado em duas camadas (item 4.5)
+
+- **Funcional (sem modelo):** `scripts/qa/pesado-funcional.sh` — `tsc`, lint dos
+  arquivos alterados e `vitest run lib/agent-engine lib/followup lib/ai` na árvore
+  de trabalho, usando a imagem do worker como runtime.
+- **Real (smoke):** `scripts/qa/pesado-smoke.sh` + `scripts/qa/harness-turno.js` —
+  injeta o inbound pelo webhook, espera o turno inteiro e exige outbound por turno.
+  Aceita subconjunto (`QA_SO=1,2,3`), sem UUID de tenant no repositório.
+
+### 16.3 Pedido explícito de humano — avisa e para (decisão do dono)
+
+- O ramo determinístico agora **abre o caso**, envia a mensagem de transferência
+  (`pediu_humano`) e **retorna**: não chama o modelo e não emenda pergunta de venda.
+  Só um novo inbound volta a ser respondido (não grava `force_human`).
+- **Defeito medido:** `inboundsNaoRespondidos(context.messages)` ficava vazio quando o
+  histórico terminava no outbound anterior — o pedido pinado do job não era visto.
+  Por isso o modelo abria `request_human_handoff` (handoff duro) e ainda mandava
+  “Qual moto você pretende dar na troca?”. A detecção agora olha também
+  `mensagemDoTurnoParaJev`.
+- Prova: ao vivo (worker temporário, árvore local) “Quero falar com um humano.”
+  → log `caso humano aberto por pedido explícito … turno encerrado`, **0 chamadas
+  de modelo**, aviso enviado (`lead avisado … kind: sent`), sem segunda pergunta.
+
+### 16.4 Estado
+
+- `tsc` 0; funcional completo **1594/1594** (após corrigir o teste de trava do
+  handoff). Ambiente restaurado (agente 84/2501, allowlist 2501, 5924 limpo).
+- **Pendente:** commit/deploy desta rodada e repetir o smoke real **no worker
+  implantado** (a persistência da mensagem no harness depende do runtime real;
+  no worker temporário o admin client não montava).

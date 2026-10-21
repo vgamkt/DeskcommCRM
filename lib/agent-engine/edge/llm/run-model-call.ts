@@ -24,7 +24,15 @@ import { scrubMessage } from '@/lib/sentry/scrub';
 
 import type { Logger } from '../../obs/logger';
 import { decidirParaOSeam } from './binding-do-ponto';
-import { resolveOrgLlmConfig, type LlmEdgeConfig, type OrcamentoDaOrg } from './credentials';
+import { breakerDeModelo } from './breaker-de-modelo';
+import {
+  resolveOrgLlmConfig,
+  type LlmEdgeConfig,
+  type OrgLlmConfig,
+  type OrcamentoDaOrg,
+} from './credentials';
+import { ehFalhaTransitoria } from './falha-transitoria';
+import { reservasDeModelo, type CandidatoDeModelo } from './reserva-de-modelo';
 import {
   AVISO_CORPO,
   AVISO_TITULO,
@@ -422,68 +430,201 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   });
 
   const startedAt = Date.now();
-  // TIMEOUT por chamada (opcional). Trava anti-travamento: um modelo que empaca
-  // é abortado em `input.timeoutMs` e vira erro `timeout` (retentável), em vez de
-  // prender o turno. Ausente = sem timeout (comportamento de antes).
-  const ctrl = input.timeoutMs !== undefined ? new AbortController() : null;
-  const timeoutTimer =
-    ctrl !== null ? setTimeout(() => ctrl.abort(), input.timeoutMs) : null;
-  let result: Awaited<ReturnType<typeof generateText>>;
-  try {
-    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
-    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
-    result = await generateText({
-      // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
-      // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
-      // ignoram o terceiro argumento e vão ao endpoint intrínseco.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? undefined),
-      system: prefix.system,
-      messages: input.messages,
-      tools: guardServiceTools(prefix.tools),
-      stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
-      temperature,
-      topP,
-      topK,
-      maxOutputTokens,
-      ...(ctrl !== null ? { abortSignal: ctrl.signal } : {}),
-    });
-  } catch (err) {
-    // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
-    //
-    // Até aqui o INSERT em llm_calls vivia só DEPOIS desta chamada, sem `try`
-    // em volta. Provedor recusou a chave, modelo não existe, conta sem saldo? A
-    // exceção subia e NADA ficava gravado. A tabela que deveria explicar era
-    // justamente a que ficava vazia no caso que precisa de explicação — e é a
-    // causa direta de "o agente não responde e não aparece erro em lugar
-    // nenhum".
-    //
-    // Grava e RELANÇA: quem chama continua decidindo o que fazer com a falha
-    // (o worker reagenda, o dry-run mostra na tela). Engolir aqui trocaria uma
-    // falha invisível por uma silenciosa, que é pior.
-    await registrarFalha(db, {
-      input,
-      purpose,
+  // ─── RESERVA DE MODELO (auxiliares) ───────────────────────────────────────
+  //
+  // O retry do turno (`chamarTurnoComResiliencia`) cobre só o `agent_turn`.
+  // Medido 2026-10-21: `deepseek-v4.1-flash` respondeu 429 consistente nos
+  // auxiliares (jailbreak/checkpoint) e o turno morreu antes do agente. Aqui a
+  // falha transitória de QUALQUER ponto auxiliar tenta o próximo candidato,
+  // sem modelo hardcoded: reserva configurada na tela → modelo do agente
+  // publicado → padrão da organização. O `agent_turn` fica de fora porque o
+  // wrapper dele já tem timeout/retry/handoff; duplicar aqui dobraria o custo
+  // do handoff.
+  const permiteReserva = purpose !== 'agent_turn' && purpose !== 'connection_test';
+  const candidatos: CandidatoDeModelo[] = [
+    {
       provider: config.provider,
       model,
+      credentialId: credencialJaCarregada,
       origem: decisao.origem,
-      latencyMs: Date.now() - startedAt,
-      erro: err,
-    }).catch(() => {
-      // O log da falha não pode causar uma segunda falha. Se o próprio INSERT
-      // de erro falhar, o erro ORIGINAL é o que interessa a quem chamou.
+      baseUrl: decisao.baseUrl ?? null,
+    },
+  ];
+  let reservasCarregadas = false;
+  async function carregarReservas(): Promise<CandidatoDeModelo[]> {
+    if (!permiteReserva || reservasCarregadas) return [];
+    reservasCarregadas = true;
+    // Modelo do agente publicado — foi o que continuou estável no incidente.
+    // Leitura best-effort: sem linha, a função pura segue com os outros degraus.
+    let agente: { provider: string; model: string; credentialId: string | null } | null = null;
+    try {
+      const { rows } = await db.query<{
+        provider: string;
+        model: string;
+        credential_id: string | null;
+      }>(
+        `select v.provider, v.model, v.credential_id
+           from ai_agents a
+           join ai_agent_versions v on v.id = a.published_version_id
+          where a.organization_id = $1 and a.archived_at is null and v.status = 'published'
+          order by a.priority desc, a.created_at asc
+          limit 1`,
+        [input.tenantId],
+      );
+      const linha = rows[0];
+      if (linha) {
+        agente = {
+          provider: linha.provider,
+          model: linha.model,
+          credentialId: linha.credential_id,
+        };
+      }
+    } catch {
+      // Tabela indisponível → só os outros degraus.
+    }
+    return reservasDeModelo({
+      permitido: permiteReserva,
+      primario: candidatos[0]!,
+      reservaConfigurada: {
+        provider: config.fallbackProvider,
+        model: config.fallbackModel,
+      },
+      agente,
+      padraoDaOrganizacao: { provider: padrao.provider, model: padrao.defaultModel },
     });
-    deps.log?.error('llm: chamada falhou', {
-      organization_id: input.tenantId,
-      purpose,
-      provider: config.provider,
-      model,
-      origem_da_escolha: decisao.origem,
-      ...normalizarErro(err),
-    });
-    throw err;
-  } finally {
-    if (timeoutTimer !== null) clearTimeout(timeoutTimer);
   }
+
+  async function materializar(c: CandidatoDeModelo): Promise<{
+    config: OrgLlmConfig;
+    factory: NonNullable<(typeof registry)[string]>;
+  }> {
+    const mesmaConfig =
+      c.provider === config.provider && (c.credentialId ?? null) === credencialJaCarregada;
+    const ccfg = mesmaConfig
+      ? config
+      : await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+          provider: c.provider,
+          ...(c.credentialId !== null ? { credentialId: c.credentialId } : {}),
+        });
+    const cfactory = registry[ccfg.provider];
+    if (cfactory === undefined) throw new LlmProviderUnknownError(ccfg.provider);
+    if (ccfg.enabledModels.length > 0 && !ccfg.enabledModels.includes(c.model)) {
+      throw new LlmModelNotEnabledError(c.model);
+    }
+    return { config: ccfg, factory: cfactory };
+  }
+
+  let result: Awaited<ReturnType<typeof generateText>> | undefined;
+  let escolhido: CandidatoDeModelo | null = null;
+  let ultimoErro: unknown = null;
+  for (let i = 0; i < candidatos.length; i++) {
+    const candidato = candidatos[i]!;
+    const chaveDoModelo = `${candidato.provider}|${candidato.model}`;
+    if (!breakerDeModelo.podeTentar(chaveDoModelo)) {
+      deps.log?.warn('llm: modelo em cooldown — indo para a reserva', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: candidato.provider,
+        model: candidato.model,
+      });
+      continue;
+    }
+    let alvo: { config: OrgLlmConfig; factory: NonNullable<(typeof registry)[string]> };
+    try {
+      alvo = await materializar(candidato);
+    } catch (err) {
+      // Reserva inválida (modelo fora de enabled_models, provider sem chave)
+      // é motivo para pular, não para derrubar a chamada que ainda pode dar
+      // certo no próximo candidato.
+      deps.log?.warn('llm: candidato de reserva inválido — pulando', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: candidato.provider,
+        model: candidato.model,
+        motivo: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
+      });
+      continue;
+    }
+    // TIMEOUT por tentativa. O controller é NOVO a cada candidato: reusar um
+    // já abortado faria a reserva falhar no mesmo instante que o primário.
+    const ctrl = input.timeoutMs !== undefined ? new AbortController() : null;
+    const timeoutTimer =
+      ctrl !== null ? setTimeout(() => ctrl.abort(), input.timeoutMs) : null;
+    try {
+      result = await generateText({
+        model: alvo.factory(
+          alvo.config.apiKey,
+          candidato.model,
+          candidato.baseUrl ?? undefined,
+        ),
+        system: prefix.system,
+        messages: input.messages,
+        tools: guardServiceTools(prefix.tools),
+        stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
+        temperature,
+        topP,
+        topK,
+        maxOutputTokens,
+        ...(ctrl !== null ? { abortSignal: ctrl.signal } : {}),
+      });
+      breakerDeModelo.registrarSucesso(chaveDoModelo);
+      escolhido = candidato;
+      if (i > 0) {
+        deps.log?.warn('llm: respondido pelo modelo de reserva', {
+          organization_id: input.tenantId,
+          purpose,
+          provider_primario: config.provider,
+          model_primario: model,
+          provider_reserva: candidato.provider,
+          model_reserva: candidato.model,
+          origem: candidato.origem,
+        });
+      }
+      break;
+    } catch (err) {
+      ultimoErro = err;
+      const transitoria = ehFalhaTransitoria(err);
+      if (transitoria) breakerDeModelo.registrarFalha(chaveDoModelo);
+      // ─── A LINHA QUE FALTAVA ──────────────────────────────────────────────
+      // Grava CADA candidato que falhou (primário e reservas): a tabela que
+      // explica precisa conter o modelo que realmente falhou. Best-effort.
+      await registrarFalha(db, {
+        input,
+        purpose,
+        provider: candidato.provider,
+        model: candidato.model,
+        origem: candidato.origem,
+        latencyMs: Date.now() - startedAt,
+        erro: err,
+      }).catch(() => {});
+      deps.log?.error('llm: chamada falhou', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: candidato.provider,
+        model: candidato.model,
+        origem_da_escolha: candidato.origem,
+        ...normalizarErro(err),
+      });
+      // Erro de config (chave/modelo/parâmetro) não melhora com reserva.
+      if (!transitoria) break;
+      const novas = await carregarReservas();
+      const existentes = new Set(candidatos.map((c) => `${c.provider}|${c.model}`));
+      for (const nova of novas) {
+        if (!existentes.has(`${nova.provider}|${nova.model}`)) {
+          candidatos.push(nova);
+          existentes.add(`${nova.provider}|${nova.model}`);
+        }
+      }
+    } finally {
+      if (timeoutTimer !== null) clearTimeout(timeoutTimer);
+    }
+  }
+  if (escolhido === null || result === undefined) {
+    throw ultimoErro instanceof Error ? ultimoErro : new Error('nenhum modelo conseguiu responder');
+  }
+  const providerExecutado = escolhido.provider;
+  const modelExecutado = escolhido.model;
+  const origemExecutada = escolhido.origem;
   const latencyMs = Date.now() - startedAt;
 
   const usage = {
@@ -496,7 +637,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // model) — que tem preço de TODOS os modelos (deepseek, glm, …). Sem isto,
   // `cost_cents` ficava `null` para quem não é Claude e o dashboard de uso não
   // mostrava custo. Modelo fora de ambos → `null` (desconhecido, nunca 0).
-  let cost = costCents(model, usage);
+  let cost = costCents(modelExecutado, usage);
   if (cost === null) {
     try {
       const { rows: preco } = await db.query<{
@@ -505,14 +646,14 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       }>(
         `select input_price_per_million_cents inp, output_price_per_million_cents outp
            from ai_models where provider = $1 and model_id = $2 limit 1`,
-        [config.provider, model],
+        [providerExecutado, modelExecutado],
       );
       const p = preco[0];
       if (p && p.inp !== null && p.outp !== null) {
         cost = custoComPrecos(
           { input: Number(p.inp), output: Number(p.outp) },
           usage,
-          config.provider,
+          providerExecutado,
         );
       }
     } catch {
@@ -533,15 +674,15 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       input.jobId ?? null,
       input.variantId ?? null,
       purpose,
-      config.provider,
-      model,
+      providerExecutado,
+      modelExecutado,
       usage.inputTokens,
       usage.outputTokens,
       usage.cacheReadTokens,
       usage.cacheWriteTokens,
       cost,
       latencyMs,
-      decisao.origem,
+      origemExecutada,
       input.agentId ?? null,
     ],
   );
@@ -566,7 +707,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     }));
     deps.log?.info('agent_turn: raciocínio e passos', {
       organization_id: input.tenantId,
-      model,
+      model: modelExecutado,
       steps: stepsCount,
       reasoning_chars: reasoningChars,
       output_tokens: usage.outputTokens,
@@ -577,13 +718,13 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // Só métricas — nunca conteúdo de mensagem (PII) nem chave.
   deps.log?.info('llm: chamada concluída', {
     organization_id: input.tenantId,
-    provider: config.provider,
-    model,
+    provider: providerExecutado,
+    model: modelExecutado,
     purpose,
     // POR QUE este modelo, e não só QUAL: é a diferença entre um log que
     // confirma o que aconteceu e um que explica uma configuração que não
     // pegou. Vira coluna em llm_calls na frente de logs.
-    origem_da_escolha: decisao.origem,
+    origem_da_escolha: origemExecutada,
     ...usage,
     cost_cents: cost,
     latency_ms: latencyMs,
@@ -599,13 +740,13 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   return {
     result,
     callId: rows[0]?.id ?? null,
-    provider: config.provider,
-    model,
+    provider: providerExecutado,
+    model: modelExecutado,
     usage,
     costCents: cost,
     latencyMs,
     /** De onde veio a escolha — o painel lê isto para explicar cada ponto. */
-    origem: decisao.origem,
+    origem: origemExecutada,
     avisos: decisao.avisos,
   };
 }

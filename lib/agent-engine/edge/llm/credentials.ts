@@ -146,6 +146,14 @@ export interface OrgLlmConfig {
   /** plaintext decifrado — existe só em memória, jamais logado/persistido */
   apiKey: string;
   defaultModel: string | null;
+  /**
+   * Modelo de RESERVA configurado na tela (opcional). Entra quando a chamada
+   * de um ponto auxiliar falha por indisponibilidade do provedor. Vazio/ausente
+   * = o resolvedor usa o modelo do agente publicado e o padrão da organização,
+   * nessa ordem. NUNCA um id hardcoded.
+   */
+  fallbackProvider: string | null;
+  fallbackModel: string | null;
   params: Record<string, unknown>;
   enabledModels: string[];
   orcamento: OrcamentoDaOrg;
@@ -174,6 +182,8 @@ const llmSettingsSchema = z
   .object({
     provider: z.string().min(1).catch('anthropic'),
     default_model: z.string().min(1).nullable().catch(null),
+    fallback_provider: z.string().min(1).nullable().catch(null),
+    fallback_model: z.string().min(1).nullable().catch(null),
     params: z.record(z.string(), z.unknown()).catch({}),
     enabled_models: z.array(z.string()).catch([]),
   })
@@ -181,6 +191,8 @@ const llmSettingsSchema = z
   .catch({
     provider: 'anthropic',
     default_model: null,
+    fallback_provider: null,
+    fallback_model: null,
     params: {},
     enabled_models: [],
   });
@@ -354,6 +366,8 @@ export async function resolveOrgLlmConfig(
     provider,
     apiKey,
     defaultModel: settings.default_model ?? null,
+    fallbackProvider: settings.fallback_provider ?? null,
+    fallbackModel: settings.fallback_model ?? null,
     params: settings.params,
     enabledModels: settings.enabled_models,
     orcamento,

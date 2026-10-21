@@ -100,7 +100,12 @@ export async function GET(): Promise<Response> {
   );
 
   const llm = ((orgRes.data?.settings as { llm?: Record<string, unknown> } | null)?.llm ??
-    {}) as { provider?: string; default_model?: string | null };
+    {}) as {
+    provider?: string;
+    default_model?: string | null;
+    fallback_provider?: string | null;
+    fallback_model?: string | null;
+  };
   const padraoDaOrganizacao = {
     provider: typeof llm.provider === "string" ? llm.provider : "anthropic",
     defaultModel: typeof llm.default_model === "string" ? llm.default_model : null,
@@ -218,6 +223,13 @@ export async function GET(): Promise<Response> {
     // provedores cadastrados entram como sugestão (o operador informa modelo e,
     // se não for base conhecida, a URL). Sem lista curada de modelo — o operador
     // escolhe o modelo do provedor.
+    // Reserva global: entra quando a chamada de um ponto auxiliar falha por
+    // indisponibilidade do provedor. Sem ela, o resolvedor ainda tenta o modelo
+    // do agente publicado e o padrão da organização.
+    reserva: {
+      provider: typeof llm.fallback_provider === "string" ? llm.fallback_provider : null,
+      model: typeof llm.fallback_model === "string" ? llm.fallback_model : null,
+    },
     provedoresJev: [
       ...PROVEDORES_DE_JEV.map((p) => ({
         id: p.id,
@@ -235,7 +247,12 @@ export async function GET(): Promise<Response> {
 }
 
 const corpoDoPut = z.object({
-  purpose: z.string().min(1),
+  // Duas operações no mesmo endpoint: gravar um ponto (purpose) ou a reserva
+  // global (fallback_*). A reserva é o modelo que entra quando o provedor do
+  // ponto auxiliar falha; ver `run-model-call.ts`.
+  purpose: z.string().min(1).optional(),
+  fallback_provider: z.string().min(1).nullable().optional(),
+  fallback_model: z.string().min(1).nullable().optional(),
   // A migration 0127 removeu os CHECKs do banco dizendo que "a garantia de que
   // a tela não oferece opção inválida passa a morar" na lista de provedores —
   // mas a lista não era aplicada em NENHUM ponto de escrita. Um PUT direto (e a
@@ -270,6 +287,52 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
   const corpo = parsed.data;
 
+  const db = await createClient();
+
+  // ── RESERVA GLOBAL ────────────────────────────────────────────────────────
+  // Grava em organizations.settings.llm, não em ai_purpose_bindings: reserva
+  // não é um ponto, é o degrau de segurança de todos os pontos auxiliares.
+  if (corpo.fallback_provider !== undefined || corpo.fallback_model !== undefined) {
+    const provider = corpo.fallback_provider ?? null;
+    const model = corpo.fallback_model ?? null;
+    if ((provider === null) !== (model === null)) {
+      return fail("reserva_incompleta", t("escolha provedor e modelo da reserva, ou limpe os dois"), 422);
+    }
+    if (provider !== null && !ehProvedorSuportado(provider)) {
+      return fail("provedor_invalido", `"${provider}" não é um provedor de conversa`, 422);
+    }
+    const { data: orgAtual } = await db
+      .from("organizations")
+      .select("settings")
+      .eq("id", org.orgId)
+      .maybeSingle();
+    const settings = (orgAtual?.settings ?? {}) as Record<string, unknown>;
+    const llmAtual = (settings.llm ?? {}) as Record<string, unknown>;
+    const { error: erroReserva } = await db
+      .from("organizations")
+      .update({
+        settings: {
+          ...settings,
+          llm: { ...llmAtual, fallback_provider: provider, fallback_model: model },
+        },
+      })
+      .eq("id", org.orgId);
+    if (erroReserva) return fail("save_failed", erroReserva.message, 500);
+    void audit({
+      action: "ai.fallback_model_updated",
+      organizationId: org.orgId,
+      actorUserId: user.id,
+      resourceType: "organization",
+      resourceId: org.orgId,
+      metadata: { provider, model },
+    });
+    return ok({ reserva: { provider, model } });
+  }
+
+  if (corpo.purpose === undefined) {
+    return fail("ponto_desconhecido", t("informe o ponto ou a reserva"), 422);
+  }
+
   // O binding de Jev de um ponto é `<ponto>__jev`. O ponto do sistema é a BASE.
   const ehJev = corpo.purpose.endsWith(SUFIXO_DE_JEV);
   const pontoId = pontoDeJev(corpo.purpose);
@@ -295,8 +358,6 @@ export async function PUT(req: NextRequest): Promise<Response> {
       422,
     );
   }
-
-  const db = await createClient();
 
   // A capacidade vem do catálogo (o que o FABRICANTE declara), nunca de
   // heurística sobre o nome do modelo.
