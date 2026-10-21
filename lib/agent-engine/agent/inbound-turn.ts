@@ -240,7 +240,7 @@ import { dadosDoModeloNaReferencia } from './categoria-da-referencia';
 import { categoriaDoModeloComJev } from './modelo-categoria-jev';
 import { CanalComBuffer } from './canal-com-buffer';
 import { unificarPecasDoTurno } from './juncao-do-turno';
-import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
+import { ajustarFechoDoTurnoDeCatalogo, garantirFechoNoFinal } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
 import { casaPerfil, filtrarPorExigencias, hipotesesDeMaiorNota, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, pontuarPorCriterios, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
@@ -6465,7 +6465,11 @@ async function executarTurnoDoAgente(
                 temMaisOpcoesNesteTurno &&
                 !outrosNoValorNesteTurno
                   ? 'escolha'
-                  : fechoJev;
+                  : // UMA moto só: "qual DELAS?" (plural) não faz sentido — o fecho
+                    // é de progressão/saber mais. Correção estrutural pela CONTAGEM.
+                    motosDistintasApresentacao === 1 && fechoJev === 'escolha'
+                    ? 'saber_mais'
+                    : fechoJev;
               const perguntaMais = outrosNoValorNesteTurno
                 ? perguntaDeOutrosNoValor({
                     modelo: motoAtualDaConversa?.nome ?? null,
@@ -6497,13 +6501,6 @@ async function executarTurnoDoAgente(
                           modeloCitado: citouModelo ? (motoAtualDaConversa?.nome ?? null) : null,
                           variacao: pedidosDeOpcoesTurno,
                         });
-              const reMais =
-                /(mais op[çc]|mais algumas|mais motos|mais alternativ|separe mais|mostre mais|procure outras|outras op[çc]|outras parecid|alternativ|parecid|nesse valor|nessa faixa|outros? modelos?|outras? (fabricantes?|marcas?)|mesma categoria|mesmo segmento|saber mais|ver outras|outras que temos)/i;
-              const jaTemVerMais = reMais.test(final) || reMais.test(introducao);
-              // Se o MODELO já perguntou qualquer coisa (no fecho OU na introdução), o
-              // motor NÃO repõe o fecho — senão DUPLICA (medido ao vivo: "Te conto mais
-              // sobre ela?… Te conto mais sobre a Biz 125?…").
-              const jaPergunta = /\?/.test(final) || /\?/.test(introducao) || jaTemVerMais;
               // FILA com mais motos + fecho de ESCOLHA: o "ver mais" NÃO anda sozinho —
               // ele JUNTA com a escolha. O fecho VIRA a pergunta COMBINADA ("alguma
               // delas chamou atenção, ou prefere ver outras que temos?"), substituindo
@@ -6517,30 +6514,15 @@ async function executarTurnoDoAgente(
               // progressão e o cliente nunca era levado à forma de pagamento.
               const substituiPorProgressao =
                 nomeModeloEspecificoDoTurno !== '' && fechoEfetivo === 'saber_mais' && !formaJaPerguntada;
-              if (perguntaMais !== '' && (combinaEscolhaComMais || substituiPorProgressao)) {
-                // A pergunta de ESCOLHA do modelo pode ter caído na INTRODUÇÃO (antes
-                // das fotos). O motor põe a pergunta DEPOIS das fotos — tira a do
-                // modelo de lá para NÃO duplicar (medido ao vivo: "Qual delas…" na
-                // intro + "Alguma delas…" no fecho).
-                introducao = removerPerguntaDeEscolha(introducao);
-                // Substitui SÓ a última frase-pergunta (a escolha); preserva o resto.
-                const t = final.trim();
-                const ultimoInterrog = t.lastIndexOf('?');
-                if (ultimoInterrog >= 0) {
-                  const corte = Math.max(
-                    t.lastIndexOf('\n', ultimoInterrog),
-                    t.lastIndexOf('.', ultimoInterrog),
-                    t.lastIndexOf('!', ultimoInterrog),
-                  );
-                  final =
-                    corte >= 0
-                      ? `${t.slice(0, corte + 1).trim()}\n${perguntaMais}`
-                      : perguntaMais;
-                } else {
-                  final = t === '' ? perguntaMais : `${t}\n${perguntaMais}`;
+              if (perguntaMais !== '') {
+                // O fecho é o da JEV. Se o modelo escreveu OUTRA pergunta no fim
+                // ("Você já tem experiência?", "Como se chama?"), ela NÃO suprime o
+                // fecho — é substituída. Estrutural: não olha o conteúdo, só a cauda
+                // interrogativa; se não havia pergunta, o fecho é acrescentado.
+                if (combinaEscolhaComMais || substituiPorProgressao) {
+                  introducao = removerPerguntaDeEscolha(introducao);
                 }
-              } else if (perguntaMais !== '' && !jaPergunta) {
-                final = final.trim() === '' ? perguntaMais : `${final}\n\n${perguntaMais}`;
+                final = garantirFechoNoFinal(final, perguntaMais);
               }
             }
 

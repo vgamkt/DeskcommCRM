@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest';
 
-import { ajustarFechoDoTurnoDeCatalogo } from './fecho-do-turno';
+import { ajustarFechoDoTurnoDeCatalogo, garantirFechoNoFinal } from './fecho-do-turno';
+
+describe('garantirFechoNoFinal', () => {
+  it('SUBSTITUI a pergunta do modelo que não é fecho pela pergunta da JEV', () => {
+    const r = garantirFechoNoFinal(
+      'Boa escolha! A NMax é econômica. Você já tem alguma experiência com scooter?',
+      'Como você pretende adquirir essa moto? À vista, financiado, no cartão, ou na troca?',
+    );
+    expect(r).not.toContain('experiência com scooter');
+    expect(r).toContain('Como você pretende adquirir');
+    expect(r.indexOf('Boa escolha')).toBeLessThan(r.indexOf('Como você pretende'));
+  });
+
+  it('ACRESCENTA o fecho quando o modelo não perguntou nada', () => {
+    const r = garantirFechoNoFinal('Separei 2 opções pra você.', 'Alguma dessas te agradou?');
+    expect(r).toContain('Separei 2 opções');
+    expect(r).toContain('Alguma dessas te agradou?');
+  });
+
+  it('sem texto do modelo, o fecho é a mensagem inteira', () => {
+    expect(garantirFechoNoFinal('', 'Qual delas te interessou?')).toBe('Qual delas te interessou?');
+  });
+
+  it('pergunta de fecho vazia não mexe no texto', () => {
+    expect(garantirFechoNoFinal('Separei 2 opções.', '  ')).toBe('Separei 2 opções.');
+  });
+});
 
 describe('ajustarFechoDoTurnoDeCatalogo', () => {
   it('tira a pergunta do FLUXO (parafraseada) e garante a de ESCOLHA', () => {

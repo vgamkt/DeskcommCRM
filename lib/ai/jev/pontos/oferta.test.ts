@@ -49,15 +49,23 @@ describe('offer_motos Jev', () => {
     expect(instr).toContain('HONDA XRE 190');
   });
 
-  it('lê o FECHO decidido pela Jev (saber_mais / escolha / outra_opcao / nenhum)', () => {
+  it('lê o FECHO decidido pela Jev; "nenhum" NÃO é permitido quando vai mostrar motos', () => {
     const base: RespostasDeJev = {
       oferta: { type: 'choice', choice: OFERECER_SIM, confidence: 1, probabilities: {} },
     };
     expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'saber_mais', confidence: 1, probabilities: {} } }).fecho).toBe('saber_mais');
     expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'outra_opcao', confidence: 1, probabilities: {} } }).fecho).toBe('outra_opcao');
-    expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'nenhum', confidence: 1, probabilities: {} } }).fecho).toBe('nenhum');
+    // A apresentação SEMPRE fecha com pergunta: "nenhum" vira o default estrutural.
+    expect(vereditoDeOfertaDaJev({ ...base, fecho: { type: 'choice', choice: 'nenhum', confidence: 1, probabilities: {} } }).fecho).toBe('escolha');
     // Sem resposta da Jev e OFERECENDO: default "escolha".
     expect(vereditoDeOfertaDaJev(base).fecho).toBe('escolha');
+    // NÃO oferecendo: aí "nenhum" é válido (não há apresentação para fechar).
+    expect(
+      vereditoDeOfertaDaJev({
+        oferta: { type: 'choice', choice: OFERECER_NAO, confidence: 1, probabilities: {} },
+        fecho: { type: 'choice', choice: 'nenhum', confidence: 1, probabilities: {} },
+      }).fecho,
+    ).toBe('nenhum');
   });
 
   it('USO/TERRENO e estilo contam como critério (não perguntar vago)', () => {

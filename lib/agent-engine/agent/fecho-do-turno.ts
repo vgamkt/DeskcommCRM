@@ -133,3 +133,28 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
 
   return { corpo, ajustado: true };
 }
+
+/**
+ * Garante que a pergunta de fecho seja a ÚLTIMA pergunta do texto.
+ *
+ * O modelo pode ter escrito uma pergunta que NÃO é fecho ("Você já tem
+ * experiência com scooter?", "Como você se chama?") no lugar do fecho decidido
+ * pela JEV. Antes, qualquer "?" fazia o motor DESISTIR do fecho — e o turno
+ * terminava na pergunta errada (ou sem pergunta, quando ela ficava na chamada).
+ *
+ * Estrutural: só reconhece "há uma pergunta no fim" e troca a cauda pela
+ * pergunta da JEV. Não olha o CONTEÚDO da pergunta (não é regex de decisão).
+ */
+export function garantirFechoNoFinal(final: string, pergunta: string): string {
+  const p = pergunta.trim();
+  const t = final.trim();
+  if (p === '') return t;
+  const i = t.lastIndexOf('?');
+  if (i < 0) return t === '' ? p : `${t}\n\n${p}`;
+  const corte = Math.max(
+    t.lastIndexOf('\n', i),
+    t.lastIndexOf('.', i),
+    t.lastIndexOf('!', i),
+  );
+  return corte >= 0 ? `${t.slice(0, corte + 1).trim()}\n${p}` : p;
+}

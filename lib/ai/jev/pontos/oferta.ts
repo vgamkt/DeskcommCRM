@@ -185,13 +185,15 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         '- "escolha": perguntar QUAL moto chamou mais a atenção — use quando há MAIS DE UMA opção na apresentação. ' +
         '- "saber_mais": convidar a saber mais sobre a moto / ver de perto — use quando é UMA moto só (ex.: o cliente pediu um MODELO específico). ' +
         '- "outra_opcao": oferecer CONSULTAR outras opções do MESMO segmento/tipo de OUTRA fabricante — use SÓ quando já houve recusa/objeção e comparar ajuda. ' +
-        '- "nenhum": não perguntar nada agora. ' +
+        // A apresentação NÃO pode terminar sem pergunta. "nenhum" deixou um turno
+        // real (19/10) terminar em frase afirmativa ("Dá uma olhada e me diz…") e a
+        // conversa morrer. Não é opção quando motos vão ser mostradas.
+        'A apresentação SEMPRE termina com UMA pergunta de fecho — NÃO existe "não perguntar". ' +
         `Contexto: mensagem="${ctx.mensagem}"; moto em foco=${ctx.temMotoEmFoco}; motivo da objeção anterior=${ctx.motivoObjecaoAnterior ?? 'nenhum'}.`,
       criteria: {
         escolha: 'perguntar QUAL delas chamou mais a atenção (há MAIS DE UMA moto)',
         saber_mais: 'convidar a saber mais / ver de perto (UMA moto só)',
         outra_opcao: 'oferecer outra opção do MESMO segmento de OUTRA fabricante (houve recusa/objeção)',
-        nenhum: 'não perguntar nada agora',
       },
     },
     // TROCA DE INTERESSE — decisão da JEV (doutrina `jev-decide-sempre`). Só quando
@@ -258,9 +260,11 @@ export function vereditoDeOfertaDaJev(respostas: RespostasDeJev): VereditoDeOfer
   const f = respostas.fecho;
   const fechoBruto = f?.type === 'choice' ? f.choice : null;
   const fecho: FechoDaApresentacao =
-    fechoBruto === 'saber_mais' || fechoBruto === 'outra_opcao' || fechoBruto === 'nenhum' || fechoBruto === 'escolha'
+    fechoBruto === 'saber_mais' || fechoBruto === 'outra_opcao' || fechoBruto === 'escolha'
       ? fechoBruto
-      : // Sem resposta da Jev para o fecho: se vamos mostrar, o default é "escolha".
+      : // 'nenhum' (ou sem resposta) NÃO é permitido quando vamos mostrar motos:
+        // a apresentação SEMPRE termina com pergunta (dono, 2026-10-21). O default
+        // é estrutural — "escolha"; o motor troca por "saber_mais" quando sai 1 moto.
         oferecer
         ? 'escolha'
         : 'nenhum';
