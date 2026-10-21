@@ -87,3 +87,14 @@ A JEV (`typesafe/jev`) continuou respondendo; só o modelo do turno caiu.
 - Deploy: **pendente**.
 - Pesado completo: **pendente** de provedor estável/preflight.
 - Ambiente: Datafy `open`, agente 84, 0101 allowlist 2501, 5924 limpo.
+
+## 7. Fechamento desta rodada
+
+- Correção do retry commitada em **`30633f78`** e implantada (worker jevfix39,
+  app/scheduler recriados; health `30633f78`).
+- Teste que simula o erro: **6/6** verdes; `tsc` 0; lint 0 erros.
+- Ambiente de teste restaurado: Datafy `open`, agente 84, 0101 allowlist 2501,
+  5924 limpo; sem crédito Datafy.
+- Pesado completo ainda **não** repetido; os pontos pendentes (preflight,
+  fallback, contingência integrada e harness esperando o turno inteiro) estão nas
+  seções 4.1–4.5.
