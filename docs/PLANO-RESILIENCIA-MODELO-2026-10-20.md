@@ -362,3 +362,35 @@ a peça ficou presa.
   pedido de humano **e** na suspeita de opt-out (mesmo defeito latente).
 - Trava em `multi-pergunta-uma-mensagem.test.ts`: o ramo precisa chamar
   `liberarAvisoDeterministico('pedido_de_humano')`.
+
+## 17. Estado final desta sessão (2026-10-21)
+
+**No ar:** `a58d11ce` (app/worker/scheduler healthy; health confirma a versão).
+
+**Commits desta sessão (locais, ainda sem push):**
+- `860e3494` — anti-duplicação barra 2º fecho fora de objeção; pesado 10/10
+  (`heavy-dup-01..10`).
+- `03053e30` — reserva de modelo nos auxiliares (cadeia + breaker + card na UI),
+  scripts de teste em duas camadas e handoff que avisa e para.
+- `a58d11ce` — libera o aviso determinístico do buffer da junção antes de
+  encerrar (handoff e opt-out).
+
+**Provas:**
+- Funcional: `bash scripts/qa/pesado-funcional.sh` → `tsc` 0, lint 0 erros,
+  **1594/1594**.
+- Handoff ao vivo no worker implantado: “Quero falar com um humano.” → **1**
+  outbound (transferência, sem pergunta), **0** chamadas de modelo,
+  `send_ledger seq=0 accepted`, `force_human=false` (próximo inbound responde).
+- Reserva: testes `reserva-no-seam`, `reserva-de-modelo`, `breaker-de-modelo`
+  (primário 503 → reserva; erro fatal não gasta reserva; `agent_turn` intacto).
+
+**Pendências para a próxima sessão:**
+1. Repetir o **pesado de 10 turnos** na versão `a58d11ce` (o último 10/10 foi em
+   `860e3494`; o handoff foi revalidado depois).
+2. **Configurar a reserva** em Provedores de IA → “Modelo de reserva”. Está
+   vazia; hoje a cadeia cai no modelo do agente/padrão, ambos `deepseek-v4-flash`.
+   Para redundância real, escolher outro modelo (ex.: `glm-5.1`).
+3. **Prova visual** do card novo (compila e a API grava; navegador não usado).
+4. `git push` dos três commits (não foi pedido).
+5. Ambiente de teste restaurado: agente 84 na 2501, allowlist 0101 = 2501,
+   5924 limpo; versão temporária removida.
