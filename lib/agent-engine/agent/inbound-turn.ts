@@ -9186,6 +9186,38 @@ async function executarTurnoDoAgente(
     //   - vetado  → o cliente recebe a contingência NEUTRA e o responsável é avisado.
     // É o que o dono pediu: o motor NÃO deixa vazar nota interna, RECONHECE a
     // anomalia, REMONTA uma resposta segura e AVISA — sem descartar resposta boa.
+    // ── REDE DA ESCOLHA SEM send_message ─────────────────────────────────────
+    // O modelo lite às vezes escreve a resposta como TEXTO e não chama
+    // `send_message` — justamente no turno em que o cliente escolheu uma moto.
+    // Aí o álbum dela (TODAS as fotos) e o `moto_interesse` eram perdidos.
+    // Só entra quando a JEV de escolha reconhece a escolha NESTE turno e o álbum
+    // ainda não saiu; o texto livre é dividido em chamada → fotos → pergunta.
+    const BASE_SEQ_SOCORRO_FOTOS = 30_000;
+    let seqSocorroFotos = BASE_SEQ_SOCORRO_FOTOS;
+    const enviarFotoDoSocorro = async (url: string, legenda: string): Promise<boolean> => {
+      if (preview) return false;
+      try {
+        await liveChannel().send({
+          tenantId,
+          leadId,
+          jobId: liveJob().id,
+          jobClaim: claimOfJob(liveJob()),
+          agentOperation,
+          seq: (seqSocorroFotos += 1),
+          conversationId: input.conversationId,
+          body: legenda,
+          media: { type: 'image', url },
+        });
+        await new Promise((r) => setTimeout(r, 700));
+        return true;
+      } catch (err) {
+        runLog.warn('contingência da escolha: foto não enviada', {
+          erro: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
+        });
+        return false;
+      }
+    };
+
     if (
       !preview &&
       liveJob().kind === 'inbound_turn' &&
@@ -9193,7 +9225,75 @@ async function executarTurnoDoAgente(
       seq < maxSendsPerTurn
     ) {
       const textoDoModelo = (turn.result.text ?? '').trim();
-      const negociacao = (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '').trim();
+      let contingenciaEscolhaEnviada = false;
+      if (textoDoModelo !== '' && catalogoDaConversa.motos.length > 0) {
+        let escolhidaSocorro: MotoDoCatalogo | undefined;
+        try {
+          escolhidaSocorro = await motoEscolhidaPeloClienteComJev(
+            textoDoModelo,
+            textoDoClienteDoTurno || (mensagemDoJob ?? ''),
+            catalogoDaConversa.motos,
+            catalogoDaConversa.detalhadas,
+            textoCitadoDoTurno,
+            {
+              db: pool,
+              tenantId,
+              log: runLog,
+              escolhidaAtual: catalogoDaConversa.escolhida,
+              pediuOutraMoto: false,
+            },
+          );
+        } catch {
+          escolhidaSocorro = undefined;
+        }
+        if (
+          escolhidaSocorro !== undefined &&
+          !albumDaMotoJaFoiEnviado(catalogoDaConversa, escolhidaSocorro)
+        ) {
+          const sentencas = textoDoModelo
+            .split(/(?<=[.!?])\s+/)
+            .map((s) => s.trim())
+            .filter((s) => s !== '');
+          const primeiraPergunta = sentencas.findIndex((s) => s.includes('?'));
+          const perguntas = sentencas.filter((s) => s.includes('?'));
+          const intro =
+            primeiraPergunta > 0
+              ? sentencas.slice(0, primeiraPergunta).join(' ').trim()
+              : // sem pergunta: o texto inteiro é a chamada (nada pode ser perdido)
+                primeiraPergunta < 0
+                ? textoDoModelo
+                : '';
+          const final = perguntas.length > 0 ? perguntas[perguntas.length - 1]! : '';
+          const itens = planoDeFotosDasMotos(
+            [escolhidaSocorro],
+            agentConfig?.catalogConfig?.fotos_moto_escolhida ?? FOTOS_TODAS,
+          );
+          let enviou = false;
+          if (intro !== '') enviou = (await enviarTextoDoMotor(intro)) === 'sent';
+          for (const item of itens) {
+            if (await enviarFotoDoSocorro(item.url, item.legenda)) enviou = true;
+          }
+          if (final !== '' && (await enviarTextoDoMotor(final)) === 'sent') enviou = true;
+          if (enviou) {
+            await salvarCatalogoDaConversa(
+              pool,
+              tenantId,
+              input.conversationId,
+              catalogoDaConversa,
+              [escolhidaSocorro],
+              escolhidaSocorro.nome,
+              escolhidaSocorro,
+            );
+            contingenciaEscolhaEnviada = true;
+            runLog.warn('turno sem send_message — escolha apresentada pelo motor (álbum completo)', {
+              moto: escolhidaSocorro.nome,
+              fotos: itens.length,
+            });
+          }
+        }
+      }
+      if (!contingenciaEscolhaEnviada) {
+        const negociacao = (textoDeContingenciaDaNegociacao(acaoNegociacao) ?? '').trim();
       const texto =
         textoDoModelo !== ''
           ? textoDoModelo
@@ -9275,6 +9375,7 @@ async function executarTurnoDoAgente(
               : 'o modelo não enviou resposta ao cliente neste turno (não chamou a ferramenta de envio)',
           log: runLog,
         }).catch(() => {});
+      }
       }
     }
 
