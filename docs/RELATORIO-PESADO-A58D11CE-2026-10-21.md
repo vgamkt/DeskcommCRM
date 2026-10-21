@@ -277,3 +277,62 @@ Métricas do card: `x=352 y=326 w=976 h=174` (dentro de 1440×950, sem corte).
   "container … is not running"). Para limpar durante o teste, rode uma cópia do
   script com `WORKER="qa-worker-temp"`. Não afeta produção, mas já contaminou
   contexto entre rodadas desta sessão.
+
+---
+
+## 8. Pesado real — WAHA 0101 → 5924, sem Datafy (2026-10-21 ~16:26–16:46)
+
+**Método:** `scripts/qa/pesado-smoke.sh`, inbound pelo webhook e saída pela **WAHA real**
+do canal 0101 (`9d9d8ddc…`), para `+55 12 98132-5924`. Nenhum mock e nenhum
+Datafy. Para **não tirar a produção do ar**, o teste usou um agente temporário
+"QA Pesado 0101" (clone da Marcela/v84) publicado **só no canal 0101**; a Marcela
+seguiu com a v84 no canal de produção. Removido ao final.
+
+**Resultado: 10/10 turnos com outbound, 0 erros de modelo.** Artefatos:
+`.test-artifacts/pesado-real-final/`.
+
+| # | Pergunta | Resposta (resumo) | Fotos |
+|---|---|---|---|
+| 1 | "Queria ver as motos." | Apresentação + pediu tipo/uso e faixa de preço, **sem despejar catálogo** | 0 |
+| 2 | "Moto para cidade, uso no dia a dia." | "**5 opções** que separei" → fecho "alguma é a sua praia?" | **5** |
+| 3 | "Gostei da CB 300 R 2011, mas achei um pouco caro." | Tratou a objeção (estado/Honda/garantia) → **7 fotos da CB** → "faixa de valor?" | **7** |
+| 4 | "Tá muito caro mesmo, não cabe no meu orçamento." | Persuasão (custo-benefício) + pergunta do que pesa mais | 0 |
+| 5 | "Quero ver mais opções." | "**3 opções** que separei" → "qual chamou mais atenção?" | **3** |
+| 6 | "Meu nome é Letícia." | "Letícia! Prazer" + retomou a escolha (sem se reapresentar) | 0 |
+| 7 | "Vocês financiam? Aceitam cartão? Onde fica a loja?" | Respondeu as **três**, deu o endereço e explicou financiamento/cartão | 0 |
+| 8 | "Tem uma Lander 250?" | Não tem; **5 trail** (Crosser, Himalayan, CB 500 X, BMW G 310 GS, XRE 190) | **5** |
+| 9 | "Quero dar minha moto na troca e financiar o restante." | Reconheceu os **dois**, perguntou só a moto da troca | 0 |
+| 10 | "Quero falar com um humano." | Transferência, **0 chamadas de modelo**; caso "Cliente pediu atendimento humano" `awaiting_human`; `force_human=false` (desenho do handoff determinístico) | 0 |
+
+- **Sends reais confirmados:** WAHA respondeu **201** em `sendText`/`sendImage` para
+  `5512981325924`; nenhum mock e nenhuma chamada Datafy.
+- **Turno 7 (observação):** respondeu as três perguntas, mas já pediu o **CPF** para
+  iniciar a avaliação de financiamento. A regra do teste anterior era "só iniciar
+  fluxo quando o cliente pedir para seguir"; aqui ele avançou sozinho. Não foi
+  handoff nem fluxo errado, mas vale decisão do dono.
+- **Turno 10:** handoff determinístico como desenhado — aviso + caso, sem
+  `force_human` e sem modelo.
+
+### Defeito encontrado e corrigido durante o teste — `772b751d`
+
+A **primeira** execução real (build `69e2b03c`) parou no turno 8: o turno 7 caiu
+em `JSON de checkpoint inválido no fechamento do turno — run re-tentado pela fila`.
+A contingência nova interpretou **erro transitório de 1ª tentativa** como falha
+definitiva: mandou transferência, fez handoff e silenciou a conversa — os turnos
+8–10 ficaram mudos (o retry que responderia foi morto).
+
+- **Correção:** `deveContingenciaDoTurno` só dispara no **último attempt**
+  (`job.attempts >= max_attempts`), continua fora de `JobSettledError`/teto de
+  orçamento e não dispara se já houve tentativa de envio. Regressão em
+  `contingencia-atendimento.test.ts` (7 casos).
+- **Re-teste:** 10/10 outbound. **CONFIRMADO.**
+- **Ainda a observar:** o erro de checkpoint apareceu uma vez e não voltou no
+  re-teste; se reaparecer de forma determinística, o retry esgota e aí sim vira
+  handoff (comportamento novo).
+
+### Estado final
+
+- No ar: **`772b751d`** (app/worker/scheduler healthy).
+- Restaurado: Marcela **v84** no canal de produção, agente/versão de QA
+  removidos, allowlist 0101 = `["+5512981672501"]`, contato 5924 limpo.
+  **CONFIRMADO.**
