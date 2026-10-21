@@ -23,6 +23,14 @@ describe("perguntaDeMotoEscolhidaJev", () => {
     expect(p.instructions).toContain("SEM REFERÊNCIA");
     expect(p.instructions).toContain("ÚNICA EM FOCO");
   });
+
+  it("o texto da LOJA (modelo) não cria escolha; só desambigua uma deíctica do cliente", () => {
+    const p = perguntaDeMotoEscolhidaJev(["Honda CG 160 Fan", "Yamaha NMax 160"]).moto;
+    if (!p || p.type !== "choice") throw new Error("esperava choice");
+    expect(p.instructions).toContain("NÃO cria escolha sozinho");
+    expect(p.instructions).toMatch(/DESAMBIGUAR/);
+    expect(p.instructions).toMatch(/Sao paulo|CNH/);
+  });
 });
 
 describe("motoEscolhidaDaRespostaDeJev", () => {

@@ -6699,7 +6699,7 @@ async function executarTurnoDoAgente(
               if (!vaiMostrarMotos) {
                 corpoFinal = semAnuncioDeFotos(corpoFinal);
               }
-              if ((vaiMostrarMotos || escolhaAlbumJaMostrado) && (pendenteFecho !== undefined || escolhaAlbumJaMostrado)) {
+              if ((vaiMostrarMotos || (escolhaAlbumJaMostrado && !respondeuCampoDoFluxo)) && (pendenteFecho !== undefined || escolhaAlbumJaMostrado)) {
                 const p = pendenteFecho?.config;
                 const perguntaFluxo =
                   p !== undefined
@@ -6719,7 +6719,10 @@ async function executarTurnoDoAgente(
                   perguntaDoFluxo: perguntaFluxo,
                   variacao: pedidosDeOpcoesTurno,
                   // A escolha cujo álbum já saiu TEM escolha travada → fecho de PROGRESSÃO.
-                  temEscolha: catalogoDaConversa.escolhida !== null || escolhaAlbumJaMostrado,
+                  temEscolha:
+                    catalogoDaConversa.escolhida !== null ||
+                    escolhaAlbumJaMostrado ||
+                    escolhidaNesteTurno !== undefined,
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
                   umaMoto: nomeModeloEspecificoDoTurno !== '',

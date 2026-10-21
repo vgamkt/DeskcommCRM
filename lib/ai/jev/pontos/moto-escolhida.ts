@@ -28,6 +28,14 @@ export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasD
         // SEM REFERÊNCIA (substitui o gate determinístico `temReferenciaAMoto`): sem alvo, NÃO é escolha.
         'SEM REFERÊNCIA: se a mensagem NÃO fala de nenhuma moto da lista (é cidade, um dado do ' +
         'cadastro, saudação, "ok", agradecimento, ou afirmação vaga sem alvo) → responda "nenhuma". ' +
+        // Medido 2026-10-21: a saída da LOJA citava a moto ("Anotei, Vander. A CG 160 Fan...")
+        // e a Jev usou isso para "escolher" a moto numa mensagem que era só "Sao paulo".
+        '⚠️ O campo `modelo` é o texto que a LOJA vai enviar: ele NÃO cria escolha sozinho. Ele só ' +
+        'pode DESAMBIGUAR qual moto quando a MENSAGEM DO CLIENTE já é uma escolha/deíctica ("gostei ' +
+        'dessa", "essa", "quero essa", "pode ser essa") — aí use o que o `modelo` está apresentando ' +
+        'para saber QUAL delas. Se a mensagem do cliente NÃO tem sinal de escolha (cidade, nome, CNH, ' +
+        'CPF, data, saudação, resposta de fluxo), responda "nenhuma", MESMO que `modelo` cite uma ' +
+        'moto. ' +
         'Só marque uma moto se o cliente demonstrou a escolha por ELA ("gostei dessa", "quero essa", ' +
         '"essa mesmo"). Se foi pergunta ou objeção, responda "nenhuma" — a menos que haja um sinal ' +
         'POSITIVO explícito junto ("quero a X, quanto fica?" continua sendo escolha). ' +
