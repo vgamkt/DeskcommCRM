@@ -133,3 +133,32 @@ outra mensagem; o turno é superado e não há contingência.
 3. Preflight por purpose antes do pesado.
 4. Harness esperando o turno inteiro; repetir turno falho.
 5. Repetir o pesado funcional com mock e o smoke real com o modelo escolhido.
+
+## 10. Causa verdadeira — sonda HTTP (2026-10-21)
+
+A sonda capturou o **corpo HTTP real** dos dois endpoints da OpenCode:
+
+| Endpoint | Modelo | HTTP | Corpo |
+|---|---|---|---|
+| Go `/zen/go/v1` | `deepseek-v4.1-flash` | **429** | `Upstream request failed: Endpoint is unavailable.` |
+| Go `/zen/go/v1` | `deepseek-v4-flash` | **503** | `Upstream request failed: Endpoint is unavailable.` |
+| Go `/zen/go/v1` | `glm-5.1` | **200** | respondeu “Ok” em ~1,4s |
+| Zen `/zen/v1` | `deepseek-v4.1-flash` | **402** | `Insufficient account funds` |
+| Zen `/zen/v1` | `deepseek-v4-flash` | **403** | `Model access is disabled` |
+| Zen `/zen/v1` | `glm-5.1` | **403** | `Model access is disabled` |
+
+**Interpretação:** não é formato, prompt nem código. O formato está correto —
+`glm-5.1` no MESMO endpoint Go responde 200. O upstream da DeepSeek está
+**429/503** (rate limit/indisponível), e a conta não tem acesso/fundos no Zen.
+A credencial é Go; Zen não deve ser usada.
+
+**Por que “antes funcionava”:** o upstream da DeepSeek estava saudável; agora
+está instável/limitado. O `deepseek-v4-flash` chegou a responder 1x na sonda e
+falhou outras — é intermitente. `deepseek-v4.1-flash` está 429 consistente.
+O `glm-5.1` está estável.
+
+**Impacto em produção:** o agente 84 e os auxiliares usam DeepSeek; a
+instabilidade pode deixar turnos sem resposta (jailbreak/checkpoint/agent).
+Correção recomendada: usar `glm-5.1` para o teste e fallback; ou trocar os
+bindings/default e o modelo do agente após validar. Não trocar a credencial
+para Zen (402/403).
