@@ -216,3 +216,16 @@ pré-existente e não escolhe modelo; se o dono quiser, pode ser removido/movido
 mas não foi mexido nesta rodada.
 Ambiente restaurado: Datafy `open`, agente 84, 0101 allowlist 2501, 5924 limpo;
 sem crédito Datafy.
+
+## 13. Preflight da UI — 2026-10-21 (verde)
+
+Lendo os `ai_purpose_bindings` da UI (sem hardcode de modelo), os 9 purposes
+`opencode_go` estão em `deepseek-v4-flash` e todos responderam 200:
+
+`checkpoint`, `compaction`, `flow_summary`, `flow_validate`,
+`followup_classify`, `followup_decide_timing`, `jailbreak_detect`,
+`promise_semantic`, `stage_classifier`.
+
+`promise_semantic` foi o mais lento (~49s); os demais ~1,3–1,9s. Preflight do
+agente/auxiliares: **ok**. Próximo: pesado com o harness esperando o turno
+inteiro (não só a primeira bolha).
