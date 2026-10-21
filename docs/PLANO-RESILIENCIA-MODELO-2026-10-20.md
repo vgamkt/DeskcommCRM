@@ -162,3 +162,28 @@ instabilidade pode deixar turnos sem resposta (jailbreak/checkpoint/agent).
 Correção recomendada: usar `glm-5.1` para o teste e fallback; ou trocar os
 bindings/default e o modelo do agente após validar. Não trocar a credencial
 para Zen (402/403).
+
+## 11. Correção da conclusão — teste simples controlado (2026-10-21)
+
+Teste HTTP direto, corpo mínimo, com e sem o campo `thinking` que o provider
+injeta nos modelos DeepSeek:
+
+| Modelo | thinking | HTTP | Resultado |
+|---|---|---:|---|
+| `deepseek-v4-flash` | sem | 200 | respondeu (reasoning; content curto) |
+| `deepseek-v4-flash` | **`{type:"disabled"}`** | **200** | `content:"ok"` em ~1,5s |
+| `deepseek-v4.1-flash` | sem | **429** | `Endpoint is unavailable` |
+| `deepseek-v4.1-flash` | **`{type:"disabled"}`** | **429** | `Endpoint is unavailable` |
+| `glm-5.1` | sem | 200 | ok ~1s |
+
+**Conclusão corrigida:** o formato NÃO é o problema — o mesmo campo `thinking`
+que o app envia funciona no `deepseek-v4-flash` (200 + “ok”). O problema é
+**modelo-específico e intermitente**: `deepseek-v4.1-flash` respondeu 200 numa
+sonda anterior e agora 429 consistente; `deepseek-v4-flash` está 200 no momento.
+O `deepseek-v4.1-flash` é justamente o **default e o modelo dos auxiliares**
+(`jailbreak_detect`, `checkpoint`, `flow_validate`, etc.). O `glm-5.1` está
+estável.
+
+**Ação recomendada:** trocar default/auxiliares de `deepseek-v4.1-flash` para
+`glm-5.1` (ou `deepseek-v4-flash`, que está respondendo) e validar o
+`jailbreak_detect` real. Não é necessário mexer no formato/`thinking`; manter.
