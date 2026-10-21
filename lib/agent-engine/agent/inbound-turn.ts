@@ -2195,45 +2195,126 @@ export async function runAgentTurn(
     tenant_id: job.organization_id,
     lead_id: leadIdDoJob,
   });
-  await comHandoffSeOrcamentoAcabar(
-    {
-      pool,
-      tenantId: job.organization_id,
-      leadId: leadIdDoJob,
-      conversationId: input.conversationId,
-      resumoDoCheckpoint: () =>
-        resumoDoCheckpointDuravel(pool, job.organization_id, leadIdDoJob, logDaEscolta),
-      // O canal nasce DENTRO da closure: instanciá-lo aqui faria todo turno feliz
-      // pagar por um adapter que só o caminho de erro usa. Sem `agentActorId` de
-      // propósito — quando o teto estoura antes da primeira chamada, não houve
-      // agente resolvido para creditar.
-      avisarLead: () =>
-        avisarLeadLendoOContato(
-          pool,
-          {
-            tenantId: job.organization_id,
-            leadId: leadIdDoJob,
-            conversationId: input.conversationId,
-            channelSessionId: input.channelSessionId,
-            jobId: job.id,
-          },
-          {
-            motivo: 'orcamento_de_ia',
-            channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(
-              pool,
-            ),
-            now: deps.clock?.() ?? new Date(),
-            log: logDaEscolta,
-            ...(deps.knobs.disclosureMode !== undefined
-              ? { disclosureMode: deps.knobs.disclosureMode }
-              : {}),
-            ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
-          },
-        ),
-      log: logDaEscolta,
-    },
-    () => executarTurnoDoAgente(deps, job, pool, ctx, input),
-  );
+  const canalDoSocorro = () =>
+    (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool);
+
+  try {
+    await comHandoffSeOrcamentoAcabar(
+      {
+        pool,
+        tenantId: job.organization_id,
+        leadId: leadIdDoJob,
+        conversationId: input.conversationId,
+        resumoDoCheckpoint: () =>
+          resumoDoCheckpointDuravel(pool, job.organization_id, leadIdDoJob, logDaEscolta),
+        // O canal nasce DENTRO da closure: instanciá-lo aqui faria todo turno feliz
+        // pagar por um adapter que só o caminho de erro usa. Sem `agentActorId` de
+        // propósito — quando o teto estoura antes da primeira chamada, não houve
+        // agente resolvido para creditar.
+        avisarLead: () =>
+          avisarLeadLendoOContato(
+            pool,
+            {
+              tenantId: job.organization_id,
+              leadId: leadIdDoJob,
+              conversationId: input.conversationId,
+              channelSessionId: input.channelSessionId,
+              jobId: job.id,
+            },
+            {
+              motivo: 'orcamento_de_ia',
+              channel: canalDoSocorro(),
+              now: deps.clock?.() ?? new Date(),
+              log: logDaEscolta,
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+            },
+          ),
+        log: logDaEscolta,
+      },
+      () => executarTurnoDoAgente(deps, job, pool, ctx, input),
+    );
+  } catch (err) {
+    // ── NUNCA DEIXAR O CLIENTE MUDO QUANDO O TURNO MORRE ANTES DE FALAR ──────
+    // Medido em 2026-10-21: primário e reserva indisponíveis no `jailbreak_detect`
+    // → o job esgotou as tentativas e virou 'dead' sem UMA bolha ao lead. Se o
+    // turno é `inbound_turn`, nada saiu para este job e a falha não é um desfecho
+    // intencional (JobSettledError) nem o teto de orçamento (que já tem a própria
+    // escolta), avisamos o cliente e passamos a conversa ao humano — abrindo caso
+    // e silenciando o bot — em vez de deixar o lead esperando no vazio.
+    if (
+      job.kind === 'inbound_turn' &&
+      !(err instanceof JobSettledError) &&
+      !(err instanceof LlmBudgetExceededError)
+    ) {
+      let jaTentouEnviar = true; // sem leitura confiável, não arrisca 2ª mensagem
+      try {
+        const ledger = await pool.query(
+          'select 1 from send_ledger where organization_id = $1 and job_id = $2 limit 1',
+          [job.organization_id, job.id],
+        );
+        jaTentouEnviar = (ledger.rowCount ?? 0) > 0;
+      } catch {
+        jaTentouEnviar = true;
+      }
+      if (!jaTentouEnviar) {
+        try {
+          const aviso = await avisarLeadLendoOContato(
+            pool,
+            {
+              tenantId: job.organization_id,
+              leadId: leadIdDoJob,
+              conversationId: input.conversationId,
+              channelSessionId: input.channelSessionId,
+              jobId: job.id,
+            },
+            {
+              motivo: 'outro',
+              channel: canalDoSocorro(),
+              now: deps.clock?.() ?? new Date(),
+              log: logDaEscolta,
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+            },
+          );
+          await performHumanHandoff(
+            pool,
+            {
+              tenantId: job.organization_id,
+              leadId: leadIdDoJob,
+              conversationId: input.conversationId,
+            },
+            {
+              reason: 'falha_no_atendimento_automatico',
+              conversationSummary:
+                'A automação não conseguiu responder este turno: o modelo principal e a reserva ' +
+                'ficaram indisponíveis antes de qualquer envio ao cliente.',
+              inboxTitle: 'Atendimento interrompido — assumir conversa',
+              avisoAoLead: aviso,
+              log: logDaEscolta,
+            },
+          );
+          logDaEscolta.warn(
+            'turno falhou sem envio — cliente avisado e conversa passada ao humano',
+            { erro: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200) },
+          );
+          return;
+        } catch (socorroErr) {
+          logDaEscolta.warn('contingência do turno falhou — propagando o erro original', {
+            erro:
+              socorroErr instanceof Error
+                ? socorroErr.message.slice(0, 200)
+                : String(socorroErr).slice(0, 200),
+          });
+        }
+      }
+    }
+    throw err;
+  }
 }
 
 /**
