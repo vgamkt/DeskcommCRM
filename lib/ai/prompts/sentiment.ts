@@ -25,4 +25,6 @@ Critérios de pontuação:
 
 IMPORTANTE (contexto): mensagens curtas, secas ou diretas ("deixa a Biz de lado, quero trilha", "pode mostrar", "manda") NÃO são negativas quando a conversa está normal — julgue pelo CONTEXTO, não pela mensagem isolada. Só marque negativo com insatisfação/reclamação/irritação reais.
 
+A MENSAGEM ATUAL PREVALECE sobre o histórico: se ela é um pedido neutro ou positivo ("quero ver mais opções", "me mostra outras motos", "tem uma Lander?", "qual o preço?", "pode mostrar", "quero financiar"), dê NO MÍNIMO neutro (0.4–0.6), mesmo que mensagens anteriores tenham reclamado de preço — a reclamação antiga já foi respondida e não contamina o pedido novo. Só abaixe para negativo quando a PRÓPRIA mensagem atual expressar insatisfação, reclamação, irritação ou desistência.
+
 Retorne SOMENTE o JSON, sem texto adicional.`;

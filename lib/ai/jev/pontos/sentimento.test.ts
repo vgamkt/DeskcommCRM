@@ -39,3 +39,13 @@ describe("sentimentoDaRespostaDeJev", () => {
     ).toBeNull();
   });
 });
+
+describe("perguntaDeSentimentoDeJev — pedido neutro não herda a reclamação anterior", () => {
+  it("manda a mensagem atual prevalecer sobre o histórico", () => {
+    const p = perguntaDeSentimentoDeJev().sentimento;
+    if (!p || p.type !== "score") throw new Error("esperava score");
+    expect(p.instructions).toMatch(/MENSAGEM ATUAL PREVALECE/i);
+    expect(p.instructions).toMatch(/quero ver mais opções/i);
+    expect(p.instructions).toMatch(/NO MÍNIMO neutro \(índice 2\)/i);
+  });
+});

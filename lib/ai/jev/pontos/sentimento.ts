@@ -27,7 +27,13 @@ export function perguntaDeSentimentoDeJev(): PerguntasDeJev {
         'campo "conversa") E a mensagem atual (no campo "mensagem"), do mais negativo (índice 0) ' +
         'ao mais positivo? IMPORTANTE: julgue pelo CONTEXTO — uma mensagem curta/seca ("deixa a Biz ' +
         'de lado, quero trilha", "pode mostrar") NÃO é negativa se a conversa está normal; só é ' +
-        'negativa com insatisfação, reclamação ou irritação reais.',
+        'negativa com insatisfação, reclamação ou irritação reais. ' +
+        'A MENSAGEM ATUAL PREVALECE sobre o histórico: se ela é um pedido neutro ou positivo ' +
+        '("quero ver mais opções", "me mostra outras motos", "tem uma Lander?", "qual o preço?", ' +
+        '"pode mostrar", "quero financiar"), dê NO MÍNIMO neutro (índice 2), mesmo que mensagens ' +
+        'anteriores tenham reclamado de preço — a reclamação antiga já foi respondida e não ' +
+        'contamina o pedido novo. Só abaixe para negativo (0 ou 1) quando a PRÓPRIA mensagem atual ' +
+        'expressar insatisfação, reclamação, irritação ou desistência.',
       criteria: [...NIVEIS_DE_SENTIMENTO],
     },
   };
