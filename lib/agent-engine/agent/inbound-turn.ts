@@ -9250,7 +9250,21 @@ async function executarTurnoDoAgente(
           escolhidaSocorro !== undefined &&
           !albumDaMotoJaFoiEnviado(catalogoDaConversa, escolhidaSocorro)
         ) {
-          const sentencas = textoDoModelo
+          // A JEV travou a escolha NESTE turno, então o fecho é o de AQUISIÇÃO —
+          // não a pergunta de "ver mais" que o MODELO escreveu (era a mesma do
+          // turno anterior). Passa pelo MESMO ponto único do fecho de catálogo;
+          // o motor só renderiza o que a escolha (JEV) determinou, sem template
+          // local. `formaJaPerguntada` respeita a regra de perguntar UMA vez.
+          const textoComFecho = ajustarFechoDoTurnoDeCatalogo({
+            corpo: textoDoModelo,
+            perguntaDoFluxo: null,
+            variacao: pedidosDeOpcoesTurno,
+            temEscolha: true,
+            formaJaPerguntada,
+            modeloCitado: motoAtualDaConversa?.nome ?? null,
+            nomeCliente: effectiveContext.contact.name,
+          }).corpo;
+          const sentencas = textoComFecho
             .split(/(?<=[.!?])\s+/)
             .map((s) => s.trim())
             .filter((s) => s !== '');
@@ -9261,7 +9275,7 @@ async function executarTurnoDoAgente(
               ? sentencas.slice(0, primeiraPergunta).join(' ').trim()
               : // sem pergunta: o texto inteiro é a chamada (nada pode ser perdido)
                 primeiraPergunta < 0
-                ? textoDoModelo
+                ? textoComFecho
                 : '';
           const final = perguntas.length > 0 ? perguntas[perguntas.length - 1]! : '';
           const itens = planoDeFotosDasMotos(
