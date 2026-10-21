@@ -6242,7 +6242,10 @@ async function executarTurnoDoAgente(
           );
           if (
             !formaJaPerguntada &&
-            (escolhaDetectadaNesteTurno !== undefined ||
+            // `escolhaDetectadaNesteTurno` nasce `null` (não `undefined`) — testar
+            // `!== undefined` era SEMPRE verdadeiro e marcava a forma de pagamento
+            // como perguntada em todo turno com motos (2 opções inclusive).
+            (escolhaDetectadaNesteTurno !== null ||
               catalogoDaConversa.escolhida !== null ||
               (nomeModeloEspecificoDoTurno !== '' && motosDoTurno <= 1))
           ) {
