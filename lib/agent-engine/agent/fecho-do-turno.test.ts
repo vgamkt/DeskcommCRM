@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ajustarFechoDoTurnoDeCatalogo,
+  fechoEfetivoDaApresentacao,
   garantirFechoNoFinal,
   removerPerguntaDaChamada,
 } from './fecho-do-turno';
@@ -29,6 +30,60 @@ describe('garantirFechoNoFinal', () => {
 
   it('pergunta de fecho vazia não mexe no texto', () => {
     expect(garantirFechoNoFinal('Separei 2 opções.', '  ')).toBe('Separei 2 opções.');
+  });
+});
+
+describe('fechoEfetivoDaApresentacao', () => {
+  it('JEV "nenhum" com motos na tela vira fecho estrutural', () => {
+    expect(
+      fechoEfetivoDaApresentacao({
+        fechoJev: 'nenhum',
+        motosDistintas: 2,
+        temMaisOpcoes: false,
+        outrosNoValor: false,
+      }),
+    ).toBe('escolha');
+    expect(
+      fechoEfetivoDaApresentacao({
+        fechoJev: 'nenhum',
+        motosDistintas: 1,
+        temMaisOpcoes: false,
+        outrosNoValor: false,
+      }),
+    ).toBe('saber_mais');
+  });
+
+  it('JEV indisponível (null) também fecha quando há moto', () => {
+    expect(
+      fechoEfetivoDaApresentacao({
+        fechoJev: null,
+        motosDistintas: 3,
+        temMaisOpcoes: false,
+        outrosNoValor: false,
+      }),
+    ).toBe('escolha');
+  });
+
+  it('uma moto com JEV "escolha" vira "saber_mais" (sem plural)', () => {
+    expect(
+      fechoEfetivoDaApresentacao({
+        fechoJev: 'escolha',
+        motosDistintas: 1,
+        temMaisOpcoes: false,
+        outrosNoValor: false,
+      }),
+    ).toBe('saber_mais');
+  });
+
+  it('respeita um fecho positivo da JEV', () => {
+    expect(
+      fechoEfetivoDaApresentacao({
+        fechoJev: 'outra_opcao',
+        motosDistintas: 2,
+        temMaisOpcoes: false,
+        outrosNoValor: false,
+      }),
+    ).toBe('outra_opcao');
   });
 });
 

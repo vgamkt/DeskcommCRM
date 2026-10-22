@@ -243,6 +243,7 @@ import { CanalComBuffer } from './canal-com-buffer';
 import { unificarPecasDoTurno } from './juncao-do-turno';
 import {
   ajustarFechoDoTurnoDeCatalogo,
+  fechoEfetivoDaApresentacao,
   garantirFechoNoFinal,
   removerPerguntaDaChamada,
 } from './fecho-do-turno';
@@ -6469,6 +6470,9 @@ async function executarTurnoDoAgente(
               itens.map((i) => i.legenda.trim()).filter((s) => s !== ''),
             ).size;
             if (
+              // Saiu moto → SEMPRE fecha, mesmo na continuação do "ver mais"
+              // (a JEV pode dizer `nenhum` ali, pois não está "oferecendo" de novo).
+              motosDistintasApresentacao > 0 ||
               temMaisOpcoesNesteTurno ||
               outrosNoValorNesteTurno ||
               (vereditoOfertaJev !== null && vereditoOfertaJev.fecho !== 'nenhum')
@@ -6486,16 +6490,12 @@ async function executarTurnoDoAgente(
               // outras marcas”). Sem isto, um `saber_mais`/`nenhum` da JEV deixava
               // o fecho cru “Qual delas…?” e o convite às parecidas desaparecia
               // (medido ao vivo 2026-10-19).
-              const fechoEfetivo =
-                motosDistintasApresentacao > 1 &&
-                temMaisOpcoesNesteTurno &&
-                !outrosNoValorNesteTurno
-                  ? 'escolha'
-                  : // UMA moto só: "qual DELAS?" (plural) não faz sentido — o fecho
-                    // é de progressão/saber mais. Correção estrutural pela CONTAGEM.
-                    motosDistintasApresentacao === 1 && fechoJev === 'escolha'
-                    ? 'saber_mais'
-                    : fechoJev;
+              const fechoEfetivo = fechoEfetivoDaApresentacao({
+                fechoJev,
+                motosDistintas: motosDistintasApresentacao,
+                temMaisOpcoes: temMaisOpcoesNesteTurno,
+                outrosNoValor: outrosNoValorNesteTurno,
+              });
               const perguntaMais = outrosNoValorNesteTurno
                 ? perguntaDeOutrosNoValor({
                     modelo: motoAtualDaConversa?.nome ?? null,

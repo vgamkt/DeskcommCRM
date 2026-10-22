@@ -12,6 +12,7 @@
  * A pergunta do fluxo NÃO se perde: o campo segue pendente e vira a do próximo
  * turno. Módulo PURO.
  */
+import type { FechoDaApresentacao } from '@/lib/ai/jev/pontos/oferta';
 import {
   perguntaDeAquisicao,
   perguntaDeEscolha,
@@ -20,6 +21,32 @@ import {
   perguntaDeSaberMais,
   perguntaProsseguimentoAposMoto,
 } from './mais-opcoes';
+
+/**
+ * Decide o TIPO de fecho que a apresentação vai renderizar, pela CONTAGEM real de
+ * motos e pelo veredito da JEV. Regra estrutural: se saiu moto, o turno SEMPRE
+ * fecha — mesmo quando a JEV diz `nenhum` (ex.: continuação do "ver mais", em que
+ * ela não "oferece" de novo) ou quando ela não respondeu. Sem isso, o "ver mais"
+ * terminava em frase afirmativa ("marcamos um horário…"), sem pergunta.
+ */
+export function fechoEfetivoDaApresentacao(args: {
+  fechoJev: FechoDaApresentacao | null;
+  motosDistintas: number;
+  temMaisOpcoes: boolean;
+  outrosNoValor: boolean;
+}): FechoDaApresentacao {
+  const base: FechoDaApresentacao | null =
+    args.motosDistintas > 1 && args.temMaisOpcoes && !args.outrosNoValor
+      ? 'escolha'
+      : args.motosDistintas === 1 && args.fechoJev === 'escolha'
+        ? 'saber_mais'
+        : args.fechoJev;
+  if (args.motosDistintas > 0 && (base === null || base === 'nenhum')) {
+    // Com moto na tela, "nenhum" NÃO existe: plural → escolha; uma só → saber mais.
+    return args.motosDistintas > 1 ? 'escolha' : 'saber_mais';
+  }
+  return base ?? 'nenhum';
+}
 
 export function ajustarFechoDoTurnoDeCatalogo(args: {
   corpo: string;

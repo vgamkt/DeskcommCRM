@@ -149,6 +149,16 @@ describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
     expect(t).not.toContain('duas');
   });
 
+  it('corrige "separei duas parecidas" quando saíram 5 motos', () => {
+    const t = comQuantidadeNoTexto(
+      'Lander 250 eu não tenho, mas separei duas parecidas pra você, ótimas pra cidade:',
+      5,
+      { daApresentacao: true },
+    );
+    expect(t).toContain('separei 5 parecidas');
+    expect(t).not.toContain('separei duas');
+  });
+
   it('troca "várias opções" (quantificador) pelo número real', () => {
     const t = comQuantidadeNoTexto('Tenho várias opções dentro do seu valor até 30 mil.', 5);
     expect(t).toContain('5 opções');

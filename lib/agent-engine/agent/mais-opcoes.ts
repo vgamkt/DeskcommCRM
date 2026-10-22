@@ -98,6 +98,12 @@ export function comQuantidadeNoTexto(
   const verboMaisNumero =
     /(\b(?:separei|selecionei|separamos|selecionamos|trouxe|trouxemos|mostrei|mostramos|juntei|juntamos|peguei|pegamos)\s+mais\s+)(\d+)\b/i;
   if (verboMaisNumero.test(t)) return t.replace(verboMaisNumero, `$1${n}`);
+  // Número POR EXTENSO colado ao verbo de separar ("separei DUAS parecidas"), com
+  // ou sem o termo depois. Medido no pesado 2026-10-22: "separei duas parecidas"
+  // com 5 fotos na tela — o early-return de "já tem contagem" respeitava o "duas".
+  const verboNumeroExtenso =
+    /(\b(?:separei|selecionei|separamos|selecionamos|trouxe|trouxemos|mostrei|mostramos|juntei|juntamos|peguei|pegamos)\s+)(dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez)\b/i;
+  if (verboNumeroExtenso.test(t)) return t.replace(verboNumeroExtenso, `$1${n}`);
   if (/\b\d+\s+(op[çc]|motos?|modelos?|alternativas?|unidades?)/i.test(t)) return texto;
   // Cobre artigos/pronomes, quantificadores e números por extenso ("as opções",
   // "várias opções", "duas opções", "três motos") — o modelo escreve "duas"/"várias"
