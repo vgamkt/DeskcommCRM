@@ -102,7 +102,11 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 | "trilha até 25 mil" (probe anterior) | `categoria+preço` | 5 trail; a faixa de preço do dono (20–30 mil) permite até 30 mil, dentro da margem de 30% |
 | Regressão "trilha" | `categoria` | 5 trail, fecho de "mais opções" ✅ |
 
-**Pendência de DADO (não de critério):** corrigir `motos.cilindrada` da YS Fazer 250 (hoje `149,3`; deveria ser ~249). Enquanto o dado estiver errado, qualquer filtro por cilindrada a trata como 150.
+### Correção de DADO (2026-10-23)
+- `motos.cilindrada` da **YS Fazer 250 BLUE FLEX 2017 (id 26)** corrigida de `149,3` para **`249`** no banco externo (backup: `/root/backups/fazer250-antes-<ts>.csv`).
+- Efeito: no pedido **"160" puro** a YS Fazer 250 **saiu** da lista.
+- Achado de projeto: no **"160 vermelha"** ainda entram 150/125/250. Causa: `ehAtributoDePedido` (`selecao-por-intencao.ts`) **não trata cilindrada/ano/potência como filtro rígido** — de propósito, para "CB 250" (nome de modelo) não virar filtro de cc. Resultado: a cilindrada só **pontua/ordena**; com a cor como único filtro rígido, entram vermelhas de outras cc.
+- Proposta (precisa de OK): quando a cilindrada é pedida **POR SI** (sem modelo citado, ex.: "160", "160 vermelha"), restringir a seleção às **motos que a JEV marcou como parecidas** (hipóteses — ex.: NMax 160/CG 160) e não completar com outros perfis. Mantém o caso "CB 250" (modelo) como está.
 
 **Fases 1, 2 e 3 certificadas.** Próxima: **Fase 4** (matriz de certificação) — ou corrigir o dado do estoque.
 
