@@ -443,11 +443,15 @@ export async function extrairCriterios(
   // ÁRBITRO DE TURNO: o veredito veio na chamada unificada (junto da escolha) —
   // parseia direto, sem uma segunda ida à Jev.
   if (input.respostasDoArbitro !== undefined) {
-    return criteriosDaRespostaDeJev(input.respostasDoArbitro, {
-      colunas,
-      estoque: input.estoque ?? [],
-      ...(input.motoEmFoco !== undefined ? { motoEmFoco: input.motoEmFoco } : {}),
-    });
+    return criteriosDaRespostaDeJev(
+      input.respostasDoArbitro,
+      {
+        colunas,
+        estoque: input.estoque ?? [],
+        ...(input.motoEmFoco !== undefined ? { motoEmFoco: input.motoEmFoco } : {}),
+      },
+      input.mensagem,
+    );
   }
 
   // Jev PRIMEIRO — só quando ligada por ambiente (default DESLIGADA = nada muda).
@@ -482,7 +486,7 @@ export async function extrairCriterios(
     });
     if (decisaoJev !== null) {
       registrarDecisaoJev(deps.log, 'catalog_criteria', decisaoJev);
-      return criteriosDaRespostaDeJev(decisaoJev.respostas, { colunas, estoque });
+      return criteriosDaRespostaDeJev(decisaoJev.respostas, { colunas, estoque }, input.mensagem);
     }
   }
 

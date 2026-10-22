@@ -347,6 +347,7 @@ function aplicarMargem(
 export function criteriosDaRespostaDeJev(
   respostas: RespostasDeJev,
   e: EntradaDeCriterios,
+  mensagem = '',
 ): CriteriosExtraidos {
   const intencaoResp = respostas.intencao;
   const intencao =
@@ -471,6 +472,41 @@ export function criteriosDaRespostaDeJev(
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
     for (const x of top) hipoteses.push(comoHipotese(x.m, x.score));
+  }
+
+  // FALLBACK DE EXECUÇÃO: a Jev marcou a CILINDRADA como exigida, mas NÃO escolheu
+  // a faixa (`cx_cilindrada` = "não citou"). O número está na mensagem ("moto 150");
+  // o motor usa o FATO e aplica a faixa do próprio vocabulário da Jev — senão o
+  // filtro fica sem valor e entra outra cilindrada (medido 2026-10-22: "Vctem moto
+  // 150?" trouxe uma YS Fazer 250). Ambíguo (2+ números) → não chuta.
+  const ccColFallback = e.colunas.find((c) => detectarPapelColuna(c) === 'cilindrada');
+  if (
+    ccColFallback !== undefined &&
+    exigidos.includes(ccColFallback) &&
+    faixas[ccColFallback] === undefined &&
+    mensagem.trim() !== ''
+  ) {
+    const numeros = [...new Set((mensagem.match(/\d{2,4}/g) ?? []).map(Number))].filter(
+      (n) => n >= 50 && n <= 2000,
+    );
+    if (numeros.length === 1) {
+      const cc = numeros[0]!;
+      const opcao = FAIXAS_DE_CILINDRADA.find(
+        (o) =>
+          o.rotulo !== 'não citou' &&
+          (o.min === undefined || cc >= o.min) &&
+          (o.max === undefined || cc <= o.max),
+      );
+      if (opcao !== undefined) {
+        const exata = {
+          ...(opcao.min !== undefined ? { min: opcao.min } : {}),
+          ...(opcao.max !== undefined ? { max: opcao.max } : {}),
+        };
+        faixas[ccColFallback] = exata;
+        const margem = aplicarMargem(exata, MARGEM_NUMERICA_PCT);
+        if (margem !== null) faixasSimilares[ccColFallback] = margem;
+      }
+    }
   }
 
   return { intencao, criterios: {}, hipoteses, faixas, faixasSimilares, principal, exigidos };

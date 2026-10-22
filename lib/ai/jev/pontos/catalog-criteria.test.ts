@@ -242,3 +242,29 @@ describe("marca por si (marca_alvo)", () => {
     expect(c.faixas.marca).toBeUndefined();
   });
 });
+
+describe("cilindrada exigida sem faixa (fallback pelo número da mensagem)", () => {
+  const base = (cx: string): RespostasDeJev => ({
+    intencao: { type: "choice", choice: "pedido", confidence: 1, probabilities: {} },
+    exigidos_cilindrada: { type: "noul", noul: 1 },
+    cx_cilindrada: { type: "choice", choice: cx, confidence: 1, probabilities: {} },
+  });
+
+  it('"moto 150" + faixa "não citou" → faixa 126–160 (exclui a 250)', () => {
+    const c = criteriosDaRespostaDeJev(base("não citou"), entrada, "Vctem moto 150?");
+    expect(c.exigidos).toContain("cilindrada");
+    expect(c.faixas.cilindrada).toEqual({ min: 126, max: 160 });
+  });
+
+  it("não sobrescreve a faixa que a JEV escolheu", () => {
+    const c = criteriosDaRespostaDeJev(base("161 a 250"), entrada, "moto 200?");
+    expect(c.faixas.cilindrada).toEqual({ min: 161, max: 250 });
+  });
+
+  it("sem mensagem (ou ambígua) não inventa faixa", () => {
+    expect(criteriosDaRespostaDeJev(base("não citou"), entrada).faixas.cilindrada).toBeUndefined();
+    expect(
+      criteriosDaRespostaDeJev(base("não citou"), entrada, "entre 150 e 300").faixas.cilindrada,
+    ).toBeUndefined();
+  });
+});
