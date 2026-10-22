@@ -400,6 +400,42 @@ function citadasMaximais(
   );
 }
 
+/**
+ * Cita a moto permitindo OMITIR a marca: o cliente diz "CB 300 R 2011", não
+ * "HONDA CB 300 R 2011". Testa sufixos do nome (>= 6 letras sem espaço) contra
+ * o texto. É FATO para a Jev — não decide nada.
+ */
+function citaMotoSemMarca(texto: string, nome: string): boolean {
+  const alvo = normalizarNomeDeMoto(texto);
+  const alvoSemEspaco = alvo.replace(/\s+/g, '');
+  const tokens = normalizarNomeDeMoto(nome).split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return false;
+  for (let i = 0; i < tokens.length - 1; i += 1) {
+    const sufixo = tokens.slice(i).join(' ');
+    const semEspaco = sufixo.replace(/\s+/g, '');
+    if (semEspaco.length < 6) continue;
+    if (alvo.includes(sufixo) || alvoSemEspaco.includes(semEspaco)) return true;
+  }
+  return false;
+}
+
+/** Motos citadas pelo cliente, tolerando marca omitida + filtro das MAXIMAIS. */
+function motosCitadasSemMarca(
+  texto: string,
+  candidatas: readonly MotoDoCatalogo[],
+): MotoDoCatalogo[] {
+  const citadas = candidatas.filter((m) => citaMotoSemMarca(texto, m.nome));
+  return citadas.filter(
+    (m) =>
+      !citadas.some(
+        (outra) =>
+          outra !== m &&
+          normalizarNomeDeMoto(outra.nome).includes(normalizarNomeDeMoto(m.nome)) &&
+          normalizarNomeDeMoto(outra.nome).length > normalizarNomeDeMoto(m.nome).length,
+      ),
+  );
+}
+
 /** Anos (19xx/20xx) citados no texto. */
 function anosCitados(texto: string): string[] {
   return [...texto.matchAll(/\b(?:19|20)\d{2}\b/g)].map((m) => m[0]);
@@ -433,6 +469,13 @@ function textoContemCor(texto: string, cor: string | undefined): boolean {
  * Um SINAL POSITIVO explícito ("quero", "gostei", "fico com"...) vence a pergunta:
  * "quero a CB 300, quanto fica?" continua sendo escolha.
  */
+/** O cliente deu um SINAL POSITIVO de escolha (gostei/quero/essa)? FATO, não decisão. */
+const SINAL_POSITIVO_DE_ESCOLHA =
+  /\b(quero|queria|gostei|gostaria|fico com|vou levar|vou ficar|pode ser|fechar|escolho|levo|interessei|decidi)\b/;
+function temSinalPositivoDeEscolha(texto: string): boolean {
+  return SINAL_POSITIVO_DE_ESCOLHA.test(normalizarNomeDeMoto(texto));
+}
+
 function bloqueiaEscolha(texto: string): boolean {
   const n = normalizarNomeDeMoto(texto);
   const temEscolha =
@@ -633,11 +676,16 @@ export function montarPedidoDeEscolha(args: {
   // retornavam `null` AQUI e a Jev nunca era consultada — regex decidindo antes da
   // Jev (violação). Os mesmos testes alimentam o FALLBACK determinístico
   // (`motoEscolhidaPeloCliente`), usado SÓ quando a Jev não responde (`null`).
+  // FATOS que ajudam a JEV a decidir (ela continua decidindo; isto não decide):
+  // quais motos o TEXTO DO CLIENTE cita, quais anos ele cita e se há sinal positivo.
   const sinais = {
     parece_pergunta_objecao: bloqueiaEscolha(textoDoCliente),
     tem_referencia_nominal: temReferenciaAMoto(textoDoCliente, textoCitado, candidatas),
     unica_em_foco: candidatas.length === 1,
     pediu_algo_diferente: args.pediuOutraMoto === true,
+    motos_citadas_no_texto: motosCitadasSemMarca(textoDoCliente, candidatas).map((m) => m.nome),
+    anos_citados_no_texto: anosCitados(textoDoCliente),
+    sinal_positivo_de_escolha: temSinalPositivoDeEscolha(textoDoCliente),
   };
   return {
     pedido: {
@@ -649,7 +697,7 @@ export function montarPedidoDeEscolha(args: {
         candidatas: rotulos,
         sinais,
       },
-      perguntas: perguntaDeMotoEscolhidaJev(rotulos),
+      perguntas: perguntaDeMotoEscolhidaJev(rotulos, sinais),
       obrigatorias: ['moto'],
     },
     candidatas,

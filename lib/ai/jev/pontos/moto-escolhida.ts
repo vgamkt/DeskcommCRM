@@ -12,8 +12,22 @@ import type { PerguntasDeJev, RespostasDeJev } from '../tipos';
 
 export const MOTO_NENHUMA = 'nenhuma';
 
+/** FATOS determinísticos do turno (não são decisão) — a Jev decide com eles. */
+export interface SinaisDeEscolha {
+  parece_pergunta_objecao?: boolean;
+  tem_referencia_nominal?: boolean;
+  unica_em_foco?: boolean;
+  pediu_algo_diferente?: boolean;
+  motos_citadas_no_texto?: string[];
+  anos_citados_no_texto?: string[];
+  sinal_positivo_de_escolha?: boolean;
+}
+
 /** Pergunta `choice` da Jev: qual candidata o cliente escolheu (ou nenhuma). */
-export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasDeJev {
+export function perguntaDeMotoEscolhidaJev(
+  nomes: readonly string[],
+  sinais?: SinaisDeEscolha,
+): PerguntasDeJev {
   const criteria: Record<string, string> = {
     [MOTO_NENHUMA]: 'o cliente NÃO escolheu nenhuma (pergunta/objeção SEM escolha, ou sem alvo)',
   };
@@ -25,6 +39,18 @@ export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasD
       type: 'choice',
       instructions:
         'Dentre as motos abaixo, qual o cliente ESCOLHEU/gostou nesta mensagem? ' +
+        // FATOS estruturados: o motor calcula, a Jev DECIDE. Isto reduz o "nenhuma" errado
+        // quando a mensagem cita a moto certa e tem sinal positivo (medido 2026-10-22).
+        (sinais === undefined
+          ? ''
+          : 'FATOS DO TURNO (use para decidir; NÃO são a decisão): ' +
+            `motos citadas pelo cliente=${JSON.stringify(sinais.motos_citadas_no_texto ?? [])}; ` +
+            `anos citados=${JSON.stringify(sinais.anos_citados_no_texto ?? [])}; ` +
+            `sinal positivo de escolha=${sinais.sinal_positivo_de_escolha === true}; ` +
+            `parece pergunta/objeção=${sinais.parece_pergunta_objecao === true}. ` +
+            'REGRA DE OURO: se "motos citadas" tem EXATAMENTE UMA e "sinal positivo"=true, marque ' +
+            'ESSA moto — mesmo que pareça objeção ou que outra parecida seja mais barata. Se ' +
+            '"motos citadas" tem DUAS OU MAIS, é ambíguo → responda "nenhuma". ') +
         // SEM REFERÊNCIA (substitui o gate determinístico `temReferenciaAMoto`): sem alvo, NÃO é escolha.
         'SEM REFERÊNCIA: se a mensagem NÃO fala de nenhuma moto da lista (é cidade, um dado do ' +
         'cadastro, saudação, "ok", agradecimento, ou afirmação vaga sem alvo) → responda "nenhuma". ' +

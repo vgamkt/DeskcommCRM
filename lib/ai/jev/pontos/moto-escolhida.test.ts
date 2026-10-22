@@ -32,6 +32,19 @@ describe("perguntaDeMotoEscolhidaJev", () => {
     expect(p.instructions).toMatch(/NÃO autoriza trocar/);
   });
 
+  it('recebe FATOS e REGRA DE OURO para decidir escolha + objeção', () => {
+    const p = perguntaDeMotoEscolhidaJev(['HONDA CB 300 R 2011'], {
+      motos_citadas_no_texto: ['HONDA CB 300 R 2011'],
+      anos_citados_no_texto: ['2011'],
+      sinal_positivo_de_escolha: true,
+      parece_pergunta_objecao: false,
+    }).moto;
+    if (!p || p.type !== 'choice') throw new Error('esperava choice');
+    expect(p.instructions).toContain('FATOS DO TURNO');
+    expect(p.instructions).toContain('REGRA DE OURO');
+    expect(p.instructions).toContain('HONDA CB 300 R 2011');
+  });
+
   it('escolha + objeção na MESMA frase é ESCOLHA (não "nenhuma")', () => {
     const p = perguntaDeMotoEscolhidaJev(['Honda CB 300 R 2011']).moto;
     if (!p || p.type !== 'choice') throw new Error('esperava choice');

@@ -436,3 +436,23 @@ describe('tirarJaDetalhadasDaFila', () => {
     expect(tirarJaDetalhadasDaFila(fila, []).pendentes).toHaveLength(2);
   });
 });
+
+
+describe('montarPedidoDeEscolha — FATOS para a JEV', () => {
+  it('entrega motos citadas/anos/sinal positivo (escolha + objeção)', () => {
+    const cb2011 = { nome: 'HONDA CB 300 R 2011', ano: '2011', cor: 'Preto', fotos: [] };
+    const cbFlex = { nome: 'HONDA CB 300 R FLEX 2015', ano: '2015', cor: 'Preto', fotos: [] };
+    const plano = montarPedidoDeEscolha({
+      textoDoModelo: '',
+      textoDoCliente: 'Gostei da CB 300 R 2011, mas achei um pouco caro.',
+      catalogo: [cb2011, cbFlex],
+      jaDetalhadas: [],
+    });
+    expect(plano).not.toBeNull();
+    const sinais = plano!.pedido.contexto.sinais as Record<string, unknown>;
+    expect(sinais.motos_citadas_no_texto).toEqual(['HONDA CB 300 R 2011']);
+    expect(sinais.anos_citados_no_texto).toEqual(['2011']);
+    expect(sinais.sinal_positivo_de_escolha).toBe(true);
+    expect(sinais.parece_pergunta_objecao).toBe(false);
+  });
+});
