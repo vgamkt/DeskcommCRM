@@ -15,6 +15,7 @@
  * Módulo PURO (sem env, sem rede) para ser testável isolado.
  */
 import { detectarPapelColuna } from '@/lib/external-db/catalogo';
+import { normalizarNomeDeMoto } from '../../../agent-engine/agent/fotos-do-catalogo';
 
 import type { CriteriosExtraidos, HipoteseDeMoto } from '../../../agent-engine/agent/extrair-criterios';
 import type { PerguntasDeJev, RespostasDeJev } from '../tipos';
@@ -344,6 +345,46 @@ function aplicarMargem(
 }
 
 /** Converte as respostas da Jev no `CriteriosExtraidos` do motor. */
+/** Duas palavras casam tolerando gênero/acento ("vermelha" ↔ "vermelho")? */
+function palavraCombina(a: string, b: string): boolean {
+  const A = normalizarNomeDeMoto(a);
+  const B = normalizarNomeDeMoto(b);
+  if (A.length < 3 || B.length < 3) return false;
+  const min = Math.min(A.length, B.length);
+  const preciso = Math.max(3, min - 1);
+  let i = 0;
+  while (i < A.length && i < B.length && A[i] === B[i]) i += 1;
+  return i >= preciso;
+}
+
+/**
+ * Qual VALOR REAL do estoque a mensagem cita? (cor, versão, marca, categoria)
+ * Casa o valor inteiro ou uma palavra significativa (>=3), tolerando gênero.
+ * Devolve `null` se nenhum ou se AMBÍGUO (2+ valores) — não chuta.
+ */
+export function escolherValorDoTexto(
+  mensagem: string,
+  valores: readonly string[],
+): string | null {
+  const textoNorm = normalizarNomeDeMoto(mensagem);
+  const palavrasMsg = textoNorm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  const casados = new Set<string>();
+  for (const valor of valores) {
+    const v = valor.trim();
+    if (v === '') continue;
+    const vNorm = normalizarNomeDeMoto(v);
+    if (vNorm !== '' && textoNorm.includes(vNorm)) {
+      casados.add(v);
+      continue;
+    }
+    const palavrasValor = vNorm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+    if (palavrasValor.some((vw) => palavrasMsg.some((mw) => palavraCombina(mw, vw)))) {
+      casados.add(v);
+    }
+  }
+  return casados.size === 1 ? [...casados][0]! : null;
+}
+
 export function criteriosDaRespostaDeJev(
   respostas: RespostasDeJev,
   e: EntradaDeCriterios,
@@ -507,6 +548,25 @@ export function criteriosDaRespostaDeJev(
         if (margem !== null) faixasSimilares[ccColFallback] = margem;
       }
     }
+  }
+
+  // FASE 1 (critérios genéricos): coluna de TEXTO exigida pela Jev e SEM valor —
+  // o motor casa a palavra da mensagem contra os VALORES REAIS do estoque
+  // (cor/versão/marca/categoria). Corrige "vermelha" sem inventar: o valor vem do
+  // estoque. A JEV continua decidindo SE a coluna é critério.
+  const papeisDeTexto = new Set(['cor', 'versao', 'tipo']);
+  for (const col of e.colunas) {
+    if (!exigidos.includes(col) || faixas[col] !== undefined) continue;
+    const papel = detectarPapelColuna(col);
+    const ehTexto = (papel !== null && papeisDeTexto.has(papel)) || ehColunaDeMarca(col);
+    if (!ehTexto) continue;
+    const valores = [
+      ...new Set(
+        e.estoque.map((m) => (m.valores?.[col] ?? '').trim()).filter((v) => v !== ''),
+      ),
+    ];
+    const valor = escolherValorDoTexto(mensagem, valores);
+    if (valor !== null) faixas[col] = [valor];
   }
 
   return { intencao, criterios: {}, hipoteses, faixas, faixasSimilares, principal, exigidos };

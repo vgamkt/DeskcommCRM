@@ -268,3 +268,42 @@ describe("cilindrada exigida sem faixa (fallback pelo número da mensagem)", () 
     ).toBeUndefined();
   });
 });
+
+describe('Fase 1 — valor de coluna de TEXTO pelo estoque', () => {
+  const entradaCor: EntradaDeCriterios = {
+    colunas: ['cor'],
+    estoque: [
+      { nome: 'A', valores: { cor: 'Vermelho' } },
+      { nome: 'B', valores: { cor: 'Preto' } },
+      { nome: 'C', valores: { cor: 'Azul' } },
+    ],
+  };
+  const exigirCor: RespostasDeJev = { exigidos_cor: { type: 'noul', noul: 1 } };
+
+  it('"vermelha" + exigidos_cor sem valor → Vermelho', () => {
+    const c = criteriosDaRespostaDeJev(exigirCor, entradaCor, 'Quero uma moto vermelha');
+    expect(c.exigidos).toContain('cor');
+    expect(c.faixas.cor).toEqual(['Vermelho']);
+  });
+
+  it('cor sem match no estoque não inventa', () => {
+    const c = criteriosDaRespostaDeJev(exigirCor, entradaCor, 'Quero uma moto rosa');
+    expect(c.faixas.cor).toBeUndefined();
+  });
+
+  it('versão por palavra ("Fan") casa o valor real', () => {
+    const entradaVersao: EntradaDeCriterios = {
+      colunas: ['versao'],
+      estoque: [
+        { nome: 'CG 160', valores: { versao: 'FAN FLEX ONE' } },
+        { nome: 'YS 250', valores: { versao: 'BLUE FLEX' } },
+      ],
+    };
+    const c = criteriosDaRespostaDeJev(
+      { exigidos_versao: { type: 'noul', noul: 1 } },
+      entradaVersao,
+      'Tem a versão Fan?',
+    );
+    expect(c.faixas.versao).toEqual(['FAN FLEX ONE']);
+  });
+});
