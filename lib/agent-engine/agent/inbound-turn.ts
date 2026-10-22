@@ -178,6 +178,7 @@ import {
   extrairMotosDoResultado,
   FOTOS_TODAS,
   motosCitadasNoTexto,
+  motosCitadasPorTokens,
   motosDeNomes,
   normalizarNomeDeMoto,
   planoDeFotos,
@@ -5850,9 +5851,10 @@ async function executarTurnoDoAgente(
             // TAMBÉM a FILA do "ver mais" abaixo — um pedido específico não pode
             // espalhar para a família/marca (medido ao vivo: "CB 300" trazia CBX/
             // CB 500 X na 1ª oferta E na fila).
-            const modelosCitadosNoTurno = motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).map(
-              (m) => m.nome,
-            );
+            const modelosCitadosNoTurno = motosCitadasPorTokens(
+              mensagemDoJob ?? '',
+              candidatos,
+            ).map((m) => m.nome);
             const nomeiaModeloEspecifico =
               !citouModeloForaDoEstoque &&
               (pedeMotoExplicito(mensagemDoJob ?? '') || modelosCitadosNoTurno.length > 0);

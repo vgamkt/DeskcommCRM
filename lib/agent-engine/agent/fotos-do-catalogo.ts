@@ -295,6 +295,42 @@ export function motosCitadasNoTexto(texto: string, catalogo: readonly MotoDoCata
   return citadas;
 }
 
+/**
+ * Modelos CITADOS por TOKENS — tolerante ao que o cliente OMITE.
+ *
+ * "vi um anuncio de um bmw 1200" casa "BMW R 1200 GS Triple Black 2016" (o "R"/
+ * "GS" não são obrigatórios); casa 2 tokens (bmw + 1200) e a G 310 GS só 1, então
+ * a R 1200 é a única. Com apenas 1 token em comum (só marca, ou só "150"), NÃO é
+ * modelo específico — o filtro de marca/cilindrada cuida. Serve para NÃO misturar
+ * outro modelo no pedido de um modelo específico (medido 2026-10-22).
+ */
+export function motosCitadasPorTokens(
+  texto: string,
+  catalogo: readonly MotoDoCatalogo[],
+): MotoDoCatalogo[] {
+  const tokensDoTexto = new Set(
+    normalizarNomeDeMoto(texto)
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 2),
+  );
+  if (tokensDoTexto.size === 0) return [];
+  let melhor = 0;
+  const pontuadas: Array<{ moto: MotoDoCatalogo; n: number }> = [];
+  for (const moto of catalogo) {
+    const tokensDoNome = new Set(
+      normalizarNomeDeMoto(moto.nome)
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean),
+    );
+    let n = 0;
+    for (const t of tokensDoTexto) if (tokensDoNome.has(t)) n += 1;
+    if (n > melhor) melhor = n;
+    pontuadas.push({ moto, n });
+  }
+  if (melhor < 2) return [];
+  return pontuadas.filter((x) => x.n === melhor).map((x) => x.moto);
+}
+
 /** Formata preço "28990.00" → "R$ 28.990,00". Sem valor reconhecível, devolve cru. */
 export function formatarPreco(preco: string | undefined): string | undefined {
   if (preco === undefined) return undefined;

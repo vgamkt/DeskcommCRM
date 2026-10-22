@@ -7,6 +7,7 @@ import {
   fotosComLegendaDeNomes,
   legendaDaMoto,
   motosCitadasNoTexto,
+  motosCitadasPorTokens,
   normalizarNomeDeMoto,
   planoDeFotos,
   planoDeFotosDasMotos,
@@ -393,5 +394,26 @@ describe('separarTextoApresentacao', () => {
   it('sem pergunta, final fica vazio (não inventa)', () => {
     const { final } = separarTextoApresentacao('Segue a moto.', catalogo);
     expect(final).toBe('');
+  });
+});
+
+describe('motosCitadasPorTokens (tolerante ao omitir marca/versão)', () => {
+  const cat = [
+    { nome: 'BMW R 1200 GS TRIPLE BLACK 2016', fotos: [] },
+    { nome: 'BMW G 310 GS 2022', fotos: [] },
+    { nome: 'HONDA CB 500 X 2015', fotos: [] },
+  ];
+  it('"bmw 1200" → só a R 1200 (não a G 310 GS)', () => {
+    expect(motosCitadasPorTokens('vi um anuncio de um bmw 1200', cat).map((m) => m.nome)).toEqual([
+      'BMW R 1200 GS TRIPLE BLACK 2016',
+    ]);
+  });
+  it('"honda cb 500 x 2015" → só a CB 500 X', () => {
+    expect(
+      motosCitadasPorTokens('tenho interesse na HONDA CB 500 X 2015', cat).map((m) => m.nome),
+    ).toEqual(['HONDA CB 500 X 2015']);
+  });
+  it('pedido genérico ("moto 150") não vira modelo específico', () => {
+    expect(motosCitadasPorTokens('quero uma moto 150', cat)).toEqual([]);
   });
 });
