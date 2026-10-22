@@ -24,6 +24,14 @@ describe("perguntaDeMotoEscolhidaJev", () => {
     expect(p.instructions).toContain("ÚNICA EM FOCO");
   });
 
+  it('escolha + objeção na MESMA frase é ESCOLHA (não "nenhuma")', () => {
+    const p = perguntaDeMotoEscolhidaJev(['Honda CB 300 R 2011']).moto;
+    if (!p || p.type !== 'choice') throw new Error('esperava choice');
+    expect(p.instructions).toContain('ESCOLHA + OBJEÇÃO');
+    expect(p.instructions).toContain('NÃO anula');
+    expect(p.instructions).toMatch(/achei caro/);
+  });
+
   it("o texto da LOJA (modelo) não cria escolha; só desambigua uma deíctica do cliente", () => {
     const p = perguntaDeMotoEscolhidaJev(["Honda CG 160 Fan", "Yamaha NMax 160"]).moto;
     if (!p || p.type !== "choice") throw new Error("esperava choice");

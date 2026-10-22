@@ -15,7 +15,7 @@ export const MOTO_NENHUMA = 'nenhuma';
 /** Pergunta `choice` da Jev: qual candidata o cliente escolheu (ou nenhuma). */
 export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasDeJev {
   const criteria: Record<string, string> = {
-    [MOTO_NENHUMA]: 'o cliente NÃO escolheu nenhuma (pergunta, objeção ou sem escolha)',
+    [MOTO_NENHUMA]: 'o cliente NÃO escolheu nenhuma (pergunta/objeção SEM escolha, ou sem alvo)',
   };
   for (const nome of nomes) {
     criteria[nome] = 'o cliente ESCOLHEU/gostou desta moto';
@@ -37,8 +37,14 @@ export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasD
         'CPF, data, saudação, resposta de fluxo), responda "nenhuma", MESMO que `modelo` cite uma ' +
         'moto. ' +
         'Só marque uma moto se o cliente demonstrou a escolha por ELA ("gostei dessa", "quero essa", ' +
-        '"essa mesmo"). Se foi pergunta ou objeção, responda "nenhuma" — a menos que haja um sinal ' +
-        'POSITIVO explícito junto ("quero a X, quanto fica?" continua sendo escolha). ' +
+        '"essa mesmo"). Se foi SÓ pergunta ou SÓ objeção (sem citar/escolher uma moto), responda ' +
+        '"nenhuma". ' +
+        // Medido 2026-10-22: "Gostei da CB 300 R 2011, mas achei um pouco caro" caía em "nenhuma"
+        // e o álbum da escolhida não saía. A objeção é tratada por OUTRO ponto; ela NÃO anula a escolha.
+        'ESCOLHA + OBJEÇÃO JUNTAS = ESCOLHA: se o cliente cita/escolhe uma moto E reclama de ' +
+        'preço/ano/km na MESMA frase ("gostei da CB 300 R 2011, mas achei caro", "quero essa, mas tá ' +
+        'salgada"), marque a MOTO escolhida — a objeção NÃO anula a escolha. ' +
+        'Pergunta com sinal positivo ("quero a X, quanto fica?") também é escolha. ' +
         // ÚNICA EM FOCO (NOVA, medida na sonda): 1 candidata + interesse, mesmo sem nomear.
         'ÚNICA EM FOCO: se a lista tem UMA SÓ moto e o cliente demonstra interesse/afirmação por ela — ' +
         'MESMO SEM NOMEAR ("gostei dela", "me interessei", "essa", "curti", "quero ver de perto") — ' +
