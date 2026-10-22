@@ -68,6 +68,11 @@ Critérios extraídos nos 9 pedidos (teste 0101):
 - Testes: 4 novos (32 no ponto) e **1653/1653** na suíte; commit `ec9484b3`.
 - Achado no probe: "até 30 mil km" trazia **só a XMax** (9 fotos) porque `nomeiaModelo` ligava só por "quero uma moto" e prendia a seleção na única hipótese da JEV. Corrigido: a flag só liga com **modelo CITADO** (`26dd2ac4`); testes 1653/1653.
 
+### Fase 3 — combinado + principal (IMPLEMENTADA)
+- Prompt: "o cliente pode citar VÁRIAS colunas — marque TODAS" (ex.: "Honda vermelha até 20 mil" → marca+cor+preço).
+- `inbound-turn.ts`: se o cliente cita uma **cilindrada plausível** ("160") e a JEV não marcou, o número é FATO → adiciona a coluna + a faixa (sem modelo específico citado).
+- Commit `bf96b99b`; suíte 1653/1653.
+
 ## 5. REGISTRO DEPOIS (validação)
 
 Probe ao vivo no canal **0101 (WAHA, sem Datafy)**, commit `3999857b`:
@@ -88,7 +93,18 @@ Probe da **Fase 2** (0101, sem Datafy, commit `26dd2ac4`):
 | Regressão: "HONDA CB 500 X 2015" | `cor`/modelo | 13/13 fotos + fecho de aquisição ✅ |
 | Regressão: "vermelha" | `cor=Vermelho` | 5/5 vermelhas, fecho de "mais opções" ✅ |
 
-**Fases 1 e 2 certificadas.** Próxima: **Fase 3** (combinado + principal: ex.: "Honda vermelha até 20 mil").
+Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
+
+| Pedido | Critérios | Resultado |
+|---|---|---|
+| "Honda **vermelha até 20 mil**" | `marca+cor+preço` | 1 moto (CG 160 Fan), **10/10 fotos** + fecho de aquisição ✅ |
+| "**160 vermelha**" | `cor+cilindrada` (agora marca os dois) | filtro AND aplicado; entraram 150s (faixa 126–160) e a **YS Fazer 250**, cujo `cilindrada` está **"149,3" no banco externo (dado errado)** ⚠️ |
+| "trilha até 25 mil" (probe anterior) | `categoria+preço` | 5 trail; a faixa de preço do dono (20–30 mil) permite até 30 mil, dentro da margem de 30% |
+| Regressão "trilha" | `categoria` | 5 trail, fecho de "mais opções" ✅ |
+
+**Pendência de DADO (não de critério):** corrigir `motos.cilindrada` da YS Fazer 250 (hoje `149,3`; deveria ser ~249). Enquanto o dado estiver errado, qualquer filtro por cilindrada a trata como 150.
+
+**Fases 1, 2 e 3 certificadas.** Próxima: **Fase 4** (matriz de certificação) — ou corrigir o dado do estoque.
 
 ## 6. Salvaguardas
 
