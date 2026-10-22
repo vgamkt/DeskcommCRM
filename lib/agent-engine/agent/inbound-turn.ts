@@ -5863,9 +5863,11 @@ async function executarTurnoDoAgente(
               mensagemDoJob ?? '',
               candidatos,
             ).map((m) => m.nome);
+            // Só é "modelo específico" quando o cliente CITA um modelo que existe.
+            // `pedeMotoExplicito` é amplo ("quero uma moto") e prendia a seleção na
+            // linha da única hipótese da JEV (medido: "até 30 mil km" → só a XMax).
             const nomeiaModeloEspecifico =
-              !citouModeloForaDoEstoque &&
-              (pedeMotoExplicito(mensagemDoJob ?? '') || modelosCitadosNoTurno.length > 0);
+              !citouModeloForaDoEstoque && modelosCitadosNoTurno.length > 0;
             // MODELO NOMEADO EXISTE → a seleção só considera ESSE modelo. O nome é
             // FATO da mensagem; a JEV pode não devolver hipóteses (medido 2026-10-22:
             // "HONDA CB 500 X 2015" → JEV só exigiu "ano", e a seleção trouxe CB 300
