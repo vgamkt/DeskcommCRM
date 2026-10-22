@@ -345,6 +345,23 @@ function aplicarMargem(
 }
 
 /** Converte as respostas da Jev no `CriteriosExtraidos` do motor. */
+/** Números citados na mensagem ("30 mil" → 30000; "30.000" → 30000; "2024" → 2024). */
+function numerosDaMensagem(mensagem: string): number[] {
+  const t = normalizarNomeDeMoto(mensagem);
+  const numeros: number[] = [];
+  const re = /(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:\s*(mil|milhao|milhoes|k))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const base = Number(m[1]!.replace(/[.\s]/g, ''));
+    if (!Number.isFinite(base)) continue;
+    const sufixo = m[2] ?? '';
+    const multiplicador =
+      sufixo === 'mil' || sufixo === 'k' ? 1000 : sufixo.startsWith('milh') ? 1_000_000 : 1;
+    numeros.push(base * multiplicador);
+  }
+  return [...new Set(numeros)];
+}
+
 /** Duas palavras casam tolerando gênero/acento ("vermelha" ↔ "vermelho")? */
 function palavraCombina(a: string, b: string): boolean {
   const A = normalizarNomeDeMoto(a);
@@ -546,6 +563,31 @@ export function criteriosDaRespostaDeJev(
         faixas[ccColFallback] = exata;
         const margem = aplicarMargem(exata, MARGEM_NUMERICA_PCT);
         if (margem !== null) faixasSimilares[ccColFallback] = margem;
+      }
+    }
+  }
+
+  // FASE 2 (critérios genéricos): coluna NUMÉRICA exigida e SEM faixa. O número
+  // está na mensagem; o motor só EXECUTA. ANO = exato; KM/PREÇO = teto ("até"),
+  // piso ("mais de") ou faixa próxima. Um número só; 2+ (combinação) fica para a
+  // Fase 3. Não toca preço/cc/potência quando a JEV já mandou a faixa.
+  const numerosDoTurno = numerosDaMensagem(mensagem);
+  if (numerosDoTurno.length === 1) {
+    const numero = numerosDoTurno[0]!;
+    const textoNorm = normalizarNomeDeMoto(mensagem);
+    const temTeto = /\b(ate|menos|maximo|abaixo)\b/.test(textoNorm);
+    const temPiso = /\b(mais|acima|minimo|a partir)\b/.test(textoNorm);
+    for (const col of e.colunas) {
+      if (!exigidos.includes(col) || faixas[col] !== undefined) continue;
+      const papel = detectarPapelColuna(col);
+      if (papel === 'ano') {
+        if (numero >= 1900 && numero <= 2100) faixas[col] = { min: numero, max: numero };
+      } else if (papel === 'km' || papel === 'preco') {
+        faixas[col] = temTeto
+          ? { max: numero }
+          : temPiso
+            ? { min: numero }
+            : { min: Math.round(numero * 0.7), max: Math.round(numero * 1.3) };
       }
     }
   }

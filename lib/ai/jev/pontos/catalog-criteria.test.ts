@@ -307,3 +307,46 @@ describe('Fase 1 — valor de coluna de TEXTO pelo estoque', () => {
     expect(c.faixas.versao).toEqual(['FAN FLEX ONE']);
   });
 });
+
+describe('Fase 2 — faixa de coluna NUMÉRICA pela mensagem', () => {
+  const entrada = (col: string): EntradaDeCriterios => ({ colunas: [col], estoque: [] });
+
+  it('ano: "de 2024" → exato', () => {
+    const c = criteriosDaRespostaDeJev(
+      { exigidos_ano: { type: 'noul', noul: 1 } },
+      entrada('ano'),
+      'Quero uma moto de 2024',
+    );
+    expect(c.faixas.ano).toEqual({ min: 2024, max: 2024 });
+  });
+
+  it('km: "até 30 mil km" → teto 30000', () => {
+    const c = criteriosDaRespostaDeJev(
+      { exigidos_quilometragem: { type: 'noul', noul: 1 } },
+      entrada('quilometragem'),
+      'Quero uma moto até 30 mil km',
+    );
+    expect(c.faixas.quilometragem).toEqual({ max: 30000 });
+  });
+
+  it('preço: "até 20 mil" sem faixa da JEV → teto 20000', () => {
+    const c = criteriosDaRespostaDeJev(
+      { exigidos_preco: { type: 'noul', noul: 1 } },
+      entrada('preco'),
+      'Quero uma moto até 20 mil',
+    );
+    expect(c.faixas.preco).toEqual({ max: 20000 });
+  });
+
+  it('não sobrescreve a faixa que a JEV escolheu', () => {
+    const c = criteriosDaRespostaDeJev(
+      {
+        exigidos_preco: { type: 'noul', noul: 1 },
+        cx_preco: { type: 'choice', choice: 'até 10 mil', confidence: 1, probabilities: {} },
+      },
+      entrada('preco'),
+      'Quero até 20 mil',
+    );
+    expect(c.faixas.preco).toEqual({ max: 10000 });
+  });
+});
