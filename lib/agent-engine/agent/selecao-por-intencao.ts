@@ -815,7 +815,12 @@ export function selecionarPorIntencao(
           : casadas;
       const daHipoteses =
         input.primeirasSomenteHipoteses === true
-          ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, hipoteses))
+          ? // As PRINCIPAIS = as hipóteses de MAIOR NOTA (as parecidas de nota
+            // baixa ficam para o "ver mais"). Sem isto, a 1ª trazia Factor 150/
+            // CB 300 junto dos 160 (medido 2026-10-22).
+            casadas.filter((m) =>
+              compartilhaLinhaDoModelo(m.nome, hipotesesDeMaiorNota(hipoteses)),
+            )
           : [];
       const preferidas =
         daHipoteses.length > 0
