@@ -5659,14 +5659,22 @@ async function executarTurnoDoAgente(
                 const w = brutos[i]!;
                 if (/^\d+$/.test(w) || w.length < 2 || STOPWORDS_DE_PEDIDO.has(w)) continue;
                 const prox = brutos[i + 1];
+                // Só NOME+NÚMERO ("cb 500", "lander 250") é termo de MODELO. Palavra
+                // longa solta ("interesse", "anuncio", "passar") é prosa e fazia o
+                // detector achar que o modelo estava FORA do estoque (medido 2026-10-22).
                 if (prox !== undefined && /^\d+$/.test(prox)) termos.push(`${w} ${prox}`);
-                else if (w.length >= 4) termos.push(w);
               }
               const nomesEstoque = candidatos.map((m) => semEspaco(m.nome)).join(' ');
               const termosCitados = [...new Set(termos)].filter(
                 (t) => !nomesEstoque.includes(semEspaco(t)),
               );
-              if (termosCitados.length > 0) {
+              // O casamento por TOKENS resolve "bmw 1200" → "BMW R 1200..." (o nome
+              // não é contíguo). Se ele achou um modelo, NÃO é modelo ausente.
+              const citadosPorToken = motosCitadasPorTokens(
+                mensagemDoJob ?? currentInboundText ?? '',
+                candidatos,
+              );
+              if (termosCitados.length > 0 && citadosPorToken.length === 0) {
                 citouModeloForaDoEstoque = true;
                 // Nome do modelo citado para o AVISO de "parecidas" (formatação leve:
                 // siglas/anos em maiúsculas, resto com a 1ª letra maiúscula).
