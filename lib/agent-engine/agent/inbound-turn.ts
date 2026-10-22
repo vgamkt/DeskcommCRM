@@ -5850,10 +5850,25 @@ async function executarTurnoDoAgente(
             // TAMBÉM a FILA do "ver mais" abaixo — um pedido específico não pode
             // espalhar para a família/marca (medido ao vivo: "CB 300" trazia CBX/
             // CB 500 X na 1ª oferta E na fila).
+            const modelosCitadosNoTurno = motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).map(
+              (m) => m.nome,
+            );
             const nomeiaModeloEspecifico =
               !citouModeloForaDoEstoque &&
-              (pedeMotoExplicito(mensagemDoJob ?? '') ||
-                motosCitadasNoTexto(mensagemDoJob ?? '', candidatos).length > 0);
+              (pedeMotoExplicito(mensagemDoJob ?? '') || modelosCitadosNoTurno.length > 0);
+            // MODELO NOMEADO EXISTE → a seleção só considera ESSE modelo. O nome é
+            // FATO da mensagem; a JEV pode não devolver hipóteses (medido 2026-10-22:
+            // "HONDA CB 500 X 2015" → JEV só exigiu "ano", e a seleção trouxe CB 300
+            // Flex/CB 650, todas 2015). Aresta antes da seleção para não espalhar.
+            if (nomeiaModeloEspecifico && modelosCitadosNoTurno.length > 0) {
+              const chavesCitadas = new Set(
+                modelosCitadosNoTurno.map((n) => normalizarNomeDeMoto(n)),
+              );
+              const soCitados = candidatos.filter((m) =>
+                chavesCitadas.has(normalizarNomeDeMoto(m.nome)),
+              );
+              if (soCitados.length > 0) candidatos = soCitados;
+            }
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
