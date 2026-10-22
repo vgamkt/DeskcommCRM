@@ -54,14 +54,23 @@ Critérios extraídos nos 9 pedidos (teste 0101):
 
 ## 4. REGISTRO DURANTE (execução e achados)
 
-### Fase 1 — valor para TEXTO
-- Alteração: `experimental`/pure em `catalog-criteria.ts` — para colunas de texto exigidas e sem valor da JEV, casar a palavra da mensagem contra os valo- res distintos do estoque (tolerante a gênero/acento) e gravar `faixas[col] = [valor]`.
-- A JEV continua decidindo se a coluna é critério (`exigidos_<col>`); o motor só descobre o valor no estoque.
-- (preencher: testes, probe, resultado)
+### Fase 1 — valor para TEXTO (IMPLEMENTADA)
+- Alteração em `lib/ai/jev/pontos/catalog-criteria.ts`: para coluna de texto exigida pela JEV e **sem valor**, o motor casa a palavra da mensagem contra os **valores reais do estoque** (tolerante a gênero/acento: "vermelha" → "Vermelho") e grava `faixas[col] = [valor]`. A JEV continua decidindo **se** a coluna é critério (`exigidos_<col>`).
+- Sem match no estoque ou ambíguo (2+ valores) → **não** filtra (não chuta).
+- Testes: 3 novos no ponto `catalog-criteria.test.ts` (28 no ponto) e **1649/1649** na suíte; tsc/lint 0.
+- Commit: `3999857b`.
 
 ## 5. REGISTRO DEPOIS (validação)
 
-- (preencher após Fase 1/2/3: matriz final, suíte, probes e commit)
+Probe ao vivo no canal **0101 (WAHA, sem Datafy)**, commit `3999857b`:
+
+| Pedido | Critérios extraídos | Resultado |
+|---|---|---|
+| "Quero uma moto **vermelha**." | `principal=cor`, `exigidos=["cor"]`, `cor=Vermelho` (7 casadas) | **5/5 vermelhas** (XMax, CB 300 F, NMax, Factor 150, YS Fazer); nenhuma preta/azul ✅ |
+| "Quero uma moto **Honda**." | `principal=marca`, `exigidos=["marca"]`, `marca=HONDA` | 5/5 Honda (sem regressão) ✅ |
+| "Quero uma moto de **trilha**." | `principal=categoria`, `exigidos=["categoria"]`, `Trail/On-Off Road` | 3 trail (XTZ 150 Crosser, CB 500 X, XTZ 150 Crosser S) (sem regressão) ✅ |
+
+**Fase 1 certificada.** Próxima: **Fase 2** (faixa para numérico genérico — `ano` e `quilometragem`).
 
 ## 6. Salvaguardas
 
