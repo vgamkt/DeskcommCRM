@@ -245,6 +245,7 @@ import {
   ajustarFechoDoTurnoDeCatalogo,
   fechoEfetivoDaApresentacao,
   garantirFechoNoFinal,
+  removerPedidoDoCampoDaChamada,
   removerPerguntaDaChamada,
 } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
@@ -6428,6 +6429,7 @@ async function executarTurnoDoAgente(
             itens: readonly { url: string; legenda: string }[],
             textoDoModelo: string,
             agrupar: boolean,
+            campoPendente: string | null,
           ): Promise<ChannelSendResult> => {
             // Reset do contador do bloco: a MESMA apresentação gera os MESMOS seqs
             // em qualquer chamada/re-run (dedupe pelo ledger). Ver o bloco acima.
@@ -6455,6 +6457,9 @@ async function executarTurnoDoAgente(
               // é?" no meio da chamada). A pergunta certa (fecho/fluxo) sai DEPOIS
               // das fotos, no `final`.
               introducao = removerPerguntaDaChamada(introducao);
+              // Pedido do CAMPO do fluxo (nome/cidade/CNH) como imperativo sem "?":
+              // também sai da chamada — a pergunta oficial sai depois das fotos.
+              introducao = removerPedidoDoCampoDaChamada(introducao, campoPendente);
             }
             // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
             // ignora com frequência). Só quando o filtro deixou motos parecidas de
@@ -6777,7 +6782,12 @@ async function executarTurnoDoAgente(
                       ? 'Essa é uma opção parecida — não é exatamente o que você pediu e pode ser de outra marca. Dá uma olhada:\n\nSe quiser, te mostro mais fotos dela.'
                       : `Essas são ${total} opções parecidas — não são exatamente o que você pediu e algumas são de outras marcas. Dá uma olhada:\n\nSe quiser, te mostro mais fotos de alguma delas.`;
                 }
-                return enviarApresentacao(planoAutomatico, corpoFinal, cfg?.foto_por_moto === false);
+                return enviarApresentacao(
+                  planoAutomatico,
+                  corpoFinal,
+                  cfg?.foto_por_moto === false,
+                  pendenteFecho?.config.label ?? null,
+                );
               }
               // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
               // mesmo formato — texto, depois as fotos (sem legenda), depois a
@@ -6787,6 +6797,7 @@ async function executarTurnoDoAgente(
                   fotos.map((url) => ({ url, legenda: '' })),
                   corpoFinal,
                   false,
+                  pendenteFecho?.config.label ?? null,
                 );
               }
               return sendInBubbles(corpoFinal, {

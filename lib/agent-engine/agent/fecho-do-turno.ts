@@ -207,3 +207,27 @@ export function removerPerguntaDaChamada(introducao: string): string {
   );
   return corte < 0 ? t : t.slice(0, corte).trim();
 }
+
+const semAcentoMinusculo = (s: string): string =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/**
+ * Tira da CHAMADA o pedido do CAMPO do fluxo que está pendente (nome/cidade/CNH…).
+ *
+ * O modelo às vezes pede o campo no meio da chamada, como IMPERATIVO e sem "?"
+ * ("Ah, e me diz seu nome…"), e ele sairia ANTES das fotos. O campo pendente é
+ * DADO do fluxo (não adivinhação): remove a oração que menciona o rótulo do campo.
+ * Se a remoção esvaziar a chamada, devolve a original (nunca deixa sem texto).
+ */
+export function removerPedidoDoCampoDaChamada(
+  introducao: string,
+  campo: string | null,
+): string {
+  const t = introducao.trim();
+  const alvo = semAcentoMinusculo((campo ?? '').trim());
+  if (t === '' || alvo === '') return t;
+  const partes = t.split(/(?<=[.!?:])\s+|\n+/u);
+  const mantidas = partes.filter((p) => p.trim() !== '' && !semAcentoMinusculo(p).includes(alvo));
+  const resultado = mantidas.join(' ').trim();
+  return resultado !== '' ? resultado : t;
+}

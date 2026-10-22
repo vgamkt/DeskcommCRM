@@ -4,6 +4,7 @@ import {
   ajustarFechoDoTurnoDeCatalogo,
   fechoEfetivoDaApresentacao,
   garantirFechoNoFinal,
+  removerPedidoDoCampoDaChamada,
   removerPerguntaDaChamada,
 } from './fecho-do-turno';
 
@@ -84,6 +85,25 @@ describe('fechoEfetivoDaApresentacao', () => {
         outrosNoValor: false,
       }),
     ).toBe('outra_opcao');
+  });
+});
+
+describe('removerPedidoDoCampoDaChamada', () => {
+  it('tira o pedido do campo (imperativo sem "?") da CHAMADA', () => {
+    const intro =
+      'Separei 4 opções pra você dar uma olhada: Ah, e me diz seu nome pra eu já deixar seu contato aqui.';
+    const r = removerPedidoDoCampoDaChamada(intro, 'Nome');
+    expect(r).toContain('Separei 4 opções');
+    expect(r).not.toContain('seu nome');
+  });
+
+  it('sem campo pendente, não mexe', () => {
+    const intro = 'Separei 4 opções trail.';
+    expect(removerPedidoDoCampoDaChamada(intro, null)).toBe(intro);
+  });
+
+  it('se a remoção esvaziaria a chamada, mantém a original', () => {
+    expect(removerPedidoDoCampoDaChamada('Me diz seu nome?', 'Nome')).toBe('Me diz seu nome?');
   });
 });
 
