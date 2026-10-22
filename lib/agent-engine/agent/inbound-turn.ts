@@ -9507,6 +9507,49 @@ async function executarTurnoDoAgente(
           });
         }
       }
+      // GARANTIA FINAL DO FECHO — vale para TODOS os caminhos de envio, inclusive
+      // quando o texto veio do modelo pela ferramenta (`send_message`). Se o turno
+      // MOSTROU motos, a última bolha de texto termina com a pergunta da JEV. Sem
+      // isto, o "ver mais" saía em frase afirmativa ("marcamos um horário…"), sem
+      // pergunta (medido no pesado 2026-10-22).
+      const mostrouMotosNoTurno =
+        ofereceuSimilaresNesteTurno ||
+        motosOferecidasNesteTurno.length > 0 ||
+        finais.some((p) => p.media !== undefined);
+      if (mostrouMotosNoTurno) {
+        let idxUltimoTexto = -1;
+        for (let i = finais.length - 1; i >= 0; i -= 1) {
+          const p = finais[i]!;
+          if (p.media === undefined && p.template === undefined) {
+            idxUltimoTexto = i;
+            break;
+          }
+        }
+        if (idxUltimoTexto >= 0) {
+          const atual = finais[idxUltimoTexto]!;
+          const ajuste = ajustarFechoDoTurnoDeCatalogo({
+            corpo: atual.body,
+            perguntaDoFluxo: null,
+            variacao: pedidosDeOpcoesTurno,
+            temEscolha: catalogoDaConversa.escolhida !== null,
+            temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
+            outrosNoValor: outrosNoValorNesteTurno,
+            umaMoto: nomeModeloEspecificoDoTurno !== '',
+            formaJaPerguntada,
+            modeloCitado: motoAtualDaConversa?.nome ?? null,
+            nomeCliente: effectiveContext.contact.name,
+          });
+          if (ajuste.corpo !== atual.body) {
+            finais = finais.map((p, i) =>
+              i === idxUltimoTexto ? { ...p, body: ajuste.corpo } : p,
+            );
+            runLog.info('fecho garantido no envio (turno mostrou motos)', {
+              antes: atual.body.slice(0, 120),
+              depois: ajuste.corpo.slice(0, 120),
+            });
+          }
+        }
+      }
       const desfechosReais = await canalComBuffer.liberar(finais);
       // Citações da pré-busca: no caminho bufferizado o `send_message` devolveu
       // `buffer:N`; anexa na mensagem REAL que acabou de sair.
