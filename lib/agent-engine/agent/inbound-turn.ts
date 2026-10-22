@@ -9527,26 +9527,30 @@ async function executarTurnoDoAgente(
         }
         if (idxUltimoTexto >= 0) {
           const atual = finais[idxUltimoTexto]!;
-          const ajuste = ajustarFechoDoTurnoDeCatalogo({
-            corpo: atual.body,
-            perguntaDoFluxo: null,
-            variacao: pedidosDeOpcoesTurno,
-            temEscolha: catalogoDaConversa.escolhida !== null,
-            temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
-            outrosNoValor: outrosNoValorNesteTurno,
-            umaMoto: nomeModeloEspecificoDoTurno !== '',
-            formaJaPerguntada,
-            modeloCitado: motoAtualDaConversa?.nome ?? null,
-            nomeCliente: effectiveContext.contact.name,
-          });
-          if (ajuste.corpo !== atual.body) {
-            finais = finais.map((p, i) =>
-              i === idxUltimoTexto ? { ...p, body: ajuste.corpo } : p,
-            );
-            runLog.info('fecho garantido no envio (turno mostrou motos)', {
-              antes: atual.body.slice(0, 120),
-              depois: ajuste.corpo.slice(0, 120),
+          // Só quando NÃO há NENHUMA pergunta: se o texto já fecha com pergunta
+          // (turno 02/03), mexer duplicava ("…como pretende pagar? …qual delas?").
+          if (!atual.body.includes('?')) {
+            const ajuste = ajustarFechoDoTurnoDeCatalogo({
+              corpo: atual.body,
+              perguntaDoFluxo: null,
+              variacao: pedidosDeOpcoesTurno,
+              temEscolha: catalogoDaConversa.escolhida !== null,
+              temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
+              outrosNoValor: outrosNoValorNesteTurno,
+              umaMoto: nomeModeloEspecificoDoTurno !== '',
+              formaJaPerguntada,
+              modeloCitado: motoAtualDaConversa?.nome ?? null,
+              nomeCliente: effectiveContext.contact.name,
             });
+            if (ajuste.corpo !== atual.body) {
+              finais = finais.map((p, i) =>
+                i === idxUltimoTexto ? { ...p, body: ajuste.corpo } : p,
+              );
+              runLog.info('fecho garantido no envio (turno mostrou motos)', {
+                antes: atual.body.slice(0, 120),
+                depois: ajuste.corpo.slice(0, 120),
+              });
+            }
           }
         }
       }
