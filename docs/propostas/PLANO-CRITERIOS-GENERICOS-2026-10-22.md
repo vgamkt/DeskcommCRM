@@ -117,3 +117,15 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 - Cada fase: commit isolado → suíte verde → probe ao vivo → só então a próxima.
 - Regressão em cenário que funcionava → `git revert` imediato.
 - Preserva os caminhos atuais (faixas de preço/cc/potência, marca/categoria, modelo específico por tokens, "ver mais").
+
+
+## 7. REGRA DO DONO (2026-10-23) — 1ª principal, 2ª dentro das margens
+
+- **1ª apresentação (pedido genérico):** as **PRINCIPAIS** (as hipóteses de MAIOR NOTA da JEV), fechando com *"opções parecidas — inclusive de outras fabricantes"*.
+- **2ª (quando o cliente pede mais):** as **parecidas DENTRO das margens** (`faixasSimilares`), sem trazer de fora.
+
+### Execução/achados
+- Fecho genérico atualizado (inclui "outras fabricantes") e testes ajustados.
+- 1ª mostra: `primeirasSomenteHipoteses` + `hipotesesDeMaiorNota` → **CG 160 + NMax 160** (as principais), validado ao vivo (commit `b1656fbb`; 1653/1653).
+- **Pendência:** no "ver mais", o modelo chamou `crm_offer_similar_motos` (busca de alternativa) e a resposta trouxe **YS Fazer 250/XMax 250/CB 300** — fora da margem de 160. A **fila** (Factor 150/125, dentro da margem) não foi a única fonte.
+- **Correção proposta (precisa de OK):** quando o cliente pedir "ver mais" e houver fila (`opcoes.pendentes`), a ferramenta `crm_offer_similar_motos` deve **deferir à fila** (não marcar `alternativa`, não buscar de novo) e o motor envia **só a fila** (as margens), ignorando `media_urls` do modelo nesse turno.
