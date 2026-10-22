@@ -60,6 +60,14 @@ Critérios extraídos nos 9 pedidos (teste 0101):
 - Testes: 3 novos no ponto `catalog-criteria.test.ts` (28 no ponto) e **1649/1649** na suíte; tsc/lint 0.
 - Commit: `3999857b`.
 
+### Fase 2 — faixa para NUMÉRICO genérico (IMPLEMENTADA)
+- Alteração em `catalog-criteria.ts`: quando a JEV exige coluna numérica sem faixa, o motor usa o número da mensagem (aceita "30 mil"/"30.000"):
+  - `ano` = exato (1900–2100);
+  - `quilometragem`/`preco` = **teto** ("até"), **piso** ("mais de") ou faixa próxima (±30%);
+  - preço/cc/potência mantêm a faixa da JEV quando ela existe; um número só; 2+ (combinação) fica para a Fase 3.
+- Testes: 4 novos (32 no ponto) e **1653/1653** na suíte; commit `ec9484b3`.
+- Achado no probe: "até 30 mil km" trazia **só a XMax** (9 fotos) porque `nomeiaModelo` ligava só por "quero uma moto" e prendia a seleção na única hipótese da JEV. Corrigido: a flag só liga com **modelo CITADO** (`26dd2ac4`); testes 1653/1653.
+
 ## 5. REGISTRO DEPOIS (validação)
 
 Probe ao vivo no canal **0101 (WAHA, sem Datafy)**, commit `3999857b`:
@@ -70,7 +78,17 @@ Probe ao vivo no canal **0101 (WAHA, sem Datafy)**, commit `3999857b`:
 | "Quero uma moto **Honda**." | `principal=marca`, `exigidos=["marca"]`, `marca=HONDA` | 5/5 Honda (sem regressão) ✅ |
 | "Quero uma moto de **trilha**." | `principal=categoria`, `exigidos=["categoria"]`, `Trail/On-Off Road` | 3 trail (XTZ 150 Crosser, CB 500 X, XTZ 150 Crosser S) (sem regressão) ✅ |
 
-**Fase 1 certificada.** Próxima: **Fase 2** (faixa para numérico genérico — `ano` e `quilometragem`).
+Probe da **Fase 2** (0101, sem Datafy, commit `26dd2ac4`):
+
+| Pedido | Critérios | Resultado |
+|---|---|---|
+| "até **30 mil km**" | `principal=quilometragem`, `exigidos=["quilometragem"]`, `{max:30000}` | **5 motos** (4.000/4.500/9.800/17.800/21.300 km), fecho de "mais opções" ✅ |
+| "até **20 mil**" | `principal=preco`, `exigidos=["preco"]` | 5 motos ≤ R$ 20 mil, fecho de "mais opções" ✅ |
+| "de 2024" | ano **bloqueado pela config do agente** | perguntou tipo/uso (respeita o bloqueio) |
+| Regressão: "HONDA CB 500 X 2015" | `cor`/modelo | 13/13 fotos + fecho de aquisição ✅ |
+| Regressão: "vermelha" | `cor=Vermelho` | 5/5 vermelhas, fecho de "mais opções" ✅ |
+
+**Fases 1 e 2 certificadas.** Próxima: **Fase 3** (combinado + principal: ex.: "Honda vermelha até 20 mil").
 
 ## 6. Salvaguardas
 
