@@ -231,3 +231,17 @@ export function removerPedidoDoCampoDaChamada(
   const resultado = mantidas.join(' ').trim();
   return resultado !== '' ? resultado : t;
 }
+
+/**
+ * Contingência quando o modelo não enviou NADA (texto vetado/vazio): se há um
+ * campo do fluxo pendente, manda a PERGUNTA dele (a conversa continua; o cliente
+ * acabou de responder um dado) — o handoff humano só quando não há fluxo.
+ * Medido no pesado 2026-10-22: "Meu nome é Letícia" caiu em handoff.
+ */
+export function textoDeContingenciaSemModelo(
+  perguntaDoFluxo: string | null,
+  humanoQuandoSemFluxo: string,
+): string {
+  const p = (perguntaDoFluxo ?? '').trim();
+  return p !== '' ? p : humanoQuandoSemFluxo;
+}

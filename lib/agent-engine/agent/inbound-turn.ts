@@ -247,6 +247,7 @@ import {
   garantirFechoNoFinal,
   removerPedidoDoCampoDaChamada,
   removerPerguntaDaChamada,
+  textoDeContingenciaSemModelo,
 } from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
@@ -9395,10 +9396,35 @@ async function executarTurnoDoAgente(
         // modelo. Se NENHUMA bolha saiu, manda a contingência determinística — o
         // cliente não pode ficar mudo por veto de narração/anti-duplicação.
         if (corposEnviados.length === 0) {
-          const saiu = await enviarTextoDoMotor(TEXTO_ATENDIMENTO_HUMANO);
+          // Se o cliente acabou de responder um CAMPO do fluxo, a contingência é a
+          // pergunta do PRÓXIMO campo — handoff humano só quando NÃO há fluxo
+          // pendente (medido no pesado 2026-10-22: "Meu nome é Letícia" -> handoff).
+          const pendenteContingencia = atendimento?.situacao.pendentes[0];
+          const perguntaContingencia =
+            pendenteContingencia !== undefined
+              ? textoDaPergunta(
+                  {
+                    key: pendenteContingencia.config.key,
+                    label: pendenteContingencia.config.label,
+                    type: pendenteContingencia.config.type,
+                    ...(pendenteContingencia.config.options !== undefined
+                      ? { options: pendenteContingencia.config.options }
+                      : {}),
+                    ...(pendenteContingencia.config.question !== undefined
+                      ? { question: pendenteContingencia.config.question }
+                      : {}),
+                  },
+                  atendimento?.confirmacoes?.[pendenteContingencia.config.key],
+                )
+              : '';
+          const saiu = await enviarTextoDoMotor(
+            textoDeContingenciaSemModelo(perguntaContingencia, TEXTO_ATENDIMENTO_HUMANO),
+          );
           if (saiu === 'sent') {
             desfecho = 'sent';
-            runLog.warn('turno sem envio pelo modelo — contingência determinística enviada', {});
+            runLog.warn('turno sem envio pelo modelo — contingência determinística enviada', {
+              fluxo_pendente: (perguntaContingencia ?? '').trim() !== '',
+            });
           }
         }
         if (desfecho !== 'sent') {

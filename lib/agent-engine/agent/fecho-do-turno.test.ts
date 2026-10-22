@@ -6,6 +6,7 @@ import {
   garantirFechoNoFinal,
   removerPedidoDoCampoDaChamada,
   removerPerguntaDaChamada,
+  textoDeContingenciaSemModelo,
 } from './fecho-do-turno';
 
 describe('garantirFechoNoFinal', () => {
@@ -270,5 +271,21 @@ describe('ajustarFechoDoTurnoDeCatalogo', () => {
     });
     expect(r.corpo).toContain('adquirir essa moto');
     expect(r.corpo).not.toMatch(/mais op|mais algumas|alternativas/);
+  });
+});
+
+
+describe('textoDeContingenciaSemModelo', () => {
+  it('com fluxo pendente: contingência é a pergunta do campo (não o handoff)', () => {
+    expect(textoDeContingenciaSemModelo('De qual cidade você fala?', 'Vou passar para o responsável.')).toBe(
+      'De qual cidade você fala?',
+    );
+  });
+
+  it('sem fluxo pendente: mantém o handoff', () => {
+    expect(textoDeContingenciaSemModelo(null, 'Vou passar para o responsável.')).toBe(
+      'Vou passar para o responsável.',
+    );
+    expect(textoDeContingenciaSemModelo('  ', 'Vou passar.')).toBe('Vou passar.');
   });
 });
