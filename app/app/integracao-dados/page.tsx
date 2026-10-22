@@ -12,11 +12,13 @@
  */
 import { redirect } from "next/navigation";
 
+import { LimpezaDeMidia } from "./_components/LimpezaDeMidia";
 import { ListaDeConexoes } from "./_components/ListaDeConexoes";
 import type { ConexaoExternaRow } from "@/hooks/external-db/useConexoesExternas";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { lerConfiguracaoDeLimpeza } from "@/lib/midia/limpeza";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Dados externos" };
@@ -39,6 +41,14 @@ export default async function IntegracaoDeDadosPage() {
     .order("label", { ascending: true });
 
   const conexoes = (data ?? []) as unknown as ConexaoExternaRow[];
+
+  const { data: orgRow } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+  const mediaCleanup = lerConfiguracaoDeLimpeza(orgRow?.settings ?? null);
+
   const canWrite =
     (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
@@ -54,6 +64,7 @@ export default async function IntegracaoDeDadosPage() {
         </p>
       </header>
       <ListaDeConexoes initialData={conexoes} canWrite={canWrite} />
+      <LimpezaDeMidia initial={mediaCleanup} canWrite={canWrite} />
     </div>
   );
 }

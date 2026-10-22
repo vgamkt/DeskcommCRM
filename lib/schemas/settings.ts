@@ -231,3 +231,16 @@ export const agendaSettingsWriteSchema = z.strictObject({
   unknown_protection_minutes: z.number().int().min(1).max(10080),
 }).refine(v => v.unknown_protection_minutes >= v.confirmation_delay_minutes, {message:"O prazo de proteção deve ser maior que o prazo de confirmação."});
 export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmation_delay_minutes:10,unknown_protection_minutes:1440});
+
+/** Limpeza automática de mídia (tela Dados externos). */
+export const mediaCleanupSchema = z.object({
+  ativo: z.boolean(),
+  enviadas: z.boolean(),
+  recebidas: z.boolean(),
+  retencaoHoras: z.coerce.number().int().min(1).max(8760),
+  excecaoHoras: z.coerce.number().int().min(0).max(8760),
+  frequenciaHoras: z.coerce.number().int().min(1).max(720),
+  hora: z.coerce.number().int().min(0).max(23),
+  minuto: z.coerce.number().int().min(0).max(59).default(0),
+});
+export type MediaCleanupInput = z.infer<typeof mediaCleanupSchema>;
