@@ -241,11 +241,13 @@ export function perguntaDeOutrosNoModelo(
   // opções PARECIDAS de OUTRO FABRICANTE no MESMO estilo. Antes ele oferecia isso
   // cedo demais; agora é o passo da negociação (3ª recusa). Pura.
   if (n === 1) {
-    const alvo = modelo !== '' ? ` ${modelo}` : ' essa';
+    // Sem modelo citado o `alvo` fica VAZIO: as frases já dizem "essa/única", e um
+    // " essa" a mais gerava "é a única essa que tenho" (medido no teste pesado).
+    const alvo = modelo !== '' ? ` ${modelo}` : '';
     const opcoes = [
       `Só tenho essa${alvo} aqui no momento. Quer que eu veja se há outras parecidas de outro fabricante no mesmo estilo?`,
       `Por enquanto é a única${alvo} que tenho. Posso procurar opções parecidas de outras fabricantes no mesmo estilo — quer?`,
-      `Essa é a única${alvo} disponível agora. Se quiser, eu verifico outras parecidas de outra marca, no mesmo estilo.`,
+      `Essa é a única${alvo} disponível agora. Quer que eu verifique outras parecidas de outra marca, no mesmo estilo?`,
       `Só essa${alvo} no momento. Quer que eu veja se encontro algo parecido (mesmo estilo) de outra fabricante?`,
     ];
     return opcoes[v % opcoes.length]!;

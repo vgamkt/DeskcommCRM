@@ -193,6 +193,7 @@ import {
   motoEscolhidaPeloClienteComJev,
   albumDaMotoJaFoiEnviado,
   salvarCatalogoDaConversa,
+  tirarJaDetalhadasDaFila,
   type CatalogoDaConversa,
   type FilaDeOpcoes,
 } from './catalogo-da-conversa';
@@ -5421,20 +5422,33 @@ async function executarTurnoDoAgente(
               catalogoDaConversa.opcoes.pendentes.length > 0
             ) {
               const fila = catalogoDaConversa.opcoes;
-              const cfg = agentConfig?.catalogConfig;
-              const tetoQtd = cfg?.usar_limite_quantidade === false ? fila.pendentes.length : (cfg?.similares_qtd ?? 3);
-              const lote = fila.pendentes.slice(0, Math.max(1, tetoQtd));
-              const restantes = fila.pendentes.slice(lote.length);
-              opcoesParaSalvar = { ...fila, pendentes: restantes };
-              motosOferecidasNesteTurno = [...lote];
-              parecidasNoTurno = true;
-              temMaisOpcoesNesteTurno = restantes.length > 0;
-              for (const moto of lote) {
-                if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
+              // O "ver mais" NÃO repete: tira da fila o que já foi detalhado (a
+              // moto escolhida entra em `detalhadas` quando o álbum dela sai).
+              // Medido no teste pesado 2026-10-22: a CB 300 R 2011 voltou.
+              const pendentesFiltrados = tirarJaDetalhadasDaFila(
+                fila,
+                catalogoDaConversa.detalhadas,
+              ).pendentes;
+              if (pendentesFiltrados.length > 0) {
+                const cfg = agentConfig?.catalogConfig;
+                const tetoQtd =
+                  cfg?.usar_limite_quantidade === false
+                    ? pendentesFiltrados.length
+                    : (cfg?.similares_qtd ?? 3);
+                const lote = pendentesFiltrados.slice(0, Math.max(1, tetoQtd));
+                const restantes = pendentesFiltrados.slice(lote.length);
+                opcoesParaSalvar = { ...fila, pendentes: restantes };
+                motosOferecidasNesteTurno = [...lote];
+                parecidasNoTurno = true;
+                temMaisOpcoesNesteTurno = restantes.length > 0;
+                for (const moto of lote) {
+                  if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
+                }
+                // Persiste o que saiu (para a escolha do próximo turno casar).
+                motosApresentadasParaSalvar.push(...lote);
+                return planoDeFotosDasMotos(lote, 1, legendaConfig);
               }
-              // Persiste o que saiu (para a escolha do próximo turno casar).
-              motosApresentadasParaSalvar.push(...lote);
-              return planoDeFotosDasMotos(lote, 1, legendaConfig);
+              // Fila só com motos já mostradas → cai no mecanismo normal (busca/refino).
             }
             // MECANISMO (pergunta dirigida): roda quando o pedido não casou nenhuma
             // moto do catálogo OU quando há moto atual E a mensagem sugere querer

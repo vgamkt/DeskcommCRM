@@ -69,6 +69,14 @@ describe('fechamento por MODELO ESPECÍFICO (dono, 2026-10-16)', () => {
       expect(perguntaDeOutrosNoModelo({ modelo: 'Biz 125', categoria: 'Scooter', variacao: i })).not.toBe('');
     }
   });
+
+  it('SEM modelo citado não duplica "essa" ("é a única essa que tenho")', () => {
+    for (let i = 0; i < 4; i++) {
+      const p = perguntaDeOutrosNoModelo({ modelo: null, categoria: 'Street', variacao: i });
+      expect(p).not.toMatch(/única essa|essa essa|essa\s+essa/i);
+      expect(p).toMatch(/\?/);
+    }
+  });
 });
 
 describe('introducaoFactualDaApresentacao (ESCOPO 12)', () => {

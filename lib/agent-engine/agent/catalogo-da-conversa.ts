@@ -763,3 +763,24 @@ export async function motoEscolhidaPeloClienteComJev(
   });
   return deterministica;
 }
+
+/**
+ * Remove da FILA do "ver mais" as motos que já foram detalhadas/apresentadas.
+ *
+ * O "ver mais" consome a fila sem repetir (regra do dono). Quando o cliente
+ * escolhe uma moto da fila, o álbum dela sai e ela entra em `detalhadas` — mas
+ * continuava em `pendentes` e voltava no próximo "quero ver mais opções"
+ * (medido no teste pesado 2026-10-22: CB 300 R 2011 reapareceu).
+ *
+ * Puro: dedupe por identidade (nome normalizado), sem olhar conteúdo de texto.
+ */
+export function tirarJaDetalhadasDaFila(
+  fila: FilaDeOpcoes,
+  detalhadas: readonly string[],
+): FilaDeOpcoes {
+  const vistas = new Set(detalhadas.map(normalizarNomeDeMoto));
+  return {
+    ...fila,
+    pendentes: fila.pendentes.filter((m) => !vistas.has(normalizarNomeDeMoto(m.nome))),
+  };
+}

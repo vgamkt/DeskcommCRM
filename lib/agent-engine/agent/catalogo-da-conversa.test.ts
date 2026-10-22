@@ -8,6 +8,7 @@ import {
   motoEscolhidaPeloCliente,
   salvarCatalogoDaConversa,
   temReferenciaAMoto,
+  tirarJaDetalhadasDaFila,
 } from './catalogo-da-conversa';
 
 const CB300: MotoDoCatalogo = {
@@ -419,5 +420,19 @@ describe('albumDaMotoJaFoiEnviado', () => {
         { nome: 'Neo 125 UBS' },
       ),
     ).toBe(true);
+  });
+});
+
+describe('tirarJaDetalhadasDaFila', () => {
+  it('remove da fila a moto já detalhada — o "ver mais" não repete', () => {
+    const fila = { marcas: ['honda'], categorias: [], pendentes: [CB300, TWISTER] };
+    const r = tirarJaDetalhadasDaFila(fila, ['cb 300']);
+    expect(r.pendentes.map((m) => m.nome)).toEqual(['CB 300 F Twister']);
+    expect(r.marcas).toEqual(['honda']);
+  });
+
+  it('preserva a fila quando nada foi detalhado', () => {
+    const fila = { marcas: [], categorias: [], pendentes: [CB300, TWISTER] };
+    expect(tirarJaDetalhadasDaFila(fila, []).pendentes).toHaveLength(2);
   });
 });
