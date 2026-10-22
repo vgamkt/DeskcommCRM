@@ -241,7 +241,11 @@ import { dadosDoModeloNaReferencia } from './categoria-da-referencia';
 import { categoriaDoModeloComJev } from './modelo-categoria-jev';
 import { CanalComBuffer } from './canal-com-buffer';
 import { unificarPecasDoTurno } from './juncao-do-turno';
-import { ajustarFechoDoTurnoDeCatalogo, garantirFechoNoFinal } from './fecho-do-turno';
+import {
+  ajustarFechoDoTurnoDeCatalogo,
+  garantirFechoNoFinal,
+  removerPerguntaDaChamada,
+} from './fecho-do-turno';
 import { deveReTentarTurnoPorEnvio } from './re-tentativa-de-envio';
 import { decidirPerguntaDoFluxoComJev } from './pergunta-do-fluxo-jev';
 import { casaPerfil, filtrarPorExigencias, hipotesesDeMaiorNota, mencionaMoto, pedeMotoExplicito, pedePrecoSemValor, pontuarPorCriterios, querAlternativa, querMaisOpcoes, querMoto, selecionarPorIntencao } from './selecao-por-intencao';
@@ -3763,6 +3767,8 @@ async function executarTurnoDoAgente(
     // Estimativa determinística: a Jev refina isto na ação da negociação (mesma chamada).
     clienteConfirmouOpcoes: (negociacaoAnterior?.attempts ?? 0) >= 3 && confirmouVerAberto,
     motivoObjecaoAnterior: catalogoDaConversa.objecao?.motivo ?? null,
+    // Quantas objeções ANTES deste turno — a JEV só libera "outra_opcao" na 3ª+.
+    tentativasDeObjecao: catalogoDaConversa.objecao?.tentativas ?? 0,
     // Já perguntamos "quer ver mais?" e há opções na fila — a Jev decide OFERECER
     // quando o cliente confirma o convite ("sim"/"pode"/"quero").
     temOpcoesPendentes: (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0,
@@ -6442,6 +6448,12 @@ async function executarTurnoDoAgente(
             if (cfg?.pergunta_separada === false) {
               introducao = [introducao, final].filter((s) => s.trim() !== '').join('\n\n');
               final = '';
+            } else {
+              // A CHAMADA não leva pergunta: qualquer "?" aqui sairia ANTES das
+              // fotos (medido no pesado 2026-10-22: "me diz de qual cidade você
+              // é?" no meio da chamada). A pergunta certa (fecho/fluxo) sai DEPOIS
+              // das fotos, no `final`.
+              introducao = removerPerguntaDaChamada(introducao);
             }
             // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
             // ignora com frequência). Só quando o filtro deixou motos parecidas de

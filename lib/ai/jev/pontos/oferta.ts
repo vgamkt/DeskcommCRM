@@ -58,6 +58,11 @@ export interface ContextoDeOferta {
   /** Tipo da objeção anterior, se houver (contexto para a Jev). */
   motivoObjecaoAnterior: string | null;
   /**
+   * Quantas vezes o cliente já reclamou de valor/ano/km ANTES deste turno.
+   * Regra do dono: "outra_opcao" (outra fabricante) só depois de 3 negativas.
+   */
+  tentativasDeObjecao?: number;
+  /**
    * A mensagem deste turno é a RESPOSTA a um campo do fluxo de atendimento
    * (nome/cidade/CNH/CPF/…)? Um "sim"/"tenho"/nome respondendo ao fluxo NÃO é
    * confirmação do convite "quer ver mais?" — medido 2026-10-21: "Tenho sim"
@@ -184,7 +189,9 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         'Vamos MOSTRAR motos. Qual a MELHOR pergunta de fecho para ESTE momento? ' +
         '- "escolha": perguntar QUAL moto chamou mais a atenção — use quando há MAIS DE UMA opção na apresentação. ' +
         '- "saber_mais": convidar a saber mais sobre a moto / ver de perto — use quando é UMA moto só (ex.: o cliente pediu um MODELO específico). ' +
-        '- "outra_opcao": oferecer CONSULTAR outras opções do MESMO segmento/tipo de OUTRA fabricante — use SÓ quando já houve recusa/objeção e comparar ajuda. ' +
+        '- "outra_opcao": oferecer CONSULTAR outras opções do MESMO segmento/tipo de OUTRA fabricante — use SÓ com a objeção ESGOTADA (3ª negativa ou mais). ' +
+        `Objeções anteriores (antes deste turno): ${ctx.tentativasDeObjecao ?? 0}. ` +
+        'Na 1ª/2ª objeção, com moto escolhida, prefira "saber_mais" (conduzir à aquisição) — NÃO "outra_opcao". ' +
         // A apresentação NÃO pode terminar sem pergunta. "nenhum" deixou um turno
         // real (19/10) terminar em frase afirmativa ("Dá uma olhada e me diz…") e a
         // conversa morrer. Não é opção quando motos vão ser mostradas.
@@ -193,7 +200,7 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
       criteria: {
         escolha: 'perguntar QUAL delas chamou mais a atenção (há MAIS DE UMA moto)',
         saber_mais: 'convidar a saber mais / ver de perto (UMA moto só)',
-        outra_opcao: 'oferecer outra opção do MESMO segmento de OUTRA fabricante (houve recusa/objeção)',
+        outra_opcao: 'oferecer outra opção do MESMO segmento de OUTRA fabricante (SÓ com a objeção esgotada: 3ª+)',
       },
     },
     // TROCA DE INTERESSE — decisão da JEV (doutrina `jev-decide-sempre`). Só quando

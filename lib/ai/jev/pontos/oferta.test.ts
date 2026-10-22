@@ -68,6 +68,15 @@ describe('offer_motos Jev', () => {
     ).toBe('nenhum');
   });
 
+  it('FECHO: "outra_opcao" só com a objeção ESGOTADA (3ª+); 1ª/2ª pede saber_mais', () => {
+    const p = perguntaDeOfertaJev({ ...ctx, tentativasDeObjecao: 0 });
+    const instr = p.fecho?.type === 'choice' ? p.fecho.instructions : '';
+    expect(instr).toContain('ESGOTADA');
+    expect(instr).toContain('3ª');
+    expect(instr).toContain('saber_mais');
+    expect(instr).toContain('Objeções anteriores');
+  });
+
   it('USO/TERRENO e estilo contam como critério (não perguntar vago)', () => {
     const instr = perguntaDeOfertaJev(ctx).oferta?.instructions ?? '';
     expect(instr).toMatch(/USO\/TERRENO/i);

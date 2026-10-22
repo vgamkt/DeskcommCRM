@@ -158,3 +158,25 @@ export function garantirFechoNoFinal(final: string, pergunta: string): string {
   );
   return corte >= 0 ? `${t.slice(0, corte + 1).trim()}\n${p}` : p;
 }
+
+/**
+ * Tira da CHAMADA a oração interrogativa (pergunta que sairia ANTES das fotos).
+ *
+ * Corta na última pergunta e volta até o separador forte anterior (`.`/`!`/`\n`/`:`/`;`),
+ * preservando a chamada que vem antes. Se não há separador (pergunta já no começo),
+ * NÃO mexe — para não comer a chamada inteira (saudação interrogativa é exceção).
+ * Estrutural: não olha o conteúdo da pergunta.
+ */
+export function removerPerguntaDaChamada(introducao: string): string {
+  const t = introducao.trim();
+  const i = t.lastIndexOf('?');
+  if (i < 0) return t;
+  const corte = Math.max(
+    t.lastIndexOf('.', i),
+    t.lastIndexOf('!', i),
+    t.lastIndexOf('\n', i),
+    t.lastIndexOf(':', i),
+    t.lastIndexOf(';', i),
+  );
+  return corte < 0 ? t : t.slice(0, corte).trim();
+}

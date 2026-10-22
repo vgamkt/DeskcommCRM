@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { ajustarFechoDoTurnoDeCatalogo, garantirFechoNoFinal } from './fecho-do-turno';
+import {
+  ajustarFechoDoTurnoDeCatalogo,
+  garantirFechoNoFinal,
+  removerPerguntaDaChamada,
+} from './fecho-do-turno';
 
 describe('garantirFechoNoFinal', () => {
   it('SUBSTITUI a pergunta do modelo que não é fecho pela pergunta da JEV', () => {
@@ -25,6 +29,26 @@ describe('garantirFechoNoFinal', () => {
 
   it('pergunta de fecho vazia não mexe no texto', () => {
     expect(garantirFechoNoFinal('Separei 2 opções.', '  ')).toBe('Separei 2 opções.');
+  });
+});
+
+describe('removerPerguntaDaChamada', () => {
+  it('tira a pergunta do fluxo da CHAMADA e preserva a chamada que vem antes', () => {
+    const intro =
+      'A Lander 250 não temos no momento, mas separei 5 opções trail: Ah, e me diz de qual cidade você é? Assim já vejo o que faz mais sentido.';
+    const r = removerPerguntaDaChamada(intro);
+    expect(r).toContain('separei 5 opções');
+    expect(r).not.toContain('de qual cidade');
+    expect(r).not.toContain('?');
+  });
+
+  it('sem pergunta, não mexe', () => {
+    expect(removerPerguntaDaChamada('Separei 5 opções trail.')).toBe('Separei 5 opções trail.');
+  });
+
+  it('pergunta logo no começo (saudação): não come a chamada inteira', () => {
+    const intro = 'Tudo bem? Separei 5 opções trail pra você.';
+    expect(removerPerguntaDaChamada(intro)).toBe(intro.trim());
   });
 });
 
