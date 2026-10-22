@@ -5968,6 +5968,10 @@ async function executarTurnoDoAgente(
               // modelo citado NÃO está no estoque (ex.: "Lander"), a oferta é pela
               // CATEGORIA — NÃO se estreita pela linha de uma hipótese da Jev.
               nomeiaModelo: nomeiaModeloEspecifico,
+              // GENÉRICO: 1ª mostra = as PRINCIPAIS da JEV; o "ver mais" = o resto
+              // dentro das margens (regra do dono, 2026-10-23).
+              primeirasSomenteHipoteses:
+                !nomeiaModeloEspecifico && hipotesesDoTurno.length > 0,
               // (dono, 2026-10-17) MODELO citado AUSENTE: a referência deu a cilindrada
               // REAL — ela FILTRA (mesmo porte), tirando a CB 650 de um pedido de CB 250.
               ...(colCilindradaRigida !== null
@@ -6011,9 +6015,22 @@ async function executarTurnoDoAgente(
                 const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
                 // C-106: as que CASARAM e ainda não foram enviadas vão PRIMEIRO na
                 // fila do "quer ver mais?" — depois o mesmo perfil. NUNCA as demais.
-                const casadasNaoEnviadas = selecao.casadas.filter(
-                  (m) => !jaEnviadas.has(m.nome),
-                );
+                const casadasNaoEnviadas = selecao.casadas
+                  .filter((m) => !jaEnviadas.has(m.nome))
+                  // O "ver mais" é "parecidas DENTRO das margens": se há margem
+                  // numérica (ex.: 160 ±30%), a moto tem de caber nela — senão a
+                  // 250 de fora entrava na fila do 160 (regra do dono, 2026-10-23).
+                  .filter((m) =>
+                    Object.keys(faixasSimilaresDoTurno).length === 0
+                      ? true
+                      : filtrarPorExigencias(
+                          [m],
+                          exigidosDoTurno,
+                          hipotesesDoTurno,
+                          faixasSimilaresDoTurno,
+                          cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                        ).length > 0,
+                  );
                 if (modoEstrito) {
                   // C-106 + decisão do dono (2026-10-14 + Escopo 7 2026-10-15): a 1ª oferta
                   // são as que CASAM (até N); o "ver mais" continua por ORDEM DE CASAMENTO.

@@ -37,10 +37,10 @@ export function perguntaDeMaisOpcoes(args: {
   // Junta a ESCOLHA com o convite a ver as demais (dono, 2026-10-16): o "ver mais"
   // não anda sozinho — vem na MESMA pergunta, e deixa claro que são parecidas.
   const opcoes = [
-    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras opções parecidas que temos?',
-    'Alguma dessas te agradou, ou quer que eu te mostre mais opções parecidas que temos?',
-    'Alguma delas é a sua praia, ou prefere ver outras opções parecidas que temos?',
-    'Alguma delas te chamou atenção, ou prefere que eu separe outras opções parecidas que temos?',
+    'Alguma delas chamou mais a sua atenção, ou prefere que eu te mostre outras opções parecidas — inclusive de outras fabricantes?',
+    'Alguma dessas te agradou, ou quer que eu te mostre mais opções parecidas — inclusive de outras fabricantes?',
+    'Alguma delas é a sua praia, ou prefere ver outras opções parecidas — inclusive de outras fabricantes?',
+    'Alguma delas te chamou atenção, ou prefere que eu separe outras opções parecidas — inclusive de outras fabricantes?',
   ];
   return opcoes[v % opcoes.length]!;
 }

@@ -20,11 +20,9 @@ describe('perguntaDeMaisOpcoes', () => {
     expect(a).not.toBe(b); // não é a mesma frase sempre
   });
 
-  it('sem modelo: NUNCA fala de outras marcas/fabricantes', () => {
+  it('sem modelo: convite inclui outras fabricantes (regra do dono, 2026-10-23)', () => {
     for (let i = 0; i < 4; i++) {
-      expect(perguntaDeMaisOpcoes({ variacao: i })).not.toMatch(
-        /outras? marcas?|outras? fabricantes?|outro fabricante|outra marca/i,
-      );
+      expect(perguntaDeMaisOpcoes({ variacao: i })).toMatch(/outras fabricantes/i);
     }
   });
 

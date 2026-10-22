@@ -134,6 +134,13 @@ export interface EntradaSelecaoPorIntencao {
    */
   nomeiaModelo?: boolean;
   /**
+   * A 1ª apresentação de um pedido GENÉRICO mostra as PRINCIPAIS (as que a JEV
+   * marcou como parecidas/hipóteses); o "ver mais" traz as demais dentro das
+   * margens. Sem isto, a 1ª mostra levava o complemento de perfil junto
+   * (medido: "160 vermelha" com 150/125/250).
+   */
+  primeirasSomenteHipoteses?: boolean;
+  /**
    * ESCOPO 9: motos que o cliente JÁ tem em FOCO na conversa (interesse). Com
    * elas + uma faixa numérica (ex.: "e tem alguma até 17 mil?"), a busca COMBINA:
    * interesse ∩ critério — as motos da família em foco que caibam na faixa vêm
@@ -806,8 +813,18 @@ export function selecionarPorIntencao(
         input.nomeiaModelo === true
           ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, hipoteses))
           : casadas;
+      const daHipoteses =
+        input.primeirasSomenteHipoteses === true
+          ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, hipoteses))
+          : [];
       const preferidas =
-        interesse.length > 0 ? interesse : naLinha.length > 0 ? naLinha : casadas;
+        daHipoteses.length > 0
+          ? daHipoteses
+          : interesse.length > 0
+            ? interesse
+            : naLinha.length > 0
+              ? naLinha
+              : casadas;
       preferidos = new Set(preferidas);
       filtrados = preferidas.length;
     }
