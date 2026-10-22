@@ -51,6 +51,12 @@ export function perguntaDeMotoEscolhidaJev(nomes: readonly string[]): PerguntasD
         'marque ESSA (não há outra candidata). ' +
         'Use TODOS os dados de cada candidata (nome, ANO, COR, cilindrada…) para casar com o que o ' +
         'cliente disse — o atributo dinâmico pode ser QUALQUER um ("a 2015", "a preta", "a 300 F"). ' +
+        // Medido 2026-10-22: "Gostei da CB 300 R 2011" → a Jev marcou a CB 300 R FLEX 2015
+        // (mais barata) por causa da objeção. A objeção NÃO autoriza trocar a unidade.
+        'NÃO SUBSTITUA: se a mensagem nomeia a moto + um ATRIBUTO que identifica UMA candidata ' +
+        '("CB 300 R 2011", "a 2015", "a preta", "a 300 F"), marque EXATAMENTE essa — mesmo que ' +
+        'outra parecida seja mais barata ou pareça combater melhor a objeção. Objeção NÃO autoriza ' +
+        'trocar a unidade escolhida. ' +
         'AMBIGUIDADE: se a mensagem aponta para MAIS DE UMA moto da lista — ex.: o cliente diz "gostei da ' +
         '300" e há DUAS 300 (CB 300 R e CB 300 R FLEX), ou "a preta" quando há várias pretas — responda ' +
         '"nenhuma". NÃO escolha uma no lugar dele: é ambíguo e o sistema vai PERGUNTAR qual ele quer. ' +

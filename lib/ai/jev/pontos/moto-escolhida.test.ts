@@ -24,6 +24,14 @@ describe("perguntaDeMotoEscolhidaJev", () => {
     expect(p.instructions).toContain("ÚNICA EM FOCO");
   });
 
+  it('nome + ANO identifica UMA candidata e NÃO pode ser substituída por parecida', () => {
+    const p = perguntaDeMotoEscolhidaJev(['HONDA CB 300 R 2011', 'HONDA CB 300 R FLEX 2015']).moto;
+    if (!p || p.type !== 'choice') throw new Error('esperava choice');
+    expect(p.instructions).toContain('NÃO SUBSTITUA');
+    expect(p.instructions).toContain('CB 300 R 2011');
+    expect(p.instructions).toMatch(/NÃO autoriza trocar/);
+  });
+
   it('escolha + objeção na MESMA frase é ESCOLHA (não "nenhuma")', () => {
     const p = perguntaDeMotoEscolhidaJev(['Honda CB 300 R 2011']).moto;
     if (!p || p.type !== 'choice') throw new Error('esperava choice');
