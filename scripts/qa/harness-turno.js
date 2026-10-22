@@ -156,6 +156,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const enrollments = (
     await db.query('select id, pointer_id, status, current_node_id, updated_at from followup_enrollments where contact_id=$1 order by updated_at desc limit 5', [CONTACT])
   ).rows;
+  // CAMPOS GRAVADOS: a captura contínua grava em `contacts.custom_fields` (nome,
+  // cidade, cnh, moto_interesse…), NÃO em `contact_flow_data`. Sem juntar os dois,
+  // o relatório mostrava `flowData: []` e parecia que o fluxo não capturou nada.
+  const camposGravados = {
+    ...Object.fromEntries(flowData.map((r) => [r.field_key, r.value])),
+    ...(contact && typeof contact.custom_fields === 'object' && contact.custom_fields !== null
+      ? contact.custom_fields
+      : {}),
+  };
 
   console.log(
     JSON.stringify(
@@ -170,6 +179,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         llmCalls: llms,
         jobs,
         flowData,
+        camposGravados,
         enrollments,
       },
       null,
