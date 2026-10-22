@@ -140,6 +140,7 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     principal: {
       type: 'choice',
       instructions:
+        'O cliente pode citar VÁRIAS colunas ao mesmo tempo — marque TODAS em exigidos_<col> (ex.: "Honda vermelha até 20 mil" → marca+cor+preço; "160 vermelha" → cilindrada+cor). ' +
         'O cliente ENFATIZOU explicitamente UMA coluna — separada do nome do modelo? Ex.: "quero mais barata"→preco; "tem que ser Honda" (marca por si)→marca; "quero cinza"→cor; "motos de 250"/"250cc"→cilindrada; "quero uma scooter"→categoria. Se ele citou apenas um MODELO pelo NOME (ex.: "CB 250", "Fazer 250"), responda "nenhum": o nome mistura marca+cilindrada e NENHUM atributo deve dominar. Na dúvida, "nenhum".',
       criteria: criteriaPrincipal,
     },

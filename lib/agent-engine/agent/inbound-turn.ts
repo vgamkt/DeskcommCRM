@@ -269,6 +269,7 @@ import {
   legendaParaExibicao,
   renderBlocoCatalogo,
 } from '@/lib/external-db/catalogo';
+import { FAIXAS_DE_CILINDRADA } from '@/lib/ai/jev/pontos/catalog-criteria';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -5567,6 +5568,43 @@ async function executarTurnoDoAgente(
                   if (ano !== undefined && Number.isFinite(ano)) {
                     faixasDoTurno = { ...faixasDoTurno, ano: { min: ano, max: ano } };
                     if (!exigidosDoTurno.includes('ano')) exigidosDoTurno = [...exigidosDoTurno, 'ano'];
+                  }
+                }
+                // FASE 3 (combinado): cilindrada citada ("160") que a JEV não marcou
+                // é FATO — adiciona o critério. Só sem modelo específico citado (o
+                // modelo já restringe) e com UM número plausível (50–2000). Ex.:
+                // "160 vermelha" → cilindrada + cor.
+                const ccColCombinado = colunasCriterio.find(
+                  (c) => detectarPapelColuna(c) === 'cilindrada',
+                );
+                if (
+                  ccColCombinado !== undefined &&
+                  !exigidosDoTurno.includes(ccColCombinado) &&
+                  motosCitadasPorTokens(mensagemDoTurnoParaJev, estoqueParaIA).length === 0
+                ) {
+                  const ccs = [
+                    ...new Set(
+                      (mensagemDoTurnoParaJev.match(/\b\d{2,4}\b/g) ?? []).map(Number),
+                    ),
+                  ].filter((n) => n >= 50 && n <= 2000);
+                  if (ccs.length === 1) {
+                    const cc = ccs[0]!;
+                    const opcao = FAIXAS_DE_CILINDRADA.find(
+                      (o) =>
+                        o.rotulo !== 'não citou' &&
+                        (o.min === undefined || cc >= o.min) &&
+                        (o.max === undefined || cc <= o.max),
+                    );
+                    if (opcao !== undefined) {
+                      faixasDoTurno = {
+                        ...faixasDoTurno,
+                        [ccColCombinado]: {
+                          ...(opcao.min !== undefined ? { min: opcao.min } : {}),
+                          ...(opcao.max !== undefined ? { max: opcao.max } : {}),
+                        },
+                      };
+                      exigidosDoTurno = [...exigidosDoTurno, ccColCombinado];
+                    }
                   }
                 }
               }
