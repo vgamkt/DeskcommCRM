@@ -9753,7 +9753,11 @@ async function executarTurnoDoAgente(
             corpo: atual.body,
             perguntaDoFluxo: null,
             variacao: pedidosDeOpcoesTurno,
-            temEscolha: catalogoDaConversa.escolhida !== null,
+            // 1 moto apresentada = escolha travada (o álbum dela saiu); o fecho é
+            // o de AQUISIÇÃO — não o "Alguma dessas" (senão saíam duas perguntas,
+            // medido no 09 em 2026-10-23).
+            temEscolha:
+              catalogoDaConversa.escolhida !== null || motosOferecidasNesteTurno.length === 1,
             temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
             outrosNoValor: outrosNoValorNesteTurno,
             umaMoto: nomeModeloEspecificoDoTurno !== '',
