@@ -6917,7 +6917,9 @@ async function executarTurnoDoAgente(
                   temEscolha:
                     catalogoDaConversa.escolhida !== null ||
                     escolhaAlbumJaMostrado ||
-                    escolhidaNesteTurno !== undefined,
+                    escolhidaNesteTurno !== undefined ||
+                    // 1 moto = escolha travada → fecho do CATALOGO (não o fluxo).
+                    motosOferecidasNesteTurno.length === 1,
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
                   umaMoto: nomeModeloEspecificoDoTurno !== '',
@@ -9681,7 +9683,9 @@ async function executarTurnoDoAgente(
                   corpo: unificado,
                   perguntaDoFluxo: pendenteTexto,
                   variacao: pedidosDeOpcoesTurno,
-                  temEscolha: catalogoDaConversa.escolhida !== null,
+                  temEscolha:
+                    catalogoDaConversa.escolhida !== null ||
+                    motosOferecidasNesteTurno.length === 1,
                   temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
                   outrosNoValor: outrosNoValorNesteTurno,
                   umaMoto: nomeModeloEspecificoDoTurno !== '',

@@ -79,6 +79,12 @@ export function perguntaDeMotoEscolhidaJev(
         'cliente disse — o atributo dinâmico pode ser QUALQUER um ("a 2015", "a preta", "a 300 F"). ' +
         // Medido 2026-10-22: "Gostei da CB 300 R 2011" → a Jev marcou a CB 300 R FLEX 2015
         // (mais barata) por causa da objeção. A objeção NÃO autoriza trocar a unidade.
+        // (dono, 2026-10-23) TROCA EXPLÍCITA de escolha: "na verdade prefiro a NMax"
+        // deve marcar a NOVA — o "NÃO SUBSTITUA" acima vale para unidade/objeção,
+        // não para o cliente dizer que mudou de moto.
+        'MUDANÇA DE ESCOLHA: se o cliente DIZ que trocou ("na verdade prefiro a X", ' +
+        '"mudei de ideia, quero a Y", "deixa, a Z", "não, prefiro a W") e cita UMA moto, ' +
+        'marque a NOVA moto. A escolha anterior NÃO conta nesse caso. ' +
         'NÃO SUBSTITUA: se a mensagem nomeia a moto + um ATRIBUTO que identifica UMA candidata ' +
         '("CB 300 R 2011", "a 2015", "a preta", "a 300 F"), marque EXATAMENTE essa — mesmo que ' +
         'outra parecida seja mais barata ou pareça combater melhor a objeção. Objeção NÃO autoriza ' +
