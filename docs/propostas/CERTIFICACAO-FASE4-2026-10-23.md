@@ -143,3 +143,18 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - **Revertido** (`34080845`): volta o `!temMidia` (não une textos quando há foto). Ordem texto→fotos→pergunta **preservada**.
 - **Resultado no re-probe:** 02 = um bloco (o modelo já avisa "não tenho a 400; tenho uma Himalayan") → foto → aquisição ✅; 03 = um bloco (sem "DE 30") → fotos → fecho ✅.
 - **Nota:** o 02 pode voltar a dois blocos se o modelo NÃO avisar ("Temos sim…"). Aí o aviso do motor entra; é o caso cosmético conhecido. A ordem nunca é sacrificada.
+
+## Certificação final — 2026-10-24
+
+### Alerta ao administrador (falha de crédito/queda) — INTACTO
+- Gatilho: no turno resiliente, ao **esgotar as tentativas** (`aoEsgotar`) → `enviarHandoffPorLentidao` (usa a regra central `failure_alerts`: número que envia + número que recebe) → **mensagem no WhatsApp ao administrador**.
+- Teste `handoff-por-lentidao.test.ts`: **3/3 passando**. Arquivo **não tocado** pelos commits desta frente. Suíte completa verde (baseline).
+
+### Ordem texto→fotos→pergunta — PRESERVADA
+- 03/04: texto → fotos → **fecho** ("Alguma dessas…?") ✅.
+- 02: aviso + "temos a 450" (conteúdo certo) → foto → aquisição ✅; porém em **2 blocos** (cosmético).
+- Tentativas de juntar os blocos com foto (`b6abef4c`, `ebd7c715`) **revertidas**: a primeira jogava o fecho antes das fotos; a segunda derrubava o fecho. Ordem/fecho têm prioridade.
+
+### Estado
+- Deploy `30750281`; suíte do mesmo código (`07dc9130`): **9347/19** (as 19 de guarda/ambiente).
+- Único ponto aberto: **02 em 2 blocos** (modelo ausente sem aviso do modelo) — cosmético; não afeta filtro/fotos/fecho/ordem.
