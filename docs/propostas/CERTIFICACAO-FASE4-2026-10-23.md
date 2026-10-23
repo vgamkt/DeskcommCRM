@@ -131,3 +131,9 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - **Himalayan:** BD externo `motos` id 46 renomeado **"Hymalayan 400" → "Himalayan 450"** (cc 451 é a real do 450; ano 2026). Backup: `/root/backups/hymalayan-antes-20261023-202435.csv`.
   - Probe: "Himalayan 450" → a 450 ✅; "Himalayan 400" → não tem 400, oferece a 450 (parecida) ✅.
 - **Cosmético (não corrigido):** no caminho de **modelo ausente/parecidas**, o aviso do motor ("Não temos a …") + a introdução do modelo podem sair **em dois blocos** (ex.: "Não temos a DE 30…" / "Boa tarde!… Tenho sim…"). Não afeta o filtro/fotos; é texto do modelo/aviso.
+
+## Aviso de parecidas (deploy `bfac42b6`)
+
+- **"DE 30" corrigido:** o `modeloCitadoAusente` só aceita termo com **token de modelo** (não preposição: "de 30" não vira modelo). Probe "potência de 30 cv" → sem "Não temos a DE 30" ✅.
+- **Aviso colado na introdução:** passou a entrar **depois** da separação texto/final (`avisoParecidas` no `enviarApresentacao`), no mesmo parágrafo.
+- **Ainda cosmético:** no caso **modelo ausente** (ex.: "Himalayan 400"), o aviso ("Não temos a 400… parecidas:") + o texto do modelo ("Temos sim a Himalayan [450]…") ainda podem sair em **dois blocos** — o conteúdo está correto (400 ausente; 450 oferecida); falta só a separação do `separarTextoApresentacao` juntar. Não afeta filtro/fotos.
