@@ -97,3 +97,10 @@ Aprovado pelo dono (1 e 2):
 | "Quero uma 160." | 5 na faixa 126–160 + fecho único ✅ |
 | "Quero uma Honda vermelha até 20 mil." | **CG 160 (17.500)** + álbum + **aquisição única** ✅ (CB 300 fora) |
 | Escolha ("Gostei da CG 160.") | aquisição (pagamento) ✅ |
+
+## Fotos: 1 na apresentação, álbum na escolha/troca (deploy `b5194b50`)
+
+- **Apresentação = 1 foto por moto SEMPRE** (inclusive 1 moto). Antes, 1 moto na 1ª mandava o álbum inteiro (o 09 saiu com 10 fotos).
+- **Escolha = álbum inteiro** da escolhida; **troca explícita** ("na verdade prefiro a NMax") = **nova escolha** → álbum da nova (prompt da JEV + `escolhidaNesteTurno`).
+- Probe: 09 = 1 foto; "Gostei da CG 160" = 10 fotos; "Na verdade prefiro a NMax" = **11 fotos da NMax** ✅.
+- **Pendência conhecida:** no caso de **1 moto** pelo caminho do `enviarApresentacao` (40v1), o fecho ainda pode sair com a pergunta do **fluxo** ("só pra eu entender…") em vez do catálogo. No 09 (outro caminho) saiu catálogo/aquisição. É o mesmo subsistema de fluxo; não mexi mais (pedido do dono: parar).
