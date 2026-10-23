@@ -6626,6 +6626,11 @@ async function executarTurnoDoAgente(
               // também sai da chamada — a pergunta oficial sai depois das fotos.
               introducao = removerPedidoDoCampoDaChamada(introducao, campoPendente);
             }
+            // (dono, 2026-10-23) A INTRODUÇÃO não leva pergunta: o modelo às vezes
+            // copia a do FLUXO ("só pra eu entender: como pretende adquirir…?").
+            // Tira daqui; o fecho do turno (catálogo/mais opções) é reposto DEPOIS
+            // das fotos. Medido no 05/40v1 (1 moto).
+            if (itens.length > 0) introducao = removerPerguntasDoModelo(introducao);
             // A contagem citada é a das fotos DESTA etapa (a JEV nao decide numero):
             // 1a = total da 1a; "ver mais" = so as novas.
             introducao = ajustarContagemDaApresentacao(
