@@ -769,6 +769,6 @@ export function renderBlocoCatalogo(m: CatalogoMapeamento | null): string {
     // O motor envia as fotos sozinho (uma por moto escolhida). O modelo não sabe
     // quantas serão — então a abertura NÃO deve cravar um número, senão o texto
     // ("separei a CB 300") não bate com as fotos enviadas (medido ao vivo).
-    `Ao oferecer motos, NUNCA cite quantidade no texto (nem "2 opções", nem "mais 2", nem "separei 3"): o SISTEMA envia 1 foto por moto escolhida (hoje até ${m.similaresQtd ?? 3}) e o texto não pode prometer mais do que as fotos mostram. Diga "algumas opções", "essa e mais algumas" ou "essa e outras parecidas".`,
+    `Ao oferecer motos, a quantidade citada é a DESTA etapa: o SISTEMA envia 1 foto por moto escolhida (hoje até ${m.similaresQtd ?? 3}) e, no "ver mais", conta só as NOVAS — nunca o total da fila.`,
   ].join('\n');
 }

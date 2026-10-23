@@ -225,12 +225,11 @@ describe('renderBlocoCatalogo', () => {
     expect(bloco).toContain('contem');
   });
 
-  it('instrui a não cravar o número de motos na abertura (texto bate com as fotos)', () => {
+  it('instrui que a quantidade citada é a da etapa (texto bate com as fotos)', () => {
     const bloco = renderBlocoCatalogo({ ...BASE, similaresQtd: 3 });
-    expect(bloco).toContain('algumas opções');
+    expect(bloco).toContain('DESTA etapa');
     expect(bloco).toContain('até 3');
-    expect(bloco).toMatch(/NUNCA cite quantidade/);
-    expect(bloco).toContain('mais 2');
+    expect(bloco).toContain('conta só as NOVAS');
   });
 });
 

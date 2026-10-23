@@ -335,6 +335,45 @@ import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-
  * daqui (+ execute do closure) e `scripts/ops-count-prefix.ts` mede o prefixo
  * real sem precisar de um run. Nada volátil entra aqui, por construção.
  */
+/**
+ * A QUANTIDADE citada na abertura tem de ser a das fotos DESTA etapa.
+ *
+ * (dono, 2026-10-23) Na 1a, "essa e mais uma" = 2 no total; no "ver mais",
+ * "mais 2" = as 2 NOVAS. O motor corrige o numero para o que realmente sai,
+ * sem depender do palpite do modelo.
+ */
+export function ajustarContagemDaApresentacao(
+  texto: string,
+  totalDaEtapa: number,
+  ehVerMais: boolean,
+): string {
+  if (texto.trim() === '' || totalDaEtapa <= 0) return texto;
+  const palavras = ['zero', 'uma', 'duas', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez'];
+  const numeroDe = (s: string): number | null => {
+    const n = Number(s.replace(/\./g, ''));
+    if (Number.isFinite(n)) return n;
+    const i = palavras.indexOf(s.toLowerCase());
+    return i >= 0 ? i : null;
+  };
+  const palavraDe = (n: number): string => (n >= 0 && n <= 10 ? palavras[n]! : String(n));
+  return texto.replace(
+    /\b(mais\s+)?(\d{1,2}|uma|duas|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\s+(opç(?:ão|ões)|opcoes|motos?|motinhas?)\b/gi,
+    (trecho, mais: string | undefined, num: string, substantivo: string) => {
+      const atual = numeroDe(num);
+      if (atual === null) return trecho;
+      // "mais N" na 1a = N ALEM da que o cliente ja ve; no "ver mais" = as N novas.
+      const esperado =
+        mais !== undefined ? (ehVerMais ? totalDaEtapa : Math.max(totalDaEtapa - 1, 0)) : totalDaEtapa;
+      if (atual === esperado) return trecho;
+      const opcao = /^opç/i.test(substantivo);
+      const motinha = /^motinha/i.test(substantivo);
+      const singular = opcao ? 'opção' : motinha ? 'motinha' : 'moto';
+      const plural = opcao ? 'opções' : motinha ? 'motinhas' : 'motos';
+      return `${mais !== undefined ? 'mais ' : ''}${palavraDe(esperado)} ${esperado === 1 ? singular : plural}`;
+    },
+  );
+}
+
 export const AGENT_TOOL_DEFS = {
   get_lead_context: {
     description:
@@ -6544,6 +6583,11 @@ async function executarTurnoDoAgente(
             // em qualquer chamada/re-run (dedupe pelo ledger). Ver o bloco acima.
             seqApresentacao = BASE_SEQ_APRESENTACAO;
             const cfg = agentConfig?.catalogConfig;
+            // Nº de MOTOS distintas que vao sair (pelas legendas) — usado na
+            // contagem da abertura e no fecho.
+            const motosDistintasApresentacao = new Set(
+              itens.map((i) => i.legenda.trim()).filter((s) => s !== ''),
+            ).size;
             let introducao: string;
             let final = '';
             if (cfg?.abertura_sem_citar === false) {
@@ -6570,6 +6614,13 @@ async function executarTurnoDoAgente(
               // também sai da chamada — a pergunta oficial sai depois das fotos.
               introducao = removerPedidoDoCampoDaChamada(introducao, campoPendente);
             }
+            // A contagem citada é a das fotos DESTA etapa (a JEV nao decide numero):
+            // 1a = total da 1a; "ver mais" = so as novas.
+            introducao = ajustarContagemDaApresentacao(
+              introducao,
+              motosDistintasApresentacao,
+              querMaisOpcoes(mensagemDoTurnoParaJev),
+            );
             // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
             // ignora com frequência). Só quando o filtro deixou motos parecidas de
             // fora (temMaisOpcoesNesteTurno). Determinístico, não depende do LLM.
@@ -6579,10 +6630,6 @@ async function executarTurnoDoAgente(
             // ignora com frequência) SÓ quando o MODELO não escreveu o fecho. O fecho
             // por MODELO ESPECÍFICO é escrito pela INTELIGÊNCIA (contexto no prompt),
             // não por frase fixa (dono, 2026-10-16). ESCOPO 9: "outros nesse valor".
-            // Nº de MOTOS distintas que vão sair (pelas legendas) — usado no fecho.
-            const motosDistintasApresentacao = new Set(
-              itens.map((i) => i.legenda.trim()).filter((s) => s !== ''),
-            ).size;
             if (
               // Saiu moto → SEMPRE fecha, mesmo na continuação do "ver mais"
               // (a JEV pode dizer `nenhum` ali, pois não está "oferecendo" de novo).
