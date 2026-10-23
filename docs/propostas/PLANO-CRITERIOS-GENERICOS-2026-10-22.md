@@ -129,3 +129,9 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 - 1ª mostra: `primeirasSomenteHipoteses` + `hipotesesDeMaiorNota` → **CG 160 + NMax 160** (as principais), validado ao vivo (commit `b1656fbb`; 1653/1653).
 - **Pendência:** no "ver mais", o modelo chamou `crm_offer_similar_motos` (busca de alternativa) e a resposta trouxe **YS Fazer 250/XMax 250/CB 300** — fora da margem de 160. A **fila** (Factor 150/125, dentro da margem) não foi a única fonte.
 - **Correção proposta (precisa de OK):** quando o cliente pedir "ver mais" e houver fila (`opcoes.pendentes`), a ferramenta `crm_offer_similar_motos` deve **deferir à fila** (não marcar `alternativa`, não buscar de novo) e o motor envia **só a fila** (as margens), ignorando `media_urls` do modelo nesse turno.
+
+### Resultado (2026-10-23, deploy `b799273b`)
+- **1ª** ("Quero uma 160 vermelha") → **CG 160 Fan + NMax 160** (principais) ✅
+- **2ª** ("Quero ver mais opções") → **Factor 150 + Factor 125** (vermelhas, dentro de 160 ±30%), na ordem da **maior nota** ✅; sem 250/CB 300.
+- Fila agora **ordenada pela nota** (`ordenarFila`/`pontuarPorCriterios`); `crm_offer_similar_motos` **defere à fila** no "ver mais".
+- Suite completa: 9321 passed; 19 falhas de guarda/ambiente **idênticas sem a mudança** (confirmado com stash).
