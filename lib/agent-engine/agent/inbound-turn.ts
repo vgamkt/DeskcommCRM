@@ -4742,6 +4742,18 @@ async function executarTurnoDoAgente(
               'maiores notas primeiro). NAO busque outras motos; apresente o texto e conduza.',
           };
         }
+        // "Ver mais" SEM fila = nao ha parecidas dentro do perfil/margem. NAO
+        // busca alternativa (era o que mandava BMW/CB 500/Dominar num pedido de
+        // 160). Diz que no momento nao tem outras e conduz (dono, 2026-10-23).
+        if (querMaisOpcoes(mensagemDoTurnoParaJev)) {
+          return {
+            ok: true,
+            instrucao:
+              'Nao ha outras parecidas dentro do perfil/margem nesta etapa. Diga que no momento ' +
+              'nao tem outras opcoes parecidas assim e ofereca ajustar o perfil (cor, valor, ' +
+              'cilindrada). NAO busque nem envie outras motos.',
+          };
+        }
         if (motoAtualDaConversa === null) {
           return {
             ok: false,

@@ -226,6 +226,61 @@ describe("Fase 4 — modelo citado x cilindrada como filtro", () => {
   });
 });
 
+describe("Fase 4 — principal determinística (cc exata)", () => {
+  it('"160 vermelha" com a JEV pontuando a Factor 150 mais alto: 1ª = CG/NMax (160 exatas), NÃO a 150', () => {
+    const r = selecionarPorIntencao({
+      termoBase: "160 vermelha",
+      criterios: {},
+      intencao: "pedido",
+      motoAtual: null,
+      candidatos: ESTOQUE,
+      mapeamento: MAPEAMENTO,
+      filtrarPorComparacao: true,
+      criteriosDinamicos: true,
+      exigenciasRigidas: ["cilindrada"],
+      exigidos: ["cilindrada", "cor"],
+      faixas: { cilindrada: { min: 126, max: 160 }, cor: ["Vermelho"] },
+      principal: "cilindrada",
+      primeirasSomenteHipoteses: true,
+      quantidade: 3,
+      hipoteses: [
+        { nome: "YAMAHA Factor 150 2018", cilindrada: "149,3", marca: "YAMAHA", cor: "Vermelho", score: 0.95 },
+        { nome: "HONDA CG 160 FAN 2022", cilindrada: "160", marca: "HONDA", cor: "Vermelho", score: 0.8 },
+        { nome: "YAMAHA NMax 160 2023", cilindrada: "160", marca: "YAMAHA", cor: "Vermelho", score: 0.78 },
+      ],
+    });
+    expect(nomes(r.motos).sort()).toEqual([
+      "HONDA ADV 160 2024",
+      "HONDA CG 160 FAN 2022",
+      "YAMAHA NMax 160 2023",
+    ]);
+  });
+
+  it('sem cc exata no estoque ("150"), volta para a faixa/hipóteses (não zera)', () => {
+    const r = selecionarPorIntencao({
+      termoBase: "150 vermelha",
+      criterios: {},
+      intencao: "pedido",
+      motoAtual: null,
+      candidatos: ESTOQUE,
+      mapeamento: MAPEAMENTO,
+      filtrarPorComparacao: true,
+      criteriosDinamicos: true,
+      exigenciasRigidas: ["cilindrada"],
+      exigidos: ["cilindrada", "cor"],
+      faixas: { cilindrada: { min: 126, max: 160 }, cor: ["Vermelho"] },
+      principal: "cilindrada",
+      primeirasSomenteHipoteses: true,
+      quantidade: 3,
+      hipoteses: [
+        { nome: "YAMAHA Factor 150 2018", cilindrada: "149,3", marca: "YAMAHA", cor: "Vermelho", score: 0.9 },
+      ],
+    });
+    expect(nomes(r.motos).length).toBeGreaterThan(0);
+    expect(nomes(r.motos)).toContain("YAMAHA Factor 150 2018");
+  });
+});
+
 describe("Fase 4 — parsing numérico do estoque", () => {
   it("aceita vírgula decimal e separador de milhar", () => {
     expect(numeroDaCelula("293,5")).toBe(293.5);

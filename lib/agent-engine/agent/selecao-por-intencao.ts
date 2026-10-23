@@ -813,14 +813,32 @@ export function selecionarPorIntencao(
         input.nomeiaModelo === true
           ? casadas.filter((m) => compartilhaLinhaDoModelo(m.nome, hipoteses))
           : casadas;
+      // (dono, 2026-10-23) A 1ª é DETERMINÍSTICA quando o cliente cita um número:
+      // "160" → só as de cc EXATA (CG/NMax); a 150/125 vão para o "ver mais".
+      // Antes a 1ª dependia da NOTA da JEV (variava entre execuções e trazia a
+      // Factor 150 como principal — medido 2026-10-23). Sem exata (ex.: "150"),
+      // cai na faixa/hipóteses de maior nota.
+      const ccCol = input.mapeamento.colCilindrada;
+      const ccExata =
+        input.primeirasSomenteHipoteses === true && input.nomeiaModelo !== true && ccCol !== null
+          ? alvoNumericoDaColuna(input.termoBase, ccCol)
+          : null;
+      const exatas =
+        ccExata !== null && ccCol !== null
+          ? casadas.filter((m) => {
+              const v = numeroDaCelula(String(m.valores?.[ccCol] ?? ''));
+              return v !== null && Math.abs(v - ccExata) < 0.5;
+            })
+          : [];
       const daHipoteses =
         input.primeirasSomenteHipoteses === true
-          ? // As PRINCIPAIS = as hipóteses de MAIOR NOTA (as parecidas de nota
-            // baixa ficam para o "ver mais"). Sem isto, a 1ª trazia Factor 150/
-            // CB 300 junto dos 160 (medido 2026-10-22).
-            casadas.filter((m) =>
-              compartilhaLinhaDoModelo(m.nome, hipotesesDeMaiorNota(hipoteses)),
-            )
+          ? exatas.length > 0
+            ? exatas
+            : // As PRINCIPAIS = as hipóteses de MAIOR NOTA (as parecidas de nota
+              // baixa ficam para o "ver mais").
+              casadas.filter((m) =>
+                compartilhaLinhaDoModelo(m.nome, hipotesesDeMaiorNota(hipoteses)),
+              )
           : [];
       const preferidas =
         daHipoteses.length > 0
