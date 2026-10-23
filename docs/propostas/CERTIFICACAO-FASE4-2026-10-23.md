@@ -118,5 +118,7 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 ## Contagem "mais duas" (verificado — não é bug)
 - "Separei ela e mais duas vermelhas" = as **2 opções da FILA** (o próximo turno/"ver mais"), não as fotos da 1ª. A 1ª manda **1 foto/moto**; o "ver mais" manda as 2. Bate com a regra "cada etapa manda a quantidade dela".
 
-## Pendência única de código
-- **Fecho de 1 moto no caminho do `enviarApresentacao`** (40v1): o fecho ainda pode vir do **fluxo** ("só pra eu entender…") em vez do catálogo. No 09 (outro caminho) está certo. Precisa de trace do caminho (`send_message` x `planoAutomatico`) para corrigir com segurança.
+## Pendência única de código (atualizada `455d05bb`)
+- **Fecho de 1 moto** em parte dos caminhos (05/40v1): ainda sai a pergunta do **fluxo** ("só pra eu entender…"). Tentei remover as perguntas do texto do modelo (`removerPerguntasDoModelo` no `corpoFinal`) — **não cobriu** esse caminho: a pergunta do fluxo vem do próprio `enviarApresentacao`/`pendenteFecho`, não do texto do modelo.
+- **09/04** saem certos (09 = aquisição do catálogo; 04 = escolha + mais opções).
+- Precisa de trace de execução (`runLog`/`event_log`) do caminho exato do 05/40v1 para corrigir sem risco. **Não mexi mais.**
