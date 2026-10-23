@@ -9744,6 +9744,16 @@ async function executarTurnoDoAgente(
         }
         if (idxUltimoTexto >= 0) {
           const atual = finais[idxUltimoTexto]!;
+          // Se QUALQUER bolha do turno já tem pergunta (o fecho do catálogo já
+          // saiu, inclusive a aquisição de 1 moto), NÃO acrescenta outro — senão
+          // saíam duas perguntas (medido 2026-10-23).
+          const jaTemPerguntaNoTurno = finais.some(
+            (p) =>
+              p.media === undefined &&
+              p.template === undefined &&
+              (p.body ?? '').includes('?'),
+          );
+          if (!jaTemPerguntaNoTurno) {
           // OPÇÃO A (dono, 2026-10-23): o turno da APRESENTAÇÃO fecha com o
           // catálogo (escolha/mais opções). A pergunta do FLUXO (nome/pagamento)
           // fica para o próximo turno. Antes, se ela já estava no texto (com '?'),
@@ -9773,6 +9783,7 @@ async function executarTurnoDoAgente(
               antes: atual.body.slice(0, 120),
               depois: ajuste.corpo.slice(0, 120),
             });
+          }
           }
         }
       }
