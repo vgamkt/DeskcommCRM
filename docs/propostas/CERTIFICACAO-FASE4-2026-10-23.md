@@ -37,3 +37,21 @@
 3. **Contagem x álbum:** decidir a regra (1 foto por moto **ou** álbum com contagem de motos distintas); hoje o texto conta "opções" e o álbum manda N fotos.
 4. **Grounding do texto:** impedir o modelo de citar moto que não está na apresentação (05/09) — validar nomes citados contra as enviadas.
 5. Re-probe dos casos 05/09 + regressão 01/04/10 após o lote.
+
+## Re-probe pós-deploy `6487aad7` (parser + suíte 9340/19 baseline)
+
+| Caso | Resultado |
+|---|---|
+| 01 cor | ✅ 5/5 vermelhas |
+| 04 cc 160 | ✅ 5 dentro de 126–160 (CG/NMax/Factor 150/XTZ 150/XTZ 150 S) |
+| 06 até 20 mil | ✅ 5 ≤ 20.000 |
+| 10 trilha até 25 mil | ✅ 2 trail ≤ 20.000 |
+| **12 "160 vermelha" (1ª)** | ❌ **Factor 150** (vermelha, 149,3) em vez das 160 (CG/NMax); texto "temos uma 160 vermelha" com foto de 150 |
+| **12 "ver mais" (2ª)** | ❌ BMW G 310 GS / CB 500 X / Dominar 400 / Himalayan / FZ 15 — **fora da margem**; a fila estava vazia e caiu na alternativa sem margem |
+
+**Causa:** a 1ª depende da **nota/top da JEV**, que varia entre execuções (ora CG/NMax, ora Factor 150). A 2ª, com fila vazia, cai na `crm_offer_similar_motos` (alternativa) **sem** a margem/âncora.
+
+**Decisão necessária (dono):**
+1. **Principal determinística:** quando o cliente cita um número/cc ("160"), a 1ª = as motos com a **cc exata** (CG/NMax); a 150/125 vão para o "ver mais". (Se não houver exata, usa a faixa.) — elimina a variação da JEV.
+2. **"Ver mais" sem parecidas:** se a fila/margem não tiver opção, responder **"não tenho outras parecidas nesse perfil"** — nunca mandar BMW/CB 500/Dominar (fora da margem).
+3. **Álbum x contagem:** manter "1 moto → todas as fotos" ou 1 foto por moto? (o texto conta "opções", o álbum manda N fotos).
