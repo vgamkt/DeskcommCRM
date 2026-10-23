@@ -5785,7 +5785,18 @@ async function executarTurnoDoAgente(
                 const termo = termosCitados[0] ?? '';
                 // AVISO só quando o termo é MODELO COM NÚMERO ("cb 250", "lander 250") —
                 // palavra solta ("verdade", "trilha") pode ser papo/estilo, não modelo.
-                if (/\s\d/.test(termo)) {
+                // E o 1o token precisa ser de MODELO: "potência de 30" gerava
+                // "modeloCitadoAusente = De 30" e o aviso "Não temos a DE 30"
+                // (dono, 2026-10-23). Stopwords/preposições não são modelo.
+                const primeiroToken = (termo.split(' ')[0] ?? '').toLowerCase();
+                const NAO_E_MODELO = new Set([
+                  'de', 'da', 'do', 'das', 'dos', 'a', 'o', 'as', 'os', 'um', 'uma', 'uns', 'umas',
+                  'e', 'ou', 'com', 'sem', 'para', 'pra', 'por', 'que', 'qual', 'como', 'quero',
+                  'queria', 'moto', 'motos', 'motinha', 'potencia', 'potência', 'cavalos', 'cv', 'cc',
+                  'ate', 'até', 'mais', 'menos', 'bem', 'muito', 'pouco', 'tem', 'tenho', 'temos',
+                  'ha', 'há', 'valor', 'preco', 'preço', 'cor', 'ano',
+                ]);
+                if (/\s\d/.test(termo) && !NAO_E_MODELO.has(primeiroToken)) {
                   modeloCitadoAusente = termo
                     .split(' ')
                     .map((w) =>
@@ -6877,7 +6888,10 @@ async function executarTurnoDoAgente(
                 )
               ) {
                 avisoParecidasInserido = true;
-                corpoFinal = `Não temos a ${modeloCitadoAusente} exatamente no estoque agora — separei estas opções parecidas:\n\n${corpoFinal}`;
+                // Mesmo PARÁGRAFO do texto do modelo (antes o `\n\n` virava um bloco
+                // separado: aviso + introdução do modelo em duas mensagens — dono,
+                // 2026-10-23).
+                corpoFinal = `Não temos a ${modeloCitadoAusente} exatamente no estoque agora — separei estas opções parecidas: ${corpoFinal}`;
               }
               const pendenteFecho =
                 fluxoAtendimento !== null ? fluxoAtendimento.situacao.pendentes[0] : undefined;
