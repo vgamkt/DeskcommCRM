@@ -55,3 +55,18 @@
 1. **Principal determinística:** quando o cliente cita um número/cc ("160"), a 1ª = as motos com a **cc exata** (CG/NMax); a 150/125 vão para o "ver mais". (Se não houver exata, usa a faixa.) — elimina a variação da JEV.
 2. **"Ver mais" sem parecidas:** se a fila/margem não tiver opção, responder **"não tenho outras parecidas nesse perfil"** — nunca mandar BMW/CB 500/Dominar (fora da margem).
 3. **Álbum x contagem:** manter "1 moto → todas as fotos" ou 1 foto por moto? (o texto conta "opções", o álbum manda N fotos).
+
+## Correção aplicada (commit/deploy `1dabe8e7`)
+
+Aprovado pelo dono (1 e 2):
+1. **Principal determinística pela cc exata.** "160" → só as de `cilindrada` exata (CG/NMax); a 150/125 vão para o "ver mais". Sem exata (ex.: "150"), volta para a faixa/hipóteses.
+2. **"Ver mais" sem fila → não busca alternativa.** A ferramenta responde que não há parecidas no perfil/margem; nunca manda BMW/CB 500/Dominar.
+
+### Probe final (mesmo contato, 2 turnos + objeção)
+| Turno | Resultado |
+|---|---|
+| 1ª "Quero uma 160 vermelha." | **CG 160 + NMax 160** (2), texto "Separei 2" ✅ |
+| 2ª "Quero ver mais opções." | **Factor 150 + Factor 125** (2), dentro de 160 ±30% ✅ |
+| 3ª "Achei caro." | text-only (as duas já são as mais baratas do perfil), 0 fotos ✅ |
+
+**Nota de método:** o "12v2" anterior (BMW/CB 500/Dominar) foi **artefato do script de probe**, que limpava o contato entre os dois turnos — a conversa perdia o contexto. O 2º turno agora é rodado **no mesmo contato** (`scripts/qa` e `.test-artifacts/2turnos-exata/`).
