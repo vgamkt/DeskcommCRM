@@ -140,3 +140,8 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 - Prompt: **nunca citar quantidade** na abertura (o sistema manda 1 foto por moto).
 - 1ª agora: *"…essa e em mais uma opção vermelha"* (2 fotos — bate) ✅
 - 2ª: *"Separei mais 2 opções"* (2 fotos — bate) ✅
+
+### Contagem por etapa (2026-10-23, deploy `3825ed82`)
+- Regra do dono: a quantidade citada é a **das fotos daquela etapa** (1ª = 1ª; "ver mais" = as novas; e assim por diante).
+- Motor corrige o número em `ajustarContagemDaApresentacao` (1ª: "essa e mais uma" = 2 no total; "ver mais": "mais 2" = as 2 novas).
+- Ao vivo: 1ª = 2 fotos / texto cita as 2; 2ª = 2 fotos / texto cita "essas 2". ✅
