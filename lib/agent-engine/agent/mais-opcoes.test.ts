@@ -115,6 +115,17 @@ describe('comQuantidadeNoTexto (quantificação na apresentação)', () => {
     expect(t).toContain('5 opções');
   });
 
+  it('chamada terminada em ":" é substituída pela abertura com a contagem (sem empilhar)', () => {
+    const t = comQuantidadeNoTexto(
+      'Deixa eu te mostrar mais algumas que separei:',
+      2,
+      { daApresentacao: true },
+    );
+    expect(t).toContain('2');
+    expect(t).not.toMatch(/Deixa eu te mostrar/);
+    expect(t).not.toMatch(/separei.*olha essas/i);
+  });
+
   it('no FECHO, "mais opções" continua sendo FILA e não recebe a contagem', () => {
     const t = 'Alguma delas chamou atenção, ou prefere ver mais opções?';
     expect(comQuantidadeNoTexto(t, 5)).toBe(t);

@@ -150,6 +150,14 @@ export function comQuantidadeNoTexto(
   // fragmento solto (ex.: só uma lista). Se ele JÁ abriu com frase ("Trilha, boa
   // escolha!"), NÃO empilha a abertura na frente (medido ao vivo: ficava truncado).
   if (/[.!?]/.test(t)) return texto;
+  // ":" encerra uma CHAMADA ("Deixa eu te mostrar mais algumas que separei:").
+  // Se o modelo JÁ chamou, a abertura factual SUBSTITUI a fala (com a contagem)
+  // em vez de empilhar outra introdução (medido 2026-10-23).
+  if (/:\s*$/.test(t)) {
+    const jaChamou =
+      /^\s*(deixa eu|vou|vamos|olha|d[áa] uma olhada|separei|selecionei|trouxe|mostrei|juntei|peguei)\b/i.test(t);
+    return jaChamou ? introducaoFactualDaApresentacao(n, opts) : `${introducaoFactualDaApresentacao(n, opts)} ${texto}`;
+  }
   if (/^\s*(oi|ol[áa]|bom dia|boa tarde|boa noite|tudo bem|e a[íi])/i.test(t)) return texto;
   const factual = introducaoFactualDaApresentacao(n, opts);
   return `${factual} ${texto}`;
