@@ -137,3 +137,9 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - **"DE 30" corrigido:** o `modeloCitadoAusente` só aceita termo com **token de modelo** (não preposição: "de 30" não vira modelo). Probe "potência de 30 cv" → sem "Não temos a DE 30" ✅.
 - **Aviso colado na introdução:** passou a entrar **depois** da separação texto/final (`avisoParecidas` no `enviarApresentacao`), no mesmo parágrafo.
 - **Ainda cosmético:** no caso **modelo ausente** (ex.: "Himalayan 400"), o aviso ("Não temos a 400… parecidas:") + o texto do modelo ("Temos sim a Himalayan [450]…") ainda podem sair em **dois blocos** — o conteúdo está correto (400 ausente; 450 oferecida); falta só a separação do `separarTextoApresentacao` juntar. Não afeta filtro/fotos.
+
+## Junção com foto — tentada e REVERTIDA (`34080845`)
+- Tentativa `b6abef4c`: unir os textos também com foto. **Quebrou a ordem** — o fecho ("Me conta…?/alguma dessas…?") foi para **antes** das fotos no 02/03.
+- **Revertido** (`34080845`): volta o `!temMidia` (não une textos quando há foto). Ordem texto→fotos→pergunta **preservada**.
+- **Resultado no re-probe:** 02 = um bloco (o modelo já avisa "não tenho a 400; tenho uma Himalayan") → foto → aquisição ✅; 03 = um bloco (sem "DE 30") → fotos → fecho ✅.
+- **Nota:** o 02 pode voltar a dois blocos se o modelo NÃO avisar ("Temos sim…"). Aí o aviso do motor entra; é o caso cosmético conhecido. A ordem nunca é sacrificada.
