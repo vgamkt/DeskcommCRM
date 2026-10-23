@@ -229,6 +229,8 @@ describe('renderBlocoCatalogo', () => {
     const bloco = renderBlocoCatalogo({ ...BASE, similaresQtd: 3 });
     expect(bloco).toContain('algumas opções');
     expect(bloco).toContain('até 3');
+    expect(bloco).toMatch(/NUNCA cite quantidade/);
+    expect(bloco).toContain('mais 2');
   });
 });
 
