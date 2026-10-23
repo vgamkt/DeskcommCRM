@@ -593,6 +593,31 @@ export function criteriosDaRespostaDeJev(
     }
   }
 
+  // FASE 2b (FATO): PREÇO/KM citados e que a Jev NÃO marcou. "Honda vermelha até
+  // 20 mil" deixava passar a CB 300 de 28.990 (medido 2026-10-23). O número é
+  // FATO; o motor adiciona a coluna e o teto. ANO fica fora (bloqueio/`ano`).
+  if (numerosDoTurno.length === 1) {
+    const numero = numerosDoTurno[0]!;
+    const textoNorm = normalizarNomeDeMoto(mensagem);
+    const falaDeKm = /\b(km|quilometragem|rodad[oa]s?)\b/.test(textoNorm);
+    const falaDePreco = /\b(mil|reais|r\$|ate|valor|preco|orcamento)\b/.test(textoNorm);
+    const temTeto = /\b(ate|menos|maximo|abaixo)\b/.test(textoNorm);
+    const temPiso = /\b(mais|acima|minimo|a partir)\b/.test(textoNorm);
+    if (falaDeKm && numero >= 100) {
+      const kmCol = e.colunas.find((c) => detectarPapelColuna(c) === 'km');
+      if (kmCol !== undefined && !exigidos.includes(kmCol) && faixas[kmCol] === undefined) {
+        faixas[kmCol] = temPiso ? { min: numero } : { max: numero };
+        exigidos.push(kmCol);
+      }
+    } else if (falaDePreco && numero >= 1000) {
+      const precoCol = e.colunas.find((c) => detectarPapelColuna(c) === 'preco');
+      if (precoCol !== undefined && !exigidos.includes(precoCol) && faixas[precoCol] === undefined) {
+        faixas[precoCol] = temPiso ? { min: numero } : { max: numero };
+        exigidos.push(precoCol);
+      }
+    }
+  }
+
   // FASE 1 (critérios genéricos): coluna de TEXTO exigida pela Jev e SEM valor —
   // o motor casa a palavra da mensagem contra os VALORES REAIS do estoque
   // (cor/versão/marca/categoria). Corrige "vermelha" sem inventar: o valor vem do

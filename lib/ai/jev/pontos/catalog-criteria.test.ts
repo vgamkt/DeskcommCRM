@@ -338,6 +338,33 @@ describe('Fase 2 — faixa de coluna NUMÉRICA pela mensagem', () => {
     expect(c.faixas.preco).toEqual({ max: 20000 });
   });
 
+  it('preço: JEV NÃO marcou, mas "até 20 mil" é FATO → adiciona preco + teto', () => {
+    const c = criteriosDaRespostaDeJev(
+      {},
+      { colunas: ['marca', 'preco'], estoque: [] },
+      'Honda vermelha até 20 mil',
+    );
+    expect(c.exigidos).toContain('preco');
+    expect(c.faixas.preco).toEqual({ max: 20000 });
+  });
+
+  it('km: JEV NÃO marcou, mas "até 30 mil km" é FATO → adiciona km + teto', () => {
+    const c = criteriosDaRespostaDeJev(
+      {},
+      { colunas: ['quilometragem'], estoque: [] },
+      'Quero uma moto até 30 mil km',
+    );
+    expect(c.exigidos).toContain('quilometragem');
+    expect(c.faixas.quilometragem).toEqual({ max: 30000 });
+  });
+
+  it('não transforma "160" nem "2024" em preço', () => {
+    const c160 = criteriosDaRespostaDeJev({}, { colunas: ['preco'], estoque: [] }, 'Quero uma 160');
+    expect(c160.exigidos).not.toContain('preco');
+    const cAno = criteriosDaRespostaDeJev({}, { colunas: ['preco'], estoque: [] }, 'Quero uma moto de 2024');
+    expect(cAno.exigidos).not.toContain('preco');
+  });
+
   it('não sobrescreve a faixa que a JEV escolheu', () => {
     const c = criteriosDaRespostaDeJev(
       {
