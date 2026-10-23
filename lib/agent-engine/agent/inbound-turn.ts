@@ -9676,9 +9676,12 @@ async function executarTurnoDoAgente(
     if (canalComBuffer !== null) {
       const pecas = canalComBuffer.pecas();
       const textos = canalComBuffer.pecasDeTexto();
-      const temMidia = pecas.some((p) => p.media !== undefined || p.template !== undefined);
       let finais: readonly ChannelSendInput[] = pecas;
-      if (textos.length >= 2 && !temMidia) {
+      // Junta também quando há FOTO: a apresentação tem intro (texto) → fotos →
+      // fecho; o `unificarPecas` une os textos (ex.: aviso + "Temos sim…") e o
+      // `enviarApresentacao` repõe o fecho DEPOIS das fotos. Antes o `!temMidia`
+      // deixava o aviso + a introdução do modelo em dois blocos (dono, 2026-10-23).
+      if (textos.length >= 2) {
         // A pergunta PENDENTE do roteiro (a que a junção deve preservar e as outras descartar).
         const pendenteDoTurno = atendimento?.situacao.pendentes[0];
         const pendenteTexto =
