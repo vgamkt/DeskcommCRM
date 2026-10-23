@@ -145,3 +145,19 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 - Regra do dono: a quantidade citada é a **das fotos daquela etapa** (1ª = 1ª; "ver mais" = as novas; e assim por diante).
 - Motor corrige o número em `ajustarContagemDaApresentacao` (1ª: "essa e mais uma" = 2 no total; "ver mais": "mais 2" = as 2 novas).
 - Ao vivo: 1ª = 2 fotos / texto cita as 2; 2ª = 2 fotos / texto cita "essas 2". ✅
+
+### Fechamento dos ajustes (2026-10-23, deploy `74c8aaa5`)
+
+Estado ATUAL (substitui as pendências acima):
+- **1ª** = principais (hipóteses de maior nota) ∩ **filtro rígido** — inclusive a **cilindrada citada como fato** (`exigenciasRigidas`, `ccDoPedidoRigida`). "160 vermelha" → **CG 160 + NMax 160**; a CB 300 (hipótese de nota alta) **não entra**.
+- **2ª** ("ver mais") = fila **ordenada pela maior nota ainda não mostrada**, **dentro das margens** (`faixasSimilares`); a ferramenta `crm_offer_similar_motos` **defere à fila** (não busca alternativa). → **Factor 150 + Factor 125**; sem 250/CB 300.
+- **Contagem por etapa**: o motor corrige o número para o das **fotos daquela etapa** (`ajustarContagemDaApresentacao`). 1ª: "Separei 2 opções" (2 fotos); 2ª: "olha essas 2" (2 fotos). ✅
+- **Abertura sem empilhar**: texto do modelo terminado em ":" vira a abertura factual (com a contagem) em vez de duas introduções.
+- Teste desatualizado da trava da pergunta corrigido (`textosDoTurnoParaTrava`).
+
+Probe final (0101, sem Datafy, `74c8aaa5`): 1ª = 2 fotos (CG/NMax) + fecho "outras fabricantes"; 2ª = 2 fotos (Factor 150/125). Contagem e margem OK.
+
+### Decisão de deploy (2026-10-23)
+- **Manter o `subir-sem-testes.sh`** (build na VPS, com preflight/lock/health) — é o caminho comprovado. **Não** migrar para CI/pull-only agora (novos pontos de falha sem ganho de segurança).
+- Ganho seguro: **juntar o lote** e subir **1 deploy**; testes **direcionados** por mudança e **suíte completa 1× por lote**. Suíte completa = 9.349 testes (~25 min); baseline conhecido: **19 falhas de guarda/ambiente** (idênticas sem mudança).
+- Próxima fase: **Fase 4 — certificação** (matriz por coluna/combinação + probes no 0101, evidência salva).
