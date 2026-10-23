@@ -135,3 +135,8 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 - **2ª** ("Quero ver mais opções") → **Factor 150 + Factor 125** (vermelhas, dentro de 160 ±30%), na ordem da **maior nota** ✅; sem 250/CB 300.
 - Fila agora **ordenada pela nota** (`ordenarFila`/`pontuarPorCriterios`); `crm_offer_similar_motos` **defere à fila** no "ver mais".
 - Suite completa: 9321 passed; 19 falhas de guarda/ambiente **idênticas sem a mudança** (confirmado com stash).
+
+### Ajuste da contagem (2026-10-23, deploy `ed3651ab`)
+- Prompt: **nunca citar quantidade** na abertura (o sistema manda 1 foto por moto).
+- 1ª agora: *"…essa e em mais uma opção vermelha"* (2 fotos — bate) ✅
+- 2ª: *"Separei mais 2 opções"* (2 fotos — bate) ✅
