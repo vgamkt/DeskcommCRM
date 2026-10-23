@@ -81,3 +81,19 @@ Aprovado pelo dono (1 e 2):
 - No **09/04** a pergunta do **fluxo** ("me conta uma coisa: como pretende adquirir…" / "Como você se chama?") entra **no lugar** do fecho "mais opções" do catálogo. O filtro está correto; o fecho/ordem é do fluxo.
 - Texto do modelo no 09: "Separei ela e mais duas vermelhas…" com **1 moto** apresentada + álbum (as "mais duas" são a fila do ver-mais). Regra de contagem não cobre "mais duas vermelhas" (só "opções/motos").
 - Álbum: "1 moto → todas as fotos" (regra do dono 2026-10-16) x contagem por opções.
+
+## Fluxo A + fecho único + cc exata sempre (commits `814784c3`…`cd177e39`)
+
+- **Fluxo A (dono):** a apresentação fecha com o **catálogo** (escolha/mais opções); a pergunta do fluxo (nome/pagamento) fica para o **próximo turno** (ou para o turno da escolha).
+- **Fecho único:** o "mais opções" já contém a escolha → não soma outra pergunta; e se **qualquer** bolha do turno já tem pergunta, o fecho final não acrescenta outra.
+- **1 moto apresentada** = escolha travada → fecho de **aquisição** (sem "Alguma dessas" duplicado).
+- **CC exata sempre:** "160" → CG/NMax mesmo quando a JEV volta **sem hipóteses** (antes vinha a Factor 150 como principal).
+
+### Probe final (`cd177e39`)
+| Caso | Resultado |
+|---|---|
+| "Quero uma 160 vermelha." | **CG 160 + NMax 160** + fecho "Alguma delas...?" ✅ |
+| "Quero uma moto vermelha." | 5/5 vermelhas + fecho único ✅ |
+| "Quero uma 160." | 5 na faixa 126–160 + fecho único ✅ |
+| "Quero uma Honda vermelha até 20 mil." | **CG 160 (17.500)** + álbum + **aquisição única** ✅ (CB 300 fora) |
+| Escolha ("Gostei da CG 160.") | aquisição (pagamento) ✅ |
