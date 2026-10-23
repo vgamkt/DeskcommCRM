@@ -9676,10 +9676,9 @@ async function executarTurnoDoAgente(
     if (canalComBuffer !== null) {
       const pecas = canalComBuffer.pecas();
       const textos = canalComBuffer.pecasDeTexto();
+      const temMidia = pecas.some((p) => p.media !== undefined || p.template !== undefined);
       let finais: readonly ChannelSendInput[] = pecas;
-      // Junta também com FOTO: o `montadas` abaixo separa INTRODUÇÃO (antes das
-      // fotos) e FECHO (depois) — ordem texto→fotos→pergunta preservada.
-      if (textos.length >= 2) {
+      if (textos.length >= 2 && !temMidia) {
         // A pergunta PENDENTE do roteiro (a que a junção deve preservar e as outras descartar).
         const pendenteDoTurno = atendimento?.situacao.pendentes[0];
         const pendenteTexto =
@@ -9731,26 +9730,17 @@ async function executarTurnoDoAgente(
                   nomeCliente: effectiveContext.contact.name,
                 }).corpo
               : unificado;
-          // (dono, 2026-10-23) O texto unificado NÃO entra inteiro antes das fotos:
-          // separa INTRODUÇÃO e FECHO; a introdução vai antes das fotos, o fecho
-          // DEPOIS. Antes o fecho ("Me conta…?") ficava antes das fotos.
-          const sepUnificado = separarTextoApresentacao(corpoFinalUnificado, catalogoDoTurno);
-          const corposDoUnificado = (
-            sepUnificado.final !== ''
-              ? [sepUnificado.introducao, sepUnificado.final]
-              : [sepUnificado.introducao]
-          ).filter((b) => b.trim() !== '');
           const primeira = textos[0]!;
           const montadas: ChannelSendInput[] = [];
-          let idxCorpo = 0;
+          let inseriu = false;
           for (const p of pecas) {
             if (p.media !== undefined || p.template !== undefined) {
               montadas.push(p);
               continue;
             }
-            if (idxCorpo < corposDoUnificado.length) {
-              montadas.push({ ...primeira, body: corposDoUnificado[idxCorpo]! });
-              idxCorpo += 1;
+            if (!inseriu) {
+              montadas.push({ ...primeira, body: corpoFinalUnificado });
+              inseriu = true;
             }
           }
           finais = montadas;
