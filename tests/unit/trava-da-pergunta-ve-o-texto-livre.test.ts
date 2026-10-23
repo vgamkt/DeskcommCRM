@@ -11,21 +11,32 @@ import { describe, expect, it } from "vitest";
  * olhava `corposEnviados` (envios por FERRAMENTA), não achou a pergunta, mandou a
  * dela — e o texto do modelo, enviado logo depois, repetiu a MESMA pergunta.
  * Resultado no WhatsApp: a pergunta saiu DUAS vezes no mesmo turno.
+ *
+ * (2026-10-23) A montagem dos textos foi extraída para `textosDoTurnoParaTrava`
+ * (o texto livre só conta quando é ELE que vai sair). O teste passou a conferir
+ * a chamada atual + a regra do helper.
  */
 
-const FONTE = fs.readFileSync(
+const TURNO = fs.readFileSync(
   path.join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
+  "utf8",
+);
+const HELPER = fs.readFileSync(
+  path.join(process.cwd(), "lib/followup/captura-do-fluxo.ts"),
   "utf8",
 );
 
 describe("trava da pergunta do fluxo", () => {
   it("conta o texto livre do modelo como fala do turno", () => {
-    expect(FONTE).toMatch(/const textoLivreDoModelo = \(turn\.result\.text \?\? ''\)\.trim\(\)/);
-    expect(FONTE).toMatch(/const textosDoTurno =/);
-    expect(FONTE).toMatch(/\[\.\.\.corposEnviados, textoLivreDoModelo\]/);
+    expect(TURNO).toMatch(
+      /const textosDoTurno = textosDoTurnoParaTrava\(\s*corposEnviados,\s*turn\.result\.text \?\? '',\s*outcomes\.length > 0,?\s*\)/,
+    );
+    expect(HELPER).toMatch(
+      /livre !== "" && !enviouPelaFerramenta \? \[\.\.\.corposEnviados, livre\] : \[\.\.\.corposEnviados\]/,
+    );
   });
 
   it("passa os textos do turno (não só corposEnviados) para a detecção", () => {
-    expect(FONTE).toMatch(/perguntaSaiuNosTextos\(pergunta, textosDoTurno\)/);
+    expect(TURNO).toMatch(/perguntaSaiuNosTextos\(pergunta, textosDoTurno\)/);
   });
 });

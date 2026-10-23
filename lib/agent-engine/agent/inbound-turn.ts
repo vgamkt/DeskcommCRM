@@ -4689,6 +4689,20 @@ async function executarTurnoDoAgente(
     crm_offer_similar_motos: tool({
       ...AGENT_TOOL_DEFS.crm_offer_similar_motos,
       execute: async () => {
+        // "Ver mais" com FILA pendente = consumir a FILA (maiores notas ainda nao
+        // mostradas), NAO fazer uma busca nova de alternativa (que trazia 250 num
+        // pedido de 160). Regra do dono, 2026-10-23.
+        if (
+          querMaisOpcoes(mensagemDoTurnoParaJev) &&
+          (catalogoDaConversa.opcoes?.pendentes.length ?? 0) > 0
+        ) {
+          return {
+            ok: true,
+            instrucao:
+              'O sistema vai enviar as proximas opcoes da FILA do "ver mais" (ja separadas, ' +
+              'maiores notas primeiro). NAO busque outras motos; apresente o texto e conduza.',
+          };
+        }
         if (motoAtualDaConversa === null) {
           return {
             ok: false,
@@ -6011,6 +6025,18 @@ async function executarTurnoDoAgente(
               // CASAM (parecidas), nunca as "demais" (decisão do dono, 2026-10-11).
               if (selecao.temMaisOpcoes || selecao.casadas.length > 0) {
                 const jaEnviadas = new Set(selecao.motos.map((m) => m.nome));
+                // A FILA do "ver mais" segue a MAIOR NOTA que ainda nao foi mostrada
+                // (regra do dono, 2026-10-23). Antes ela vinha na ordem do estoque.
+                const notaDaFila = (m: MotoDoCatalogo): number =>
+                  pontuarPorCriterios(
+                    m,
+                    hipotesesDoTurno,
+                    faixasDoTurno,
+                    cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                    principalDoTurno,
+                  ).pontos;
+                const ordenarFila = (ms: readonly MotoDoCatalogo[]): MotoDoCatalogo[] =>
+                  [...ms].sort((a, b) => notaDaFila(b) - notaDaFila(a));
                 const perfil = selecao.perfil;
                 const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
                 // C-106: as que CASARAM e ainda não foram enviadas vão PRIMEIRO na
@@ -6070,7 +6096,7 @@ async function executarTurnoDoAgente(
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
-                    pendentes: [...casadasNaoEnviadas, ...parciais],
+                    pendentes: ordenarFila([...casadasNaoEnviadas, ...parciais]),
                   };
                 } else {
                   const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
@@ -6091,7 +6117,7 @@ async function executarTurnoDoAgente(
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
-                    pendentes: [...casadasNaoEnviadas, ...mesmoPerfil],
+                    pendentes: ordenarFila([...casadasNaoEnviadas, ...mesmoPerfil]),
                   };
                 }
                 // ─── FALLBACK DA FILA: as “parecidas que não batem totalmente” ───
