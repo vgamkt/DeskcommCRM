@@ -6601,6 +6601,9 @@ async function executarTurnoDoAgente(
             textoDoModelo: string,
             agrupar: boolean,
             campoPendente: string | null,
+            // Aviso de "parecidas" (modelo citado ausente) colado na INTRODUÇÃO,
+            // DEPOIS da separação texto/final (dono, 2026-10-23).
+            avisoParecidas: string = '',
           ): Promise<ChannelSendResult> => {
             // Reset do contador do bloco: a MESMA apresentação gera os MESMOS seqs
             // em qualquer chamada/re-run (dedupe pelo ledger). Ver o bloco acima.
@@ -6649,6 +6652,7 @@ async function executarTurnoDoAgente(
               motosDistintasApresentacao,
               querMaisOpcoes(mensagemDoTurnoParaJev),
             );
+            if (avisoParecidas !== '') introducao = `${avisoParecidas} ${introducao}`;
             // C-089: o motor GARANTE a pergunta de mais opções (o modelo lite a
             // ignora com frequência). Só quando o filtro deixou motos parecidas de
             // fora (temMaisOpcoesNesteTurno). Determinístico, não depende do LLM.
@@ -6863,6 +6867,7 @@ async function executarTurnoDoAgente(
             // `finalBody` como legenda — NÃO passa por `sendInBubbles` (quebrar uma
             // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
             send: (finalBody: string) => {
+              let avisoParecidasTexto = '';
               corposEnviados.push(finalBody);
               const cfg = agentConfig?.catalogConfig;
               // FECHO DO TURNO (ponto ÚNICO de todos os caminhos): se vamos MOSTRAR
@@ -6891,7 +6896,10 @@ async function executarTurnoDoAgente(
                 // Mesmo PARÁGRAFO do texto do modelo (antes o `\n\n` virava um bloco
                 // separado: aviso + introdução do modelo em duas mensagens — dono,
                 // 2026-10-23).
-                corpoFinal = `Não temos a ${modeloCitadoAusente} exatamente no estoque agora — separei estas opções parecidas: ${corpoFinal}`;
+                // NÃO prependa: a separação confundia o "separei" e mandava a
+                // introdução do modelo em bloco separado. Entra na introdução do
+                // enviarApresentacao (dono, 2026-10-23).
+                avisoParecidasTexto = `Não temos a ${modeloCitadoAusente} exatamente no estoque agora — separei estas opções parecidas:`;
               }
               const pendenteFecho =
                 fluxoAtendimento !== null ? fluxoAtendimento.situacao.pendentes[0] : undefined;
@@ -6983,6 +6991,7 @@ async function executarTurnoDoAgente(
                   corpoFinal,
                   cfg?.foto_por_moto === false,
                   pendenteFecho?.config.label ?? null,
+                  avisoParecidasTexto,
                 );
               }
               // Fotos que o MODELO mandou (`media_urls`, ex.: "mais fotos"):
@@ -6994,6 +7003,7 @@ async function executarTurnoDoAgente(
                   corpoFinal,
                   false,
                   pendenteFecho?.config.label ?? null,
+                  avisoParecidasTexto,
                 );
               }
               return sendInBubbles(corpoFinal, {
