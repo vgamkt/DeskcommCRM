@@ -123,3 +123,11 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - **Trace** (worker stdout): o caso 2 motos já saía certo (o `fecho do turno de catálogo ajustado` + o `trava da pergunta: já houve pergunta no turno — fluxo espera`). No caso **1 moto**, a pergunta do fluxo ficava na **INTRODUÇÃO** do `enviarApresentacao` (texto do modelo), que a limpeza do `corpoFinal` não cobria.
 - **Fix:** na `enviarApresentacao`, quando há fotos, a **introdução** passa por `removerPerguntasDoModelo` — tira qualquer pergunta do texto do modelo (inclusive a do fluxo copiada). O fecho do catálogo é reposto depois das fotos.
 - **Probe (`8a6d7e3f`):** 05 "160 vermelha" = 2 motos (CG/NMax) + "Alguma delas…?" ✅; 09 "Honda vermelha até 20 mil" = CG (1) + **aquisição do catálogo** ✅; 04 = 5 + escolha/mais opções ✅. **Sem a pergunta do fluxo.**
+
+## Pendências de dados/potência — RESOLVIDAS (`b97881d8`)
+
+- **Potência em texto:** `numeroDaCelula` agora lê o **PRIMEIRO número** quando há `cv/hp/rpm` (`12.4 cv @ 7.500 RPM` → 12.4; `~14,2–15,1 cv…` → 14.2). Nome de moto continua não-numérico. Testes: 26 no `similaridade`.
+  - Probe "potência de 30 cv" → 5 motos ~24–34 cv (CB 300 F 30,4 / XMax 24,1 / G 310 34 / CB 300 R 25,4) ✅.
+- **Himalayan:** BD externo `motos` id 46 renomeado **"Hymalayan 400" → "Himalayan 450"** (cc 451 é a real do 450; ano 2026). Backup: `/root/backups/hymalayan-antes-20261023-202435.csv`.
+  - Probe: "Himalayan 450" → a 450 ✅; "Himalayan 400" → não tem 400, oferece a 450 (parecida) ✅.
+- **Cosmético (não corrigido):** no caminho de **modelo ausente/parecidas**, o aviso do motor ("Não temos a …") + a introdução do modelo podem sair **em dois blocos** (ex.: "Não temos a DE 30…" / "Boa tarde!… Tenho sim…"). Não afeta o filtro/fotos; é texto do modelo/aviso.
