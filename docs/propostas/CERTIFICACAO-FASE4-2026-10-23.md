@@ -118,7 +118,8 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 ## Contagem "mais duas" (verificado — não é bug)
 - "Separei ela e mais duas vermelhas" = as **2 opções da FILA** (o próximo turno/"ver mais"), não as fotos da 1ª. A 1ª manda **1 foto/moto**; o "ver mais" manda as 2. Bate com a regra "cada etapa manda a quantidade dela".
 
-## Pendência única de código (atualizada `455d05bb`)
-- **Fecho de 1 moto** em parte dos caminhos (05/40v1): ainda sai a pergunta do **fluxo** ("só pra eu entender…"). Tentei remover as perguntas do texto do modelo (`removerPerguntasDoModelo` no `corpoFinal`) — **não cobriu** esse caminho: a pergunta do fluxo vem do próprio `enviarApresentacao`/`pendenteFecho`, não do texto do modelo.
-- **09/04** saem certos (09 = aquisição do catálogo; 04 = escolha + mais opções).
-- Precisa de trace de execução (`runLog`/`event_log`) do caminho exato do 05/40v1 para corrigir sem risco. **Não mexi mais.**
+## RESOLVIDO — fecho do fluxo na apresentação (`8a6d7e3f`)
+
+- **Trace** (worker stdout): o caso 2 motos já saía certo (o `fecho do turno de catálogo ajustado` + o `trava da pergunta: já houve pergunta no turno — fluxo espera`). No caso **1 moto**, a pergunta do fluxo ficava na **INTRODUÇÃO** do `enviarApresentacao` (texto do modelo), que a limpeza do `corpoFinal` não cobria.
+- **Fix:** na `enviarApresentacao`, quando há fotos, a **introdução** passa por `removerPerguntasDoModelo` — tira qualquer pergunta do texto do modelo (inclusive a do fluxo copiada). O fecho do catálogo é reposto depois das fotos.
+- **Probe (`8a6d7e3f`):** 05 "160 vermelha" = 2 motos (CG/NMax) + "Alguma delas…?" ✅; 09 "Honda vermelha até 20 mil" = CG (1) + **aquisição do catálogo** ✅; 04 = 5 + escolha/mais opções ✅. **Sem a pergunta do fluxo.**
