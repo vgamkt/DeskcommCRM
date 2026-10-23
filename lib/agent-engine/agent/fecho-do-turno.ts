@@ -150,13 +150,22 @@ export function ajustarFechoDoTurnoDeCatalogo(args: {
   //     aquisição — o cliente já decidiu; não se pergunta por mais fotos/opções).
   const mais =
     args.temEscolha !== true && args.temMaisOpcoes === true
-      ? `\n\n${
-          args.outrosNoValor === true
-            ? perguntaDeOutrosNoValor({ modelo: args.modeloCitado ?? null, variacao: v })
-            : perguntaDeMaisOpcoes({ modeloCitado: args.modeloCitado ?? null, variacao: v })
-        }`
+      ? args.outrosNoValor === true
+        ? perguntaDeOutrosNoValor({ modelo: args.modeloCitado ?? null, variacao: v })
+        : perguntaDeMaisOpcoes({ modeloCitado: args.modeloCitado ?? null, variacao: v })
       : '';
-  corpo = corpo === '' ? `${pergunta}${mais}` : `${corpo}\n\n${pergunta}${mais}`;
+  // O convite "mais opções" JÁ contém a escolha ("Alguma delas... ou prefere...?").
+  // Somar a pergunta de escolha antes dele DUPLICAVA ("Qual delas...?" + "Alguma
+  // delas...?"). Uma pergunta só (dono, 2026-10-23).
+  const fechoDoTurno =
+    mais !== ''
+      ? args.outrosNoValor === true
+        ? // "outros modelos nesse valor" NÃO contém a escolha → mantém as duas.
+          `${pergunta}\n\n${mais}`
+        : // O "mais opções" já contém a escolha ("Alguma delas...ou prefere...?").
+          mais
+      : pergunta;
+  corpo = corpo === '' ? fechoDoTurno : `${corpo}\n\n${fechoDoTurno}`;
 
   return { corpo, ajustado: true };
 }
