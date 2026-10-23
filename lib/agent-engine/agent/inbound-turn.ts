@@ -5431,15 +5431,10 @@ async function executarTurnoDoAgente(
             // apresentação do álbum + escolha do álbum = bolhas duplicadas). Sinal:
             // só UMA moto apresentada na conversa e é ELA. (NÃO usar `detalhadas` —
             // esse sinal EXCLUI a moto do casamento da escolha.)
-            const chaveBase = (m: MotoDoCatalogo): string =>
-              normalizarNomeDeMoto(m.valores?.nome ?? m.nome);
-            const unicaApresentada = catalogoDaConversa.motos.length === 1 ? catalogoDaConversa.motos[0]! : null;
-            // Além do caso de UMA moto apresentada, respeita a memória de álbuns já
-            // enviados. Sem isto, com 2+ motos no histórico, a mesma escolha reenviava
-            // todas as fotos em todo turno (medido no teste completo de 2026-10-20).
-            const albumJaSaiu =
-              (unicaApresentada !== null && chaveBase(unicaApresentada) === chaveBase(escolhidaNesteTurno)) ||
-              albumDaMotoJaFoiEnviado(catalogoDaConversa, escolhidaNesteTurno);
+            // A apresentação agora é SEMPRE 1 foto por moto; o álbum só sai na
+            // ESCOLHA. Então "1 moto apresentada" NÃO significa álbum enviado — a
+            // memória real é `detalhadas` (dono, 2026-10-23).
+            const albumJaSaiu = albumDaMotoJaFoiEnviado(catalogoDaConversa, escolhidaNesteTurno);
             if (!albumJaSaiu) {
               // C-086: `fotos_moto_escolhida` da tela (0 = TODAS as fotos da moto).
               return planoDeFotosDasMotos(
@@ -6264,20 +6259,10 @@ async function executarTurnoDoAgente(
                   .split(/[,/]/)[0]!
                   .trim();
               }
-              // Apresentação de SEMELHANTES: 1 foto por moto. Só quando o cliente
-              // pediu um MODELO que EXISTE (e veio 1 unidade) faz sentido mandar
-              // todas as fotos dela — como na escolha. Sem isto, um filtro que
-              // casava 1 só moto mandava as 8 fotos dela com 7 bolhas sem legenda.
-              // UMA moto só (ex.: "tem Biz?") → TODAS as fotos DELA (dono, 2026-10-16).
-              // Com mais de uma, 1 foto por moto (o limite antigo).
-              // NÃO marcamos como "detalhada": esse sinal EXCLUI a moto do
-              // casamento da ESCOLHA (o cliente escolheria a próxima — medido). A
-              // não-repetição do álbum é tratada no caminho da ESCOLHA (abaixo).
-              return planoDeFotosDasMotos(
-                selecao.motos,
-                pedidoDeModeloExistente || selecao.motos.length === 1 ? undefined : 1,
-                legendaConfig,
-              );
+              // APRESENTAÇÃO: 1 foto por moto SEMPRE — inclusive quando só 1 moto
+              // casa ("tem Biz?"). O álbum inteiro é da ESCOLHA (dono, 2026-10-23).
+              // Antes, 1 moto na 1ª mandava todas as fotos (o 09 saiu com 10).
+              return planoDeFotosDasMotos(selecao.motos, 1, legendaConfig);
             }
             // Fallback (comportamento anterior): pedido novo que casa por nome.
             // TETO (skill §6) vale AQUI também: moto citada acima do orçamento não sai.
