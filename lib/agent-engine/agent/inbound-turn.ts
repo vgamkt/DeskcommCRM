@@ -5537,6 +5537,11 @@ async function executarTurnoDoAgente(
             // de classificar.)
             const precisaClassificar = !ehObjecaoMsg && turnoDeCatalogo;
             // A ferramenta de semelhantes já decidiu — não precisa classificar.
+            // Cilindrada citada como FATO ("160") que a JEV não marcou: alem de
+            // virar faixa/exigido, precisa FILTRAR na 1a (senao uma hipotese de
+            // 300 entrava junto dos 160 — medido 2026-10-23). A FILA nao usa esta
+            // lista (ela mantem a margem numerica).
+            let ccDoPedidoRigida: string | null = null;
             if (!ofereceuSimilaresNesteTurno && precisaClassificar && !extraiuCriteriosNesteTurno) {
               // C-107: os CAMPOS DE BUSCA = "Critério da IA" (autoridade). No modo
               // dinâmico é só isso; fora dele, preserva o antigo (soma "Envio"
@@ -5657,6 +5662,7 @@ async function executarTurnoDoAgente(
                         },
                       };
                       exigidosDoTurno = [...exigidosDoTurno, ccColCombinado];
+                      ccDoPedidoRigida = ccColCombinado;
                     }
                   }
                 }
@@ -6027,9 +6033,16 @@ async function executarTurnoDoAgente(
                 !nomeiaModeloEspecifico && hipotesesDoTurno.length > 0,
               // (dono, 2026-10-17) MODELO citado AUSENTE: a referência deu a cilindrada
               // REAL — ela FILTRA (mesmo porte), tirando a CB 650 de um pedido de CB 250.
-              ...(colCilindradaRigida !== null
-                ? { exigenciasRigidas: [colCilindradaRigida] }
-                : {}),
+              ...(() => {
+                const cols = [
+                  ...new Set(
+                    [colCilindradaRigida, ccDoPedidoRigida].filter(
+                      (c): c is string => c !== null,
+                    ),
+                  ),
+                ];
+                return cols.length > 0 ? { exigenciasRigidas: cols } : {};
+              })(),
             });
             // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
             // motor EXECUTA (filtra/ordena). Registra os dois lados.
