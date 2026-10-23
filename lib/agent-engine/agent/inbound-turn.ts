@@ -6893,6 +6893,13 @@ async function executarTurnoDoAgente(
               // ler que vem e não vir nada (skill §1).
               if (!vaiMostrarMotos) {
                 corpoFinal = semAnuncioDeFotos(corpoFinal);
+              } else {
+                // (dono, 2026-10-23) A apresentação fecha com o CATÁLOGO. Tira do
+                // texto do MODELO qualquer pergunta (inclusive a do FLUXO que ele
+                // copiou — "só pra eu entender: como pretende adquirir…?"); o fecho
+                // do catálogo é reposto logo abaixo. Sem isto, no caminho com fotos
+                // a pergunta do fluxo vencia o fecho (medido no 40v1).
+                corpoFinal = removerPerguntasDoModelo(corpoFinal);
               }
               if ((vaiMostrarMotos || (escolhaAlbumJaMostrado && !respondeuCampoDoFluxo)) && (pendenteFecho !== undefined || escolhaAlbumJaMostrado)) {
                 const p = pendenteFecho?.config;
