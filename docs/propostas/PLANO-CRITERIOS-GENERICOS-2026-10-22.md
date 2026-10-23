@@ -108,7 +108,7 @@ Probe da **Fase 3** (0101, sem Datafy, commit `bf96b99b`):
 - Achado de projeto: no **"160 vermelha"** ainda entram 150/125/250. Causa: `ehAtributoDePedido` (`selecao-por-intencao.ts`) **não trata cilindrada/ano/potência como filtro rígido** — de propósito, para "CB 250" (nome de modelo) não virar filtro de cc. Resultado: a cilindrada só **pontua/ordena**; com a cor como único filtro rígido, entram vermelhas de outras cc.
 - Proposta (precisa de OK): quando a cilindrada é pedida **POR SI** (sem modelo citado, ex.: "160", "160 vermelha"), restringir a seleção às **motos que a JEV marcou como parecidas** (hipóteses — ex.: NMax 160/CG 160) e não completar com outros perfis. Mantém o caso "CB 250" (modelo) como está.
 
-**Fases 1, 2 e 3 certificadas.** Próxima: **Fase 4** (matriz de certificação) — ou corrigir o dado do estoque.
+**Fases 1, 2, 3 e 4 certificadas** (Fase 4: ver `CERTIFICACAO-FASE4-2026-10-23.md`).
 
 ## 6. Salvaguardas
 
@@ -160,4 +160,4 @@ Probe final (0101, sem Datafy, `74c8aaa5`): 1ª = 2 fotos (CG/NMax) + fecho "out
 ### Decisão de deploy (2026-10-23)
 - **Manter o `subir-sem-testes.sh`** (build na VPS, com preflight/lock/health) — é o caminho comprovado. **Não** migrar para CI/pull-only agora (novos pontos de falha sem ganho de segurança).
 - Ganho seguro: **juntar o lote** e subir **1 deploy**; testes **direcionados** por mudança e **suíte completa 1× por lote**. Suíte completa = 9.349 testes (~25 min); baseline conhecido: **19 falhas de guarda/ambiente** (idênticas sem mudança).
-- Próxima fase: **Fase 4 — certificação** (matriz por coluna/combinação + probes no 0101, evidência salva).
+- **Fase 4 — certificação:** CONCLUÍDA (matriz de unidade + probes no 0101 + evidência em `.test-artifacts/`; ver `CERTIFICACAO-FASE4-2026-10-23.md`).

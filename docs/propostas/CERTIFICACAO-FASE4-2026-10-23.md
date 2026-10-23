@@ -77,10 +77,10 @@ Aprovado pelo dono (1 e 2):
 - Testes: 3 novos (preço, km, e "160"/"2024" NÃO viram preço) — 35 no ponto.
 - Re-probe (`eb222a9b`): **09** enviou a **CG 160 (17.500)** — CB 300 fora ✅; **06** 5/5 ≤20.000 ✅; **04** 5 dentro de 126–160 ✅; **01** 5/5 vermelhas ✅.
 
-## Pendente (fluxo/texto — decisão do dono)
-- No **09/04** a pergunta do **fluxo** ("me conta uma coisa: como pretende adquirir…" / "Como você se chama?") entra **no lugar** do fecho "mais opções" do catálogo. O filtro está correto; o fecho/ordem é do fluxo.
-- Texto do modelo no 09: "Separei ela e mais duas vermelhas…" com **1 moto** apresentada + álbum (as "mais duas" são a fila do ver-mais). Regra de contagem não cobre "mais duas vermelhas" (só "opções/motos").
-- Álbum: "1 moto → todas as fotos" (regra do dono 2026-10-16) x contagem por opções.
+## Resolvido (histórico — este bloco antes era "Pendente")
+- **Fecho do fluxo no 09/04:** resolvido pelo **Fluxo A** (a apresentação fecha no catálogo; nome/pagamento no próximo turno/turno da escolha). Fecho **único**.
+- **"mais duas vermelhas":** não é erro de contagem — são as **2 opções da fila** (o próximo turno/"ver mais"); a apresentação manda **1 foto por moto** e o "ver mais" manda as 2. Contagem da etapa conferida.
+- **Álbum x contagem:** resolvido — **1 foto/moto na apresentação**; **álbum inteiro na escolha e na troca de escolha**.
 
 ## Fluxo A + fecho único + cc exata sempre (commits `814784c3`…`cd177e39`)
 
