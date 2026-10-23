@@ -140,7 +140,16 @@ export function numeroDaCelula(valor: string): number | null {
     .replace(/r\$/gi, '')
     .replace(/(cm3|cm³|cc|cilindradas?|km|quilometragem|anos?|hp|cv)/gi, '')
     .trim();
-  if (/[a-z]/i.test(limpo)) return null;
+  if (/[a-z]/i.test(limpo)) {
+    // POTÊNCIA em TEXTO ("12.4 cv @ 7.500 RPM", "~14,2–15,1 cv a ~8 000 rpm"):
+    // o número que vale é o PRIMEIRO (dono, 2026-10-23). Sem isto, a potência
+    // ficava null e não filtrava/ordenava nessas unidades.
+    if (/\b(cv|hp|rpm)\b/i.test(t)) {
+      const m = t.match(/\d+(?:[.,]\d+)?/);
+      if (m !== null) return parsePreco(m[0]);
+    }
+    return null;
+  }
   return parsePreco(limpo) ?? parseNumeroSimples(limpo);
 }
 

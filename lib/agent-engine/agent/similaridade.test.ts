@@ -174,6 +174,20 @@ describe('numeroDaCelula — numérico só quando a célula é essencialmente n�
     expect(numeroDaCelula('2021')).toBe(2021);
   });
 
+  it('potência em texto: lê o PRIMEIRO número (cv/hp/rpm)', () => {
+    expect(numeroDaCelula('12.4 cv @ 7.500 RPM')).toBe(12.4);
+    expect(numeroDaCelula('25.4 cv @ 7.500 RPM')).toBe(25.4);
+    expect(numeroDaCelula('~14,2–15,1 cv a ~8 000 rpm')).toBe(14.2);
+    expect(numeroDaCelula('15,4 cv a 8.000 rpm')).toBe(15.4);
+    expect(numeroDaCelula('207 cv')).toBe(207);
+    expect(numeroDaCelula('34 cv')).toBe(34);
+  });
+
+  it('nome de moto com número continua NÃO numérico', () => {
+    expect(numeroDaCelula('Hymalayan 400 Hanle Black')).toBeNull();
+    expect(numeroDaCelula('HONDA CG 160 FAN 2022')).toBeNull();
+  });
+
   it('nome/categoria/marca com letras NÃO é número (era o defeito da BMW)', () => {
     expect(numeroDaCelula('HONDA Biz 125 FLEX 2021')).toBeNull();
     expect(numeroDaCelula('BMW G 310 GS 2022')).toBeNull();
