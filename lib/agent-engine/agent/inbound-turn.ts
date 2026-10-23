@@ -9744,30 +9744,31 @@ async function executarTurnoDoAgente(
         }
         if (idxUltimoTexto >= 0) {
           const atual = finais[idxUltimoTexto]!;
-          // Só quando NÃO há NENHUMA pergunta: se o texto já fecha com pergunta
-          // (turno 02/03), mexer duplicava ("…como pretende pagar? …qual delas?").
-          if (!atual.body.includes('?')) {
-            const ajuste = ajustarFechoDoTurnoDeCatalogo({
-              corpo: atual.body,
-              perguntaDoFluxo: null,
-              variacao: pedidosDeOpcoesTurno,
-              temEscolha: catalogoDaConversa.escolhida !== null,
-              temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
-              outrosNoValor: outrosNoValorNesteTurno,
-              umaMoto: nomeModeloEspecificoDoTurno !== '',
-              formaJaPerguntada,
-              modeloCitado: motoAtualDaConversa?.nome ?? null,
-              nomeCliente: effectiveContext.contact.name,
+          // OPÇÃO A (dono, 2026-10-23): o turno da APRESENTAÇÃO fecha com o
+          // catálogo (escolha/mais opções). A pergunta do FLUXO (nome/pagamento)
+          // fica para o próximo turno. Antes, se ela já estava no texto (com '?'),
+          // o motor desistia do fecho e o fluxo vencia ("como pretende adquirir?"
+          // no lugar do "quer ver mais?" — medido 2026-10-23).
+          const ajuste = ajustarFechoDoTurnoDeCatalogo({
+            corpo: atual.body,
+            perguntaDoFluxo: null,
+            variacao: pedidosDeOpcoesTurno,
+            temEscolha: catalogoDaConversa.escolhida !== null,
+            temMaisOpcoes: temMaisOpcoesNesteTurno || outrosNoValorNesteTurno,
+            outrosNoValor: outrosNoValorNesteTurno,
+            umaMoto: nomeModeloEspecificoDoTurno !== '',
+            formaJaPerguntada,
+            modeloCitado: motoAtualDaConversa?.nome ?? null,
+            nomeCliente: effectiveContext.contact.name,
+          });
+          if (ajuste.corpo !== atual.body) {
+            finais = finais.map((p, i) =>
+              i === idxUltimoTexto ? { ...p, body: ajuste.corpo } : p,
+            );
+            runLog.info('fecho garantido no envio (turno mostrou motos)', {
+              antes: atual.body.slice(0, 120),
+              depois: ajuste.corpo.slice(0, 120),
             });
-            if (ajuste.corpo !== atual.body) {
-              finais = finais.map((p, i) =>
-                i === idxUltimoTexto ? { ...p, body: ajuste.corpo } : p,
-              );
-              runLog.info('fecho garantido no envio (turno mostrou motos)', {
-                antes: atual.body.slice(0, 120),
-                depois: ajuste.corpo.slice(0, 120),
-              });
-            }
           }
         }
       }
