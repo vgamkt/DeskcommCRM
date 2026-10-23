@@ -104,3 +104,19 @@ Aprovado pelo dono (1 e 2):
 - **Escolha = álbum inteiro** da escolhida; **troca explícita** ("na verdade prefiro a NMax") = **nova escolha** → álbum da nova (prompt da JEV + `escolhidaNesteTurno`).
 - Probe: 09 = 1 foto; "Gostei da CG 160" = 10 fotos; "Na verdade prefiro a NMax" = **11 fotos da NMax** ✅.
 - **Pendência conhecida:** no caso de **1 moto** pelo caminho do `enviarApresentacao` (40v1), o fecho ainda pode sair com a pergunta do **fluxo** ("só pra eu entender…") em vez do catálogo. No 09 (outro caminho) saiu catálogo/aquisição. É o mesmo subsistema de fluxo; não mexi mais (pedido do dono: parar).
+
+## Auditoria do estoque externo (2026-10-23, leitura)
+
+Tabela `motos` (vgasistemas_n8n): **26 unidades**.
+
+- **`cilindrada`**: formatos mistos (`293,5`, `149.0 cc`, `649.0 cm3`, `162,7 cc`, `155 cc`) — o `numeroDaCelula` **lê certo** (vírgula decimal + unidades). A **YS Fazer 250** (id 26) já corrigida `149,3`→`249`.
+- **`preco`** (`28990.00`) / **`quilometragem`** / **`ano`**: numéricos, ok.
+- **`potencia`**: ~10 linhas em texto/faixa (`12.4 cv @ 7.500 RPM`, `~14,2–15,1 cv a ~8 000 rpm`, `207 cv`). O parser atual devolve `null` para as com `@`/`a ... rpm` → a **potência não filtra/ordena** nessas unidades. (A potência raramente é critério; correção opcional: extrair o 1º número quando houver `cv/hp/rpm`.)
+- **Nome x cc (não é erro de cc):** `Hymalayan 400` tem cc **451** (modelo 2026 é o **450** — o NOME está "400"); `XRE 190`=184,4; `NMax 160`=155; `CG 160`=162,7; `Dominar 400`=373 — nomes de modelo, cilindradas reais corretas.
+- **Sem** outra `cilindrada`/preço/km/ano errados.
+
+## Contagem "mais duas" (verificado — não é bug)
+- "Separei ela e mais duas vermelhas" = as **2 opções da FILA** (o próximo turno/"ver mais"), não as fotos da 1ª. A 1ª manda **1 foto/moto**; o "ver mais" manda as 2. Bate com a regra "cada etapa manda a quantidade dela".
+
+## Pendência única de código
+- **Fecho de 1 moto no caminho do `enviarApresentacao`** (40v1): o fecho ainda pode vir do **fluxo** ("só pra eu entender…") em vez do catálogo. No 09 (outro caminho) está certo. Precisa de trace do caminho (`send_message` x `planoAutomatico`) para corrigir com segurança.
