@@ -70,3 +70,14 @@ Aprovado pelo dono (1 e 2):
 | 3ª "Achei caro." | text-only (as duas já são as mais baratas do perfil), 0 fotos ✅ |
 
 **Nota de método:** o "12v2" anterior (BMW/CB 500/Dominar) foi **artefato do script de probe**, que limpava o contato entre os dois turnos — a conversa perdia o contexto. O 2º turno agora é rodado **no mesmo contato** (`scripts/qa` e `.test-artifacts/2turnos-exata/`).
+
+## Correção do preço/km como FATO (commit/deploy `eb222a9b`)
+
+- `catalog-criteria.ts` Fase 2b: se a JEV **não marcar** preço/km, mas a mensagem citar ("até 20 mil", "até 30 mil km"), o motor **adiciona** a coluna + o teto. Sem isso, "Honda vermelha até 20 mil" deixava passar a **CB 300 de 28.990** (medido 2026-10-23).
+- Testes: 3 novos (preço, km, e "160"/"2024" NÃO viram preço) — 35 no ponto.
+- Re-probe (`eb222a9b`): **09** enviou a **CG 160 (17.500)** — CB 300 fora ✅; **06** 5/5 ≤20.000 ✅; **04** 5 dentro de 126–160 ✅; **01** 5/5 vermelhas ✅.
+
+## Pendente (fluxo/texto — decisão do dono)
+- No **09/04** a pergunta do **fluxo** ("me conta uma coisa: como pretende adquirir…" / "Como você se chama?") entra **no lugar** do fecho "mais opções" do catálogo. O filtro está correto; o fecho/ordem é do fluxo.
+- Texto do modelo no 09: "Separei ela e mais duas vermelhas…" com **1 moto** apresentada + álbum (as "mais duas" são a fila do ver-mais). Regra de contagem não cobre "mais duas vermelhas" (só "opções/motos").
+- Álbum: "1 moto → todas as fotos" (regra do dono 2026-10-16) x contagem por opções.
