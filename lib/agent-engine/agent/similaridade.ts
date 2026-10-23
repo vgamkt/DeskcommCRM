@@ -53,15 +53,27 @@ export function cilindradaDaMoto(moto: MotoDoCatalogo): number | null {
 }
 
 /** Preço em número ("R$ 28.990,00" / "28990.00" -> 28990). */
+/**
+ * Normaliza um número do estoque. O banco mistura formatos:
+ *  - "17.500,00" / "293,5" → BR (ponto = milhar, vírgula = decimal);
+ *  - "28990.00" / "293.5" → US (ponto = decimal);
+ *  - "30.000" / "1.234.567" → MILHAR sem vírgula (o ponto NÃO é decimal).
+ * Sem a regra de milhar, "30.000" virava 30 (medido na certificação 2026-10-23).
+ */
+function normalizarNumeroDoEstoque(valor: string): string {
+  const limpo = valor.replace(/[^\d.,-]/g, '');
+  if (limpo === '') return '';
+  if (limpo.includes(',')) {
+    return limpo.replace(/\./g, '').replace(',', '.');
+  }
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(limpo)) return limpo.replace(/\./g, '');
+  return limpo;
+}
+
 export function parsePreco(valor: string | undefined): number | null {
   if (valor === undefined) return null;
-  const limpo = valor.replace(/[^\d.,-]/g, '');
-  if (limpo === '') return null;
-  // Formato BR: pontos de milhar + vírgula decimal. Formato US: ponto decimal.
-  const normalizado =
-    limpo.includes(',') && limpo.lastIndexOf(',') > limpo.lastIndexOf('.')
-      ? limpo.replace(/\./g, '').replace(',', '.')
-      : limpo.replace(/,/g, '');
+  const normalizado = normalizarNumeroDoEstoque(valor);
+  if (normalizado === '') return null;
   const n = Number(normalizado);
   return Number.isFinite(n) ? n : null;
 }
@@ -155,12 +167,8 @@ function chaveDeColuna(
 
 /** Número simples ("2021", "300", "160") sem semântica de moeda. */
 function parseNumeroSimples(valor: string): number | null {
-  const limpo = valor.replace(/[^\d.,-]/g, '');
-  if (limpo === '') return null;
-  const normalizado =
-    limpo.includes(',') && limpo.lastIndexOf(',') > limpo.lastIndexOf('.')
-      ? limpo.replace(/\./g, '').replace(',', '.')
-      : limpo.replace(/,/g, '');
+  const normalizado = normalizarNumeroDoEstoque(valor);
+  if (normalizado === '') return null;
   const n = Number(normalizado);
   return Number.isFinite(n) ? n : null;
 }
