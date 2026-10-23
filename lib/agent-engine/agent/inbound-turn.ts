@@ -6041,8 +6041,10 @@ async function executarTurnoDoAgente(
               nomeiaModelo: nomeiaModeloEspecifico,
               // GENÉRICO: 1ª mostra = as PRINCIPAIS da JEV; o "ver mais" = o resto
               // dentro das margens (regra do dono, 2026-10-23).
-              primeirasSomenteHipoteses:
-                !nomeiaModeloEspecifico && hipotesesDoTurno.length > 0,
+              // O numero citado ("160") e FATO: a 1a exata vale mesmo sem
+              // hipoteses da JEV (que as vezes vem vazia — medido 2026-10-23:
+              // "160 vermelha" trouxe a Factor 150 na 1a).
+              primeirasSomenteHipoteses: !nomeiaModeloEspecifico,
               // (dono, 2026-10-17) MODELO citado AUSENTE: a referência deu a cilindrada
               // REAL — ela FILTRA (mesmo porte), tirando a CB 650 de um pedido de CB 250.
               ...(() => {
