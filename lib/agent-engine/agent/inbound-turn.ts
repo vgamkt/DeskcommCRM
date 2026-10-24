@@ -5484,9 +5484,12 @@ async function executarTurnoDoAgente(
             // deixava o regex vencer o veredito NEGATIVO (`continuacao:false`) e a fila
             // era consumida mesmo com a Jev dizendo "novo_pedido".
             const continuarFila =
-              vereditoOfertaJev !== null
+              // (dono, 2026-10-24) Se o cliente CITA UM MODELO/novo uso, a fila
+              // antiga não vale: reconstrói a partir deste turno.
+              !pedeMotoExplicito(msgCliente) &&
+              (vereditoOfertaJev !== null
                 ? vereditoOfertaJev.continuacao === true
-                : querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente);
+                : querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente));
             if (
               continuarFila &&
               catalogoDaConversa.opcoes !== null &&
@@ -6054,9 +6057,14 @@ async function executarTurnoDoAgente(
               // (dono, 2026-10-17) MODELO citado AUSENTE: a referência deu a cilindrada
               // REAL — ela FILTRA (mesmo porte), tirando a CB 650 de um pedido de CB 250.
               ...(() => {
+                const colTipoRigido =
+                  catalogoMapeamento?.colTipo != null &&
+                  exigidosDoTurno.includes(catalogoMapeamento.colTipo)
+                    ? catalogoMapeamento.colTipo
+                    : null;
                 const cols = [
                   ...new Set(
-                    [colCilindradaRigida, ccDoPedidoRigida].filter(
+                    [colCilindradaRigida, ccDoPedidoRigida, colTipoRigido].filter(
                       (c): c is string => c !== null,
                     ),
                   ),
