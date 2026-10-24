@@ -5484,9 +5484,12 @@ async function executarTurnoDoAgente(
             // deixava o regex vencer o veredito NEGATIVO (`continuacao:false`) e a fila
             // era consumida mesmo com a Jev dizendo "novo_pedido".
             const continuarFila =
-              // (dono, 2026-10-24) Se o cliente CITA UM MODELO/novo uso, a fila
-              // antiga não vale: reconstrói a partir deste turno.
+              // (dono, 2026-10-24) Se o cliente CITA UM MODELO/novo uso ou faz
+              // OBJEÇÃO/escolhe outra, a fila antiga não vale: reconstrói neste
+              // turno. Só o "quero ver mais opções" (querMaisOpcoes) consome a fila
+              // do perfil atual.
               !pedeMotoExplicito(msgCliente) &&
+              (!querAlternativa(msgCliente) || querMaisOpcoes(msgCliente)) &&
               (vereditoOfertaJev !== null
                 ? vereditoOfertaJev.continuacao === true
                 : querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente));
