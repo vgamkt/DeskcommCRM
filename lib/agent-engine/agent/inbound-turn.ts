@@ -6057,10 +6057,25 @@ async function executarTurnoDoAgente(
               // (dono, 2026-10-17) MODELO citado AUSENTE: a referência deu a cilindrada
               // REAL — ela FILTRA (mesmo porte), tirando a CB 650 de um pedido de CB 250.
               ...(() => {
-                const colTipoRigido =
+                // Só torna CATEGORIA rígida quando o valor existe na categoria do
+                // estoque (ex.: "Trail"). "cidade" é USO, não categoria — ali vira
+                // ranking, senão o filtro zera e cai no topo errado (medido 2026-10-24:
+                // Himalayan/V-Strom no "cidade").
+                const colTipoCandidata =
                   catalogoMapeamento?.colTipo != null &&
                   exigidosDoTurno.includes(catalogoMapeamento.colTipo)
                     ? catalogoMapeamento.colTipo
+                    : null;
+                const colTipoRigido =
+                  colTipoCandidata !== null &&
+                  filtrarPorExigencias(
+                    candidatos,
+                    [colTipoCandidata],
+                    hipotesesDoTurno,
+                    faixasDoTurno,
+                    cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                  ).length > 0
+                    ? colTipoCandidata
                     : null;
                 const cols = [
                   ...new Set(
