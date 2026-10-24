@@ -9749,6 +9749,39 @@ async function executarTurnoDoAgente(
             bolhas_finais: montadas.length,
             fecho_catalogo: mostrouFotos && pendenteTexto !== null,
           });
+        } else if (textos.length >= 2) {
+          // COM FOTO e 2+ textos: montagem DETERMINÍSTICA preservando a ordem.
+          // Textos ANTES da foto = introdução; texto DEPOIS da foto é separado em
+          // introdução+fecho; o resultado é [introdução, fotos, fecho]. Sem LLM.
+          // (dono, 2026-10-23)
+          const idxMidia = pecas.findIndex(
+            (p) => p.media !== undefined || p.template !== undefined,
+          );
+          const corpos = (lista: readonly ChannelSendInput[]): string[] =>
+            lista
+              .filter((p) => p.media === undefined && p.template === undefined)
+              .map((p) => (p.body ?? '').trim())
+              .filter((b) => b !== '');
+          const antes = idxMidia < 0 ? corpos(pecas) : corpos(pecas.slice(0, idxMidia));
+          const depois = idxMidia < 0 ? [] : corpos(pecas.slice(idxMidia));
+          const sepDepois =
+            depois.length > 0
+              ? separarTextoApresentacao(depois.join('\n\n'), catalogoDoTurno)
+              : { introducao: '', final: '' };
+          const intro = [...antes, sepDepois.introducao.trim()].filter((b) => b !== '').join(' ').trim();
+          const fecho = sepDepois.final.trim();
+          const primeira = textos[0]!;
+          const montadas: ChannelSendInput[] = [];
+          if (intro !== '') montadas.push({ ...primeira, body: intro });
+          for (const p of pecas) {
+            if (p.media !== undefined || p.template !== undefined) montadas.push(p);
+          }
+          if (fecho !== '') montadas.push({ ...primeira, body: fecho });
+          finais = montadas;
+          runLog.info('turno de junção (com foto): intro → fotos → fecho', {
+            pecas_texto: textos.length,
+            bolhas_finais: montadas.length,
+          });
         }
       }
       // GARANTIA FINAL DO FECHO — vale para TODOS os caminhos de envio, inclusive
