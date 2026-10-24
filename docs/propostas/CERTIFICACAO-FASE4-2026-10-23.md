@@ -171,3 +171,10 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - Causa do "2": `primeirasSomenteHipoteses` + `hipotesesDeMaiorNota(0.15)` (só o topo da JEV).
 - Mudança: `hipotesesDeMaiorNota(..., 0.30)` — entram as street 125/150 próximas do topo.
 - Smoke completo (`186c95a6`): 10/10, 0 erros; turno "cidade/dia a dia" 2→5 motos; "Lander 250" 2→5. Trail não invadiu.
+
+## Validação final (2026-10-24)
+
+- **Moto fora do estoque:** a `catalogoDaConversa.referencia` grava a moto citada (sintética, sem foto/preço) e é **lembrada** nos turnos seguintes. Teste: "Tem uma Lander 250?" → "Quero a Lander mesmo, pode separar." → "Não está no estoque, não tenho como separar… o mais próximo é trail X" — **0 fotos, sem fechar aquisição** ✅.
+- **Não foi criado** `escolhidaForaDoEstoque`: a `escolhida` continua **só do estoque** (álbum/aquisição/âncora). A referência basta; gravar a escolha fora do estoque em `escolhida` quebraria álbum/fecho/objeção.
+- **Fila reconstruída** ao citar modelo novo; **categoria** rígida só com valor real do estoque; `nao_completar_faltando=false`.
+- Commits: `82c9c9f8`, `0234a980`, `50d31cb5` (+ docs).
