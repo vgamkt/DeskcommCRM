@@ -5806,6 +5806,15 @@ async function executarTurnoDoAgente(
                       w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1),
                     )
                     .join(' ');
+                  // (dono, 2026-10-24) GRAVA a moto citada MESMO FORA DO ESTOQUE:
+                  // vira a referência da conversa (sem foto/preço) e é usada nos
+                  // próximos turnos. Se depois for escolhida, entra em `escolhida`.
+                  catalogoDaConversa.referencia = {
+                    nome: modeloCitadoAusente,
+                    fotos: [],
+                    preco: '',
+                    valores: { nome: modeloCitadoAusente },
+                  };
                 }
                 // DEGRAU 1: referência `modelos` (determinístico) — categoria + CC real.
                 const refModelo = await dadosDoModeloNaReferencia(

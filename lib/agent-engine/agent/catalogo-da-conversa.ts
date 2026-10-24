@@ -191,7 +191,9 @@ function ehMoto(valor: unknown): valor is MotoDoCatalogo {
     typeof m.nome === 'string' &&
     m.nome.trim() !== '' &&
     Array.isArray(m.fotos) &&
-    m.fotos.length > 0 &&
+    // (dono, 2026-10-24) `fotos: []` é válido para a REFERÊNCIA sintética de uma
+    // moto citada FORA do estoque ("Lander 250"): ela é gravada e usada nos
+    // próximos turnos, mesmo sem foto/preço.
     m.fotos.every((f) => typeof f === 'string')
   );
 }
