@@ -326,6 +326,7 @@ import { avaliarCpf } from '@/lib/followup/cpf';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { decidirCpfComJev } from './cpf-jev';
 import { escolherFluxoIniciado, escolherFluxosPorIA } from './flow-intent';
+import { parsePreco } from './similaridade';
 import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -6142,8 +6143,19 @@ async function executarTurnoDoAgente(
                     cfgCatalogo?.tolerancia_preco_pct ?? 30,
                     principalDoTurno,
                   ).pontos;
+                // (dono, 2026-10-24) "Mais em conta"/objeção: MENOR preço primeiro
+                // (preço do estoque). Nos demais (cidade/principais), maior nota.
+                const ehAlternativa =
+                  querAlternativa(mensagemDoTurnoParaJev) || intencaoDoTurno === 'alternativa';
+                const precoDaFila = (m: MotoDoCatalogo): number =>
+                  parsePreco(String(m.preco ?? m.valores?.preco ?? '')) ??
+                  Number.MAX_SAFE_INTEGER;
                 const ordenarFila = (ms: readonly MotoDoCatalogo[]): MotoDoCatalogo[] =>
-                  [...ms].sort((a, b) => notaDaFila(b) - notaDaFila(a));
+                  [...ms].sort((a, b) =>
+                    ehAlternativa
+                      ? precoDaFila(a) - precoDaFila(b)
+                      : notaDaFila(b) - notaDaFila(a),
+                  );
                 const perfil = selecao.perfil;
                 const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
                 // C-106: as que CASARAM e ainda não foram enviadas vão PRIMEIRO na

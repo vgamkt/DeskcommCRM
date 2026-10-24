@@ -185,3 +185,6 @@ Revisão dos pontos que analisam motos:
 - **`catalog-criteria`** (hipóteses/nota): prompt agora diz **"dê nota ALTA (≥0,7) a ATÉ 5 motos — as 5 mais parecidas; NÃO se limite a 2/3"**; o fallback (JEV sem hipóteses) passou de **`slice(0,3)` → `slice(0,5)`**.
 - **`moto-escolhida`** (qual o cliente escolheu): mantém **1** — escolha é uma só; não deve virar 5.
 - **`modelo-categoria`/`oferta`/`objecao`/`negociacao`/`sentimento`**: não devolvem lista de motos; sem alteração.
+
+## Fila "mais em conta" por PREÇO (2026-10-24)
+- Quando o contexto é **objeção/alternativa** ("achei caro", "quero ver mais opções"), a fila é ordenada pelo **MENOR preço do estoque primeiro**; nos demais (cidade/principais), continua pela **maior nota**.
