@@ -200,7 +200,10 @@ function compartilhaLinhaDoModelo(
  */
 export function hipotesesDeMaiorNota(
   hipoteses: readonly HipoteseDeMoto[],
-  margem = 0.15,
+  // (dono, 2026-10-24) 0.15 -> 0.30: no pedido genérico o topo da JEV entregava
+  // só 2 (ex.: "dia a dia" = CB 300 F/XMax) e as street 125/150 ficavam fora.
+  // Com 0.30 entram as próximas do topo (mais opções), sem virar o catálogo.
+  margem = 0.3,
 ): HipoteseDeMoto[] {
   const comNota = hipoteses.filter((h) => typeof h.score === 'number');
   if (comNota.length === 0) return [...hipoteses];
