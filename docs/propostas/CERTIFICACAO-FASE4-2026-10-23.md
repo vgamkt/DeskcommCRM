@@ -158,3 +158,10 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 ### Estado
 - Deploy `30750281`; suíte do mesmo código (`07dc9130`): **9347/19** (as 19 de guarda/ambiente).
 - Único ponto aberto: **02 em 2 blocos** (modelo ausente sem aviso do modelo) — cosmético; não afeta filtro/fotos/fecho/ordem.
+
+## Fechamento 2026-10-24 — 02 fica em 2 blocos (decisão técnica)
+
+- O aviso do motor e o texto do modelo chegam como **envios separados** (o buffer vê 1 texto), então a montagem `[intro, fotos, fecho]` determinística não dispara nesse caminho.
+- Tentativas de unir com foto (LLM `b6abef4c`; determinística `ebd7c715`/`c235a5fc`) **não** resolveram o 02 sem quebrar **ordem** ou **fecho**. Forçá-las é pior que o cosmético.
+- **Decisão:** manter o estado seguro — **ordem texto→fotos→fecho** e **fecho garantido** — com o 02 em 2 blocos (visual). Conteúdo, filtros, fotos e fecho corretos.
+- Alerta ao administrador (falha de crédito/queda): **intacto** (teste 3/3; arquivo não tocado).
