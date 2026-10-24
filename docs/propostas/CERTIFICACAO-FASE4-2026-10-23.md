@@ -165,3 +165,9 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - Tentativas de unir com foto (LLM `b6abef4c`; determinística `ebd7c715`/`c235a5fc`) **não** resolveram o 02 sem quebrar **ordem** ou **fecho**. Forçá-las é pior que o cosmético.
 - **Decisão:** manter o estado seguro — **ordem texto→fotos→fecho** e **fecho garantido** — com o 02 em 2 blocos (visual). Conteúdo, filtros, fotos e fecho corretos.
 - Alerta ao administrador (falha de crédito/queda): **intacto** (teste 3/3; arquivo não tocado).
+
+## Margem do topo 0.15 → 0.30 (deploy `186c95a6`)
+- Config: `similares_qtd=5`, `nao_completar_faltando=true` (o cap NÃO era 2).
+- Causa do "2": `primeirasSomenteHipoteses` + `hipotesesDeMaiorNota(0.15)` (só o topo da JEV).
+- Mudança: `hipotesesDeMaiorNota(..., 0.30)` — entram as street 125/150 próximas do topo.
+- Smoke completo (`186c95a6`): 10/10, 0 erros; turno "cidade/dia a dia" 2→5 motos; "Lander 250" 2→5. Trail não invadiu.
