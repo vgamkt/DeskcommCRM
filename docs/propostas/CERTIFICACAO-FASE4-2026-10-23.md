@@ -178,3 +178,10 @@ Tabela `motos` (vgasistemas_n8n): **26 unidades**.
 - **Não foi criado** `escolhidaForaDoEstoque`: a `escolhida` continua **só do estoque** (álbum/aquisição/âncora). A referência basta; gravar a escolha fora do estoque em `escolhida` quebraria álbum/fecho/objeção.
 - **Fila reconstruída** ao citar modelo novo; **categoria** rígida só com valor real do estoque; `nao_completar_faltando=false`.
 - Commits: `82c9c9f8`, `0234a980`, `50d31cb5` (+ docs).
+
+## JEV — "REGRA DAS CINCO" (deploy 2026-10-24)
+
+Revisão dos pontos que analisam motos:
+- **`catalog-criteria`** (hipóteses/nota): prompt agora diz **"dê nota ALTA (≥0,7) a ATÉ 5 motos — as 5 mais parecidas; NÃO se limite a 2/3"**; o fallback (JEV sem hipóteses) passou de **`slice(0,3)` → `slice(0,5)`**.
+- **`moto-escolhida`** (qual o cliente escolheu): mantém **1** — escolha é uma só; não deve virar 5.
+- **`modelo-categoria`/`oferta`/`objecao`/`negociacao`/`sentimento`**: não devolvem lista de motos; sem alteração.
