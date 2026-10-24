@@ -5513,8 +5513,21 @@ async function executarTurnoDoAgente(
                   cfg?.usar_limite_quantidade === false
                     ? pendentesFiltrados.length
                     : (cfg?.similares_qtd ?? 3);
-                const lote = pendentesFiltrados.slice(0, Math.max(1, tetoQtd));
-                const restantes = pendentesFiltrados.slice(lote.length);
+                // (dono, 2026-10-24) No "ver mais"/"mais em conta", consome a fila
+                // pelo MENOR preço (a ordem tem de valer AQUI, no lote final).
+                const filaParaConsumir = querAlternativa(mensagemDoTurnoParaJev)
+                  ? [...pendentesFiltrados].sort((a, b) => {
+                      const pa =
+                        parsePreco(String(a.preco ?? a.valores?.preco ?? '')) ??
+                        Number.MAX_SAFE_INTEGER;
+                      const pb =
+                        parsePreco(String(b.preco ?? b.valores?.preco ?? '')) ??
+                        Number.MAX_SAFE_INTEGER;
+                      return pa - pb;
+                    })
+                  : pendentesFiltrados;
+                const lote = filaParaConsumir.slice(0, Math.max(1, tetoQtd));
+                const restantes = filaParaConsumir.slice(lote.length);
                 opcoesParaSalvar = { ...fila, pendentes: restantes };
                 motosOferecidasNesteTurno = [...lote];
                 parecidasNoTurno = true;
