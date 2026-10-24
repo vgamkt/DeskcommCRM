@@ -188,3 +188,7 @@ Revisão dos pontos que analisam motos:
 
 ## Fila "mais em conta" por PREÇO (2026-10-24)
 - Quando o contexto é **objeção/alternativa** ("achei caro", "quero ver mais opções"), a fila é ordenada pelo **MENOR preço do estoque primeiro**; nos demais (cidade/principais), continua pela **maior nota**.
+
+## Consumo da fila por preço (commit 3799fcbf)
+- A ordenação pelo MENOR preço no "mais em conta"/objeção vale **no consumo** (o `lote` do "ver mais"), não só na montagem.
+- Teste pesado: 05 = CBX 250 (9.990) → CB 300 R FLEX (14.990) → CG 160 (17.500) ✅
