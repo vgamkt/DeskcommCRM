@@ -386,7 +386,9 @@ describe("contexto da Jev no fluxo (decisão do dono 2026-10-08)", () => {
       join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
       "utf8",
     );
-    expect(src).toMatch(/const historico = effectiveContext\.messages\.slice\(-20\)\.map/);
+    // A janela é ~20 mensagens REAIS: placeholders de mídia ([image]/[video]/…)
+    // são descartados antes, senão um álbum esconde a fala anterior.
+    expect(src).toMatch(/const historico = effectiveContext\.messages[\s\S]{0,220}\.slice\(-20\)\s*\.map/);
     expect(src).not.toMatch(/effectiveContext\.messages\.slice\(-6\)/);
     expect(src).not.toMatch(/const historico = effectiveContext\.messages\.map/);
   });
