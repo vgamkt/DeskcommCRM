@@ -6075,6 +6075,26 @@ async function executarTurnoDoAgente(
               );
               if (soCitados.length > 0) candidatos = soCitados;
             }
+            // PERFIL URBANO/DIA A DIA (uso citado, sem modelo/cc): o motor
+            // GARANTE o perfil — baixa cilindrada (até ~400cc) na apresentação e
+            // na fila. Sem isto, "cidade, dia a dia" trazia CB 650 (649cc) e o
+            // "ver mais" enfileirava G 310/R 1200 GS (medido 2026-10-25).
+            const ccDaMoto = (m: MotoDoCatalogo): number | null => {
+              const raw = String(m.cilindrada ?? m.valores?.cilindrada ?? '');
+              const n = Number(raw.replace(/[^0-9.,]/g, '').replace(',', '.'));
+              return Number.isFinite(n) ? n : null;
+            };
+            const perfilUrbano =
+              !nomeiaModeloEspecifico &&
+              ccDoPedidoRigida === null &&
+              /\b(cidade|urbano|dia a dia|transito|trabalho)\b/.test(
+                normalizarNomeDeMoto(mensagemDoTurnoParaJev),
+              );
+            const cabeNoPerfilUrbano = (m: MotoDoCatalogo): boolean => {
+              if (!perfilUrbano) return true;
+              const cc = ccDaMoto(m);
+              return cc === null || cc <= 400;
+            };
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
@@ -6163,6 +6183,26 @@ async function executarTurnoDoAgente(
                 return cols.length > 0 ? { exigenciasRigidas: cols } : {};
               })(),
             });
+            // PERFIL URBANO: tira da apresentação quem está acima de ~400cc e
+            // completa até 5 com as melhores do perfil (o resto vai para a FILA
+            // do "ver mais"). Executa a REGRA DAS CINCO quando a JEV marca menos.
+            if (perfilUrbano) {
+              const limite = cfgCatalogo?.similares_qtd ?? 5;
+              const vistos = new Set<string>();
+              const doPerfil = [...selecao.motos, ...candidatos]
+                .filter(cabeNoPerfilUrbano)
+                .filter((m) => {
+                  if (vistos.has(m.nome)) return false;
+                  vistos.add(m.nome);
+                  return true;
+                });
+              if (doPerfil.length > 0) {
+                selecao.motos = doPerfil.slice(
+                  0,
+                  Math.max(Math.min(limite, doPerfil.length), selecao.motos.length),
+                );
+              }
+            }
             // ── O MOTOR EXECUTA O CRITÉRIO DE PREÇO / COMPARAÇÃO ────────────
             if (pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
               const baratas = filtrarMaisEmConta(
@@ -6273,7 +6313,9 @@ async function executarTurnoDoAgente(
                   negociacaoAnterior?.motivo === 'preco' ||
                   catalogoDaConversa.objecao?.motivo === 'preco';
                 const cortarFila = (ms: readonly MotoDoCatalogo[]): MotoDoCatalogo[] =>
-                  cortarAcimaDaReferencia(ms, referenciaDaFila, objecaoDePrecoAtiva);
+                  cortarAcimaDaReferencia(ms, referenciaDaFila, objecaoDePrecoAtiva).filter(
+                    cabeNoPerfilUrbano,
+                  );
                 const cabeNaFila = (m: MotoDoCatalogo): boolean =>
                   cortarFila([m]).length === 1;
                 const perfil = selecao.perfil;
