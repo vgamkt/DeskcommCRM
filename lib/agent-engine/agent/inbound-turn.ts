@@ -5533,16 +5533,40 @@ async function executarTurnoDoAgente(
                 fila,
                 catalogoDaConversa.detalhadas,
               ).pendentes;
-              if (pendentesFiltrados.length > 0) {
+              // A fila foi MONTADA em turno anterior (às vezes antes da referência
+              // existir). Reaplica o corte de preço no CONSUMO: com objeção de
+              // preço ativa, só entrega motos abaixo da referência. Sem isto, o
+              // "ver mais" ainda trazia a CG 160 (17.500) acima da CB 300 R
+              // (medido 2026-10-25).
+              const interesseConsumo =
+                typeof effectiveContext.contact?.custom_fields?.moto_interesse === 'string'
+                  ? effectiveContext.contact.custom_fields.moto_interesse
+                  : null;
+              const referenciaConsumo =
+                catalogoDaConversa.escolhida ??
+                catalogoDaConversa.referencia ??
+                (interesseConsumo !== null
+                  ? (motosDeNomes([interesseConsumo], catalogoDaConversa.motos)[0] ?? null)
+                  : null);
+              const objecaoDePrecoConsumo =
+                motivoNegociacao === 'preco' ||
+                negociacaoAnterior?.motivo === 'preco' ||
+                catalogoDaConversa.objecao?.motivo === 'preco';
+              const pendentesNaMedida = cortarAcimaDaReferencia(
+                pendentesFiltrados,
+                referenciaConsumo,
+                objecaoDePrecoConsumo,
+              );
+              if (pendentesNaMedida.length > 0) {
                 const cfg = agentConfig?.catalogConfig;
                 const tetoQtd =
                   cfg?.usar_limite_quantidade === false
-                    ? pendentesFiltrados.length
+                    ? pendentesNaMedida.length
                     : (cfg?.similares_qtd ?? 3);
                 // (dono, 2026-10-24) No "ver mais"/"mais em conta", consome a fila
                 // pelo MENOR preço (a ordem tem de valer AQUI, no lote final).
                 const filaParaConsumir = querAlternativa(mensagemDoTurnoParaJev)
-                  ? [...pendentesFiltrados].sort((a, b) => {
+                  ? [...pendentesNaMedida].sort((a, b) => {
                       const pa =
                         parsePreco(String(a.preco ?? a.valores?.preco ?? '')) ??
                         Number.MAX_SAFE_INTEGER;
@@ -5551,7 +5575,7 @@ async function executarTurnoDoAgente(
                         Number.MAX_SAFE_INTEGER;
                       return pa - pb;
                     })
-                  : pendentesFiltrados;
+                  : pendentesNaMedida;
                 const lote = filaParaConsumir.slice(0, Math.max(1, tetoQtd));
                 const restantes = filaParaConsumir.slice(lote.length);
                 opcoesParaSalvar = { ...fila, pendentes: restantes };
