@@ -6134,6 +6134,7 @@ async function executarTurnoDoAgente(
                 selecao.casadas,
                 catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia,
                 cfgCatalogo?.similares_qtd ?? 5,
+                candidatos,
               );
               if (baratas.length > 0) selecao.motos = baratas;
             }

@@ -39,6 +39,11 @@ describe('filtrarMaisEmConta', () => {
     expect(filtrarMaisEmConta([VSTROM, CB650], [], NMAX, 5)).toEqual([]);
   });
 
+  it('usa o pool extra (catálogo do turno) para achar as mais baratas', () => {
+    const r = filtrarMaisEmConta([VSTROM], [], NMAX, 5, [CB650, CBX, CG]);
+    expect(r.map((m) => m.nome)).toEqual([CBX.nome, CG.nome]);
+  });
+
   it('sem referência, ordena pelo menor preço do pool', () => {
     const r = filtrarMaisEmConta([CB650, CBX, CG], [], null, 2);
     expect(r.map((m) => m.nome)).toEqual([CBX.nome, CG.nome]);

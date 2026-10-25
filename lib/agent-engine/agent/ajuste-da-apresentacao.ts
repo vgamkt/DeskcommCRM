@@ -43,10 +43,16 @@ export function filtrarMaisEmConta(
   casadas: readonly MotoDoCatalogo[],
   referencia: MotoDoCatalogo | null,
   limite: number,
+  /**
+   * Pool EXTRA de onde tirar as mais baratas (o catálogo filtrado do turno).
+   * Medido 2026-10-25: a seleção da JEV trouxe só as premium (V-Strom/R 1200
+   * GS/CB 650) e as mais baratas do estoque nem entravam na reordenação.
+   */
+  extras: readonly MotoDoCatalogo[] = [],
 ): MotoDoCatalogo[] {
   const precoRef = referencia !== null ? precoDaMoto(referencia) : null;
   const vistos = new Set<string>();
-  return [...motos, ...casadas]
+  return [...motos, ...casadas, ...extras]
     .filter((m) => {
       if (vistos.has(m.nome)) return false;
       vistos.add(m.nome);
