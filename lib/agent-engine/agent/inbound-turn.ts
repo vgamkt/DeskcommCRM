@@ -202,6 +202,11 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
+  filtrarMaisEmConta,
+  incluirComparacao,
+  pedeMaisEmConta,
+} from './ajuste-da-apresentacao';
+import {
   comQuantidadeNoTexto,
   nomeCurtoDoModelo,
   perguntaDeEscolha,
@@ -6122,6 +6127,21 @@ async function executarTurnoDoAgente(
                 return cols.length > 0 ? { exigenciasRigidas: cols } : {};
               })(),
             });
+            // ── O MOTOR EXECUTA O CRITÉRIO DE PREÇO / COMPARAÇÃO ────────────
+            if (pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
+              const baratas = filtrarMaisEmConta(
+                selecao.motos,
+                selecao.casadas,
+                catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia,
+                cfgCatalogo?.similares_qtd ?? 5,
+              );
+              if (baratas.length > 0) selecao.motos = baratas;
+            }
+            selecao.motos = incluirComparacao(
+              selecao.motos,
+              catalogoDaConversa.motos,
+              mensagemDoTurnoParaJev,
+            );
             // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
             // motor EXECUTA (filtra/ordena). Registra os dois lados.
             runLog.info('apresentação: decisão da Jev → motos (antes/depois)', {
