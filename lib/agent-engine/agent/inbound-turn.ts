@@ -6226,8 +6226,24 @@ async function executarTurnoDoAgente(
                 // Sem isto, "ver mais opções" no meio de uma objeção de preço trazia
                 // a CB 650 de R$ 41 mil com o texto "cabem melhor no bolso"
                 // (medido 2026-10-25). Só entram motos ABAIXO da referência.
+                // Referência da fila: escolhida/referência OU a moto de INTERESSE
+                // persistida (`custom_fields.moto_interesse`). Medido 2026-10-25:
+                // o cliente citou a CB 300 R, o bot não travou escolha e a fila do
+                // "ver mais" (sem referência) trouxe Himalayan/G 310/CB 500 X —
+                // TODAS acima do preço que ele disse não caber.
+                const interesseDaFila =
+                  typeof effectiveContext.contact?.custom_fields?.moto_interesse === 'string'
+                    ? effectiveContext.contact.custom_fields.moto_interesse
+                    : null;
                 const referenciaDaFila =
-                  catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia;
+                  catalogoDaConversa.escolhida ??
+                  catalogoDaConversa.referencia ??
+                  (interesseDaFila !== null
+                    ? (motosDeNomes([interesseDaFila], catalogoDaConversa.motos)[0] ??
+                      motosDeNomes([interesseDaFila], catalogoDoTurno)[0] ??
+                      motosDeNomes([interesseDaFila], candidatos)[0] ??
+                      null)
+                    : null);
                 const objecaoDePrecoAtiva =
                   motivoNegociacao === 'preco' ||
                   negociacaoAnterior?.motivo === 'preco' ||
