@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  corpoSemNomesForaDoEnvio,
   cortarAcimaDaReferencia,
   filtrarMaisEmConta,
   incluirComparacao,
@@ -95,5 +96,31 @@ describe('fila do ver mais sob objeção de preço', () => {
   it('sem referência, não corta', () => {
     const r = cortarAcimaDaReferencia([CBX, CB650], null, true);
     expect(r).toHaveLength(2);
+  });
+});
+
+describe('corpo sem nomes fora do envio', () => {
+  const FZ = moto('YAMAHA FZ 15 Fazer ABS', '18990.00');
+  it('troca lista de motos por abertura neutra (contagem real)', () => {
+    const corpo =
+      'Separei 5 opções: Motos: - Yamaha FZ 15 Fazer 2024 - R$ 18.990 - Yamaha NMax 160 2023 - Honda Neo 125 2025';
+    const r = corpoSemNomesForaDoEnvio(corpo, [FZ, NMAX], 5);
+    expect(r).toBe('Separei 5 opções pra você dar uma olhada:');
+  });
+
+  it('tira a lista mesmo quando as citadas seriam enviadas (regra: sem nomes no corpo)', () => {
+    const corpo = 'Separei essas: Yamaha FZ 15 Fazer ABS e YAMAHA NMax 160 ABS';
+    const r = corpoSemNomesForaDoEnvio(corpo, [FZ, NMAX], 2);
+    expect(r).toBe('Separei 2 opções pra você dar uma olhada:');
+  });
+
+  it('preserva abertura sem nomes/lista de 2+ motos', () => {
+    const corpo = 'Separei opções leves e econômicas pra cidade:';
+    expect(corpoSemNomesForaDoEnvio(corpo, [FZ, NMAX], 5)).toBe(corpo);
+  });
+
+  it('não mexe em apresentação de 1 moto', () => {
+    const corpo = 'Olha a NMax 160 ABS:';
+    expect(corpoSemNomesForaDoEnvio(corpo, [NMAX], 1)).toBe(corpo);
   });
 });

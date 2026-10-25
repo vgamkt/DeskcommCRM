@@ -15,7 +15,10 @@
  * Puro (sem banco/rede): o motor só filtra/ordena/renderiza. A decisão de
  * OFERECER continua sendo da JEV; aqui não se decide se mostra, só COMO.
  */
-import { normalizarNomeDeMoto, type MotoDoCatalogo } from './fotos-do-catalogo';
+import {
+  normalizarNomeDeMoto,
+  type MotoDoCatalogo,
+} from './fotos-do-catalogo';
 import { parsePreco } from './similaridade';
 
 function precoDaMoto(m: MotoDoCatalogo): number | null {
@@ -120,4 +123,47 @@ export function cortarAcimaDaReferencia(
     const p = precoDaMoto(m);
     return p !== null && p < teto;
   });
+}
+
+/** Quantas motos do catálogo o texto cita (por tokens do nome, sem números). */
+function motosCitadasNoCorpo(corpo: string, catalogo: readonly MotoDoCatalogo[]): number {
+  const corpoN = normalizarNomeDeMoto(corpo);
+  if (corpoN === '') return 0;
+  let total = 0;
+  for (const m of catalogo) {
+    const toks = normalizarNomeDeMoto(m.nome)
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3 && !/^\d+$/.test(t));
+    if (toks.length === 0) continue;
+    const hits = toks.filter((t) => corpoN.includes(t)).length;
+    if (hits >= Math.min(2, toks.length)) total += 1;
+  }
+  return total;
+}
+
+/**
+ * REDE DE SEGURANÇA do corpo da apresentação.
+ *
+ * O modelo escreve o `body` ANTES de o motor fixar a seleção final (ele mesmo
+ * consulta o catálogo e às vezes lista nomes). Se o corpo lista motos/preços,
+ * o texto pode contradizer as fotos que saem. Medido 2026-10-25.
+ *
+ * A regra do produto é o corpo SEM nome/lista (as legendas das fotos dizem os
+ * dados). Então, em apresentação de 2+ motos, um corpo que parece LISTA
+ * (2+ preços, "Motos:", 2+ itens "- ") ou que cita 2+ motos do catálogo vira
+ * uma abertura NEUTRA com a contagem REAL.
+ */
+export function corpoSemNomesForaDoEnvio(
+  corpo: string,
+  catalogo: readonly MotoDoCatalogo[],
+  totalApresentado: number,
+): string {
+  if (totalApresentado < 2) return corpo;
+  const pareceLista =
+    (corpo.match(/R\$\s*[\d.]/g)?.length ?? 0) >= 2 ||
+    /(^|\n)\s*(motos?|op[cç][oõ]es)\s*:/i.test(corpo) ||
+    (corpo.match(/(^|\n)\s*[-•]\s/g)?.length ?? 0) >= 2 ||
+    motosCitadasNoCorpo(corpo, catalogo) >= 2;
+  if (!pareceLista) return corpo;
+  return `Separei ${totalApresentado} opções pra você dar uma olhada:`;
 }

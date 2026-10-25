@@ -202,6 +202,7 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
+  corpoSemNomesForaDoEnvio,
   cortarAcimaDaReferencia,
   filtrarMaisEmConta,
   incluirComparacao,
@@ -6188,14 +6189,36 @@ async function executarTurnoDoAgente(
             // do "ver mais"). Executa a REGRA DAS CINCO quando a JEV marca menos.
             if (perfilUrbano) {
               const limite = cfgCatalogo?.similares_qtd ?? 5;
-              const vistos = new Set<string>();
-              const doPerfil = [...selecao.motos, ...candidatos]
+              // A COMPLETADA respeita a ORDEM/NOTA da JEV — não a ordem do
+              // catálogo. Medido 2026-10-25: a JEV marcou NMax/Neo em alta e a
+              // completada pegou as primeiras do banco (XMax/Dominar/G 310 R).
+              const notaDaHipotese = (m: MotoDoCatalogo): number => {
+                const nome = normalizarNomeDeMoto(m.nome);
+                let melhor = 0;
+                for (const h of hipotesesDoTurno) {
+                  if (typeof h.nome !== 'string' || h.nome.trim() === '') continue;
+                  const hn = normalizarNomeDeMoto(h.nome);
+                  if (hn === '') continue;
+                  if (nome.includes(hn) || hn.includes(nome)) {
+                    melhor = Math.max(melhor, typeof h.nota === 'number' ? h.nota : 0);
+                  }
+                }
+                return melhor;
+              };
+              const jaEscolhidas = selecao.motos.filter(cabeNoPerfilUrbano);
+              const nomesJa = new Set(jaEscolhidas.map((m) => m.nome));
+              const restoDoPerfil = candidatos
                 .filter(cabeNoPerfilUrbano)
-                .filter((m) => {
-                  if (vistos.has(m.nome)) return false;
-                  vistos.add(m.nome);
-                  return true;
-                });
+                .filter((m) => !nomesJa.has(m.nome))
+                .map((m) => ({ m, nota: notaDaHipotese(m) }))
+                .sort((a, b) => b.nota - a.nota)
+                .map((x) => x.m);
+              const vistos = new Set<string>();
+              const doPerfil = [...jaEscolhidas, ...restoDoPerfil].filter((m) => {
+                if (vistos.has(m.nome)) return false;
+                vistos.add(m.nome);
+                return true;
+              });
               if (doPerfil.length > 0) {
                 selecao.motos = doPerfil.slice(
                   0,
@@ -6856,6 +6879,16 @@ async function executarTurnoDoAgente(
             // Tira daqui; o fecho do turno (catálogo/mais opções) é reposto DEPOIS
             // das fotos. Medido no 05/40v1 (1 moto).
             if (itens.length > 0) introducao = removerPerguntasDoModelo(introducao);
+            // REDE (3): o modelo lista nomes de uma consulta própria e o envio
+            // sai com OUTRAS motos (seleção da JEV). Se o corpo cita 2+ e alguma
+            // não está nas fotos, troca por abertura neutra com a contagem real.
+            if (cfg?.abertura_sem_citar !== false) {
+              introducao = corpoSemNomesForaDoEnvio(
+                introducao,
+                catalogoDoTurno,
+                motosDistintasApresentacao,
+              );
+            }
             // A contagem citada é a das fotos DESTA etapa (a JEV nao decide numero):
             // 1a = total da 1a; "ver mais" = so as novas.
             introducao = ajustarContagemDaApresentacao(
