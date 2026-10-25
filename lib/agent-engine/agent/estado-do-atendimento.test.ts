@@ -6,6 +6,8 @@ const TWISTER = {
   nome: 'CB 300 F Twister',
   ano: '2025',
   cor: 'Vermelho',
+  quilometragem: '12000',
+  preco: '27990.00',
   fotos: ['https://x/tw-1.jpg'],
 };
 
@@ -21,7 +23,9 @@ describe('renderBlocoDeEstado', () => {
       contact: { name: null, custom_fields: {} },
       escolhida: TWISTER,
     });
-    expect(bloco).toContain('Moto escolhida pelo cliente: CB 300 F Twister (2025, Vermelho)');
+    expect(bloco).toContain(
+      'Moto escolhida pelo cliente: CB 300 F Twister (2025, Vermelho, 12.000 km, R$ 27.990,00)',
+    );
     // Sem duplicar a regra que já vive no bloco "Moto já escolhida — TRAVADA".
     expect(bloco).not.toContain('conduza ao fechamento');
   });
@@ -102,5 +106,19 @@ describe('renderBlocoDeEstado', () => {
       escolhida: null,
     });
     expect(bloco).toContain('CNH: não');
+  });
+});
+
+describe('moto de troca já informada', () => {
+  it('injetada do custom_fields/flow — não perguntar de novo', () => {
+    const bloco = renderBlocoDeEstado({
+      contact: {
+        name: 'Letícia',
+        custom_fields: { moto_troca: 'Biz 125', troca_ano: '2019', troca_km: '40000' },
+      },
+      escolhida: null,
+    });
+    expect(bloco).toContain('Moto de troca JÁ informada: Biz 125 (2019, 40.000 km)');
+    expect(bloco).toContain('NÃO pergunte de novo');
   });
 });

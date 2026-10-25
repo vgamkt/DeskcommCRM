@@ -17,7 +17,7 @@
  * FLUXO ou o bloco "Dados essenciais". Aqui só se diz o que JÁ sabemos, para não
  * reperguntar — nunca o que falta.
  */
-import type { MotoDoCatalogo } from './fotos-do-catalogo';
+import { formatarKm, formatarPreco, type MotoDoCatalogo } from './fotos-do-catalogo';
 
 export interface EstadoDoAtendimentoInput {
   contact: { name?: string | null; custom_fields?: unknown } | null | undefined;
@@ -36,6 +36,20 @@ export interface EstadoDoAtendimentoInput {
    * na apresentação e ao responder objeções sobre ela — sem descrição de outras.
    */
   descricaoDaMoto?: { nome: string; texto: string } | null;
+}
+
+/**
+ * Fatos da moto em UMA linha: ano, cor, km e preço — os dados que o cliente
+ * pergunta e que o modelo NÃO pode inventar. Antes só ano/cor entravam; o km e
+ * o preço ficavam de fora e o modelo os inventava (medido 2026-10-24: NMax
+ * 2023 apareceu com "11.000 km" quando o estoque tem 2.000).
+ */
+function fatosDaMoto(m: MotoDoCatalogo): string {
+  const km = m.quilometragem ? `${formatarKm(m.quilometragem) ?? m.quilometragem} km` : null;
+  const preco = m.preco ? (formatarPreco(m.preco) ?? m.preco) : null;
+  return [m.ano, m.cor, km, preco]
+    .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    .join(', ');
 }
 
 function texto(valor: unknown): string | null {
@@ -57,7 +71,7 @@ export function renderBlocoDeEstado(input: EstadoDoAtendimentoInput): string {
   const linhas: string[] = [];
 
   if (input.escolhida !== null) {
-    const detalhe = [input.escolhida.ano, input.escolhida.cor].filter(Boolean).join(', ');
+    const detalhe = fatosDaMoto(input.escolhida);
     // Só o FATO aqui. A REGRA ("não ofereça outras / conduza o fechamento") é do
     // bloco "Moto já escolhida — TRAVADA" (`inbound-turn.ts`), que tem as exceções
     // completas. Repetir a ordem aqui era duplicação (medido 2026-10-06).
@@ -67,7 +81,7 @@ export function renderBlocoDeEstado(input: EstadoDoAtendimentoInput): string {
   } else if (input.motoEmFoco !== null && input.motoEmFoco !== undefined) {
     // Sem escolha travada, mas há uma moto EM FOCO (o cliente pediu/consultou uma
     // específica): o agente fala DELA. Persistida por conversa, injetada sempre.
-    const detalhe = [input.motoEmFoco.ano, input.motoEmFoco.cor].filter(Boolean).join(', ');
+    const detalhe = fatosDaMoto(input.motoEmFoco);
     linhas.push(
       `- Moto em foco nesta conversa: ${input.motoEmFoco.nome}${detalhe ? ` (${detalhe})` : ''}. ` +
         'Quando o assunto for moto, é DELA que se fala (troque o foco só se o cliente demonstrar interesse em outra).',
@@ -91,8 +105,17 @@ export function renderBlocoDeEstado(input: EstadoDoAtendimentoInput): string {
     );
   }
 
+  const motoTroca = texto(cf.moto_troca);
+  const trocaAno = texto(cf.troca_ano);
+  const trocaKm = texto(cf.troca_km);
+  const trocaDetalhe = [trocaAno, trocaKm !== null ? `${formatarKm(trocaKm) ?? trocaKm} km` : null]
+    .filter((v): v is string => typeof v === 'string' && v !== '')
+    .join(', ');
   const dados = [
     nome !== null ? `Nome: ${nome}` : null,
+    motoTroca !== null
+      ? `Moto de troca JÁ informada: ${motoTroca}${trocaDetalhe ? ` (${trocaDetalhe})` : ''} — NÃO pergunte de novo.`
+      : null,
     cidade !== null ? `Cidade: ${cidade}` : null,
     cnh !== null ? `CNH: ${cnh}` : null,
     cpf !== null ? `CPF: ${cpf}` : null,

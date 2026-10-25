@@ -136,7 +136,15 @@ export function perguntaDeOfertaJev(ctx: ContextoDeOferta): PerguntasDeJev {
         '"pode", "quero", "manda", "mostra") — e NÃO está respondendo a um campo do fluxo —, a ' +
         'resposta é "sim, mostrar motos agora". ' +
         'NÃO mostre se ele está só conversando, perguntando outra coisa, respondendo a um dado, ' +
-        'ou se uma objeção ainda está sendo contornada. ' +
+        'ou se a mensagem é APENAS uma objeção (reclamação) SEM pedir para ver opções. ' +
+        // Medido 2026-10-24: "Achei um pouco salgada. Tem alguma opção parecida mais em conta?"
+        // era lida como objeção e a Jev NEGAVA; o bot persuadia e o cliente ficava sem ver
+        // as alternativas que PEDIU. O pedido explícito de alternativa vence a objeção.
+        'EXCEÇÃO — OBJEÇÃO COM PEDIDO DE ALTERNATIVA: se a MESMA mensagem reclama de ' +
+        'preço/ano/km E pede para ver opções parecidas/mais baratas/outra moto ("tem alguma ' +
+        'opção mais em conta?", "tem outra parecida?", "quero ver uma mais barata"), responda ' +
+        '"sim, mostrar motos agora" com o criterio da queixa (preco/km/ano). O pedido de ' +
+        'alternativa vence a objeção: o cliente quer ver opções AGORA. ' +
         'REGRA INEGOCIÁVEL: se o cliente PERGUNTA se temos uma moto/modelo específico ' +
         '("tem a CB 300?", "vocês têm X?", "quanto custa a X?") OU PEDE uma moto por um critério ' +
         'claro — marca, CILINDRADA/cc ("quero uma 250", "quero uma 300cc"), categoria/estilo ou faixa ' +

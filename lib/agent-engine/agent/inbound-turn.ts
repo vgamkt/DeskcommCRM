@@ -451,6 +451,7 @@ export const AGENT_TOOL_DEFS = {
       'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
       'NÃO envie fotos e NÃO MENCIONE fotos ("seguem as fotos", "veja a foto", "olha a imagem"): quem envia as fotos das motos é o SISTEMA, automaticamente. Escreva só o TEXTO (abertura + pergunta), sem falar de foto. ' +
       'APRESENTAR MOTOS DO CATÁLOGO: escreva em `body` a abertura SEM citar/listar as motos + a pergunta final, e preencha `motos` com os nomes exatos. ' +
+      'NUNCA escreva os nomes das motos no `body` (quem mostra é o SISTEMA). Se o cliente pedir para COMPARAR DUAS motos ("as duas", "comparar"), preencha `motos` com AS DUAS — o sistema envia uma foto de cada. ' +
       'ESCOLHA DE UMA MOTO JÁ APRESENTADA ("gostei dessa", "quero essa"): preencha `motos` com ela — o sistema envia TODAS as fotos dela; NÃO responda como texto livre. ' +
       'A PERGUNTA DE FECHO tem de ser a ÚLTIMA frase do `body`; NÃO escreva pergunta no meio do texto. ' +
       'O sistema envia a foto de CADA moto com a legenda dela (nome/ano, cor, km, preço) entre o seu texto de abertura e a sua pergunta final. ' +
@@ -3407,7 +3408,15 @@ async function executarTurnoDoAgente(
         // recebidas), incluindo áudio já transcrito — o suficiente para ela julgar,
         // por contexto, se a resposta SATISFAZ a pergunta, sem mandar a conversa
         // inteira (que é muita coisa). Decisão do dono (2026-10-08).
-        const historico = effectiveContext.messages.slice(-20).map((m) => ({
+        // Mídia pura ([image]/[video]/[audio]/[document]) não é FALA: ocupava a
+        // janela e escondia o que o cliente disse antes (ex.: a moto de troca),
+        // fazendo o fluxo reperguntar dado já informado. Só texto real entra.
+        const ehPlaceholderDeMidia = (t: string) =>
+          /^\[(image|video|audio|document|sticker)\]$/i.test(t.trim());
+        const historico = effectiveContext.messages
+          .filter((m) => !ehPlaceholderDeMidia(m.body ?? ''))
+          .slice(-20)
+          .map((m) => ({
           de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
           texto: m.body,
         }));

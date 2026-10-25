@@ -30,13 +30,17 @@ export async function loadHistoryWithBudget(
   input: LoadHistoryInput,
 ): Promise<HistoryMessage[]> {
   const limit = Math.max(input.messageWindow, 1);
+  // O limite era aplicado ANTES de descartar as linhas sem texto. Numa conversa
+  // com álbum (10 fotos seguidas) a "última janela" vinha só de mídia, e o modelo
+  // perdia o fio (medido 2026-10-24: esqueceu a moto de troca dita 5 turnos antes).
+  // Buscar um múltiplo e filtrar DEPOIS preserva a janela de mensagens REAIS.
   const { data, error } = await supabase
     .from("messages")
     .select("id, body, direction, sent_at")
     .eq("organization_id", input.organizationId)
     .eq("conversation_id", input.conversationId)
     .order("sent_at", { ascending: false })
-    .limit(limit);
+    .limit(Math.max(limit * 5, 50));
 
   if (error || !data) return [];
 
@@ -49,13 +53,14 @@ export async function loadHistoryWithBudget(
     .filter((m) => m.id !== input.excludeMessageId)
     .filter((m) => (m.body ?? "").trim().length > 0);
 
-  // Sort oldest-first, then trim greedily from the back so newest messages stay.
+  // Sort oldest-first, keep the last `limit` TEXT messages, then trim by tokens.
   filtered.reverse();
+  const janela = filtered.slice(-limit);
 
   let totalTokens = 0;
   const kept: HistoryMessage[] = [];
-  for (let i = filtered.length - 1; i >= 0; i--) {
-    const m = filtered[i]!;
+  for (let i = janela.length - 1; i >= 0; i--) {
+    const m = janela[i]!;
     const text = (m.body ?? "").trim();
     const tokens = estimateTokens(text);
     if (totalTokens + tokens > input.tokenWindow) break;

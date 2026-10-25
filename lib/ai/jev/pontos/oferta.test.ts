@@ -180,3 +180,21 @@ describe('offer_motos Jev', () => {
     expect(p.oferta?.instructions).toMatch(/não mostrar motos/i);
   });
 });
+
+describe('oferta — objeção COM pedido de alternativa (caso 2026-10-24)', () => {
+  it('o prompt manda oferecer quando a objeção também pede opções', () => {
+    const instr = perguntaDeOfertaJev({
+      mensagem: 'Achei um pouco salgada. Tem alguma opção parecida mais em conta?',
+      pediuMaisOpcoes: false,
+      temEscolhaTravada: false,
+      temMotoEmFoco: true,
+      nomeMotoEmFoco: 'YAMAHA NMax 160 ABS',
+      pedidoSemCorrespondencia: false,
+      temOpcoesPendentes: false,
+      clienteConfirmouOpcoes: false,
+      motivoObjecaoAnterior: 'preco',
+    }).oferta?.instructions ?? '';
+    expect(instr).toContain('OBJEÇÃO COM PEDIDO DE ALTERNATIVA');
+    expect(instr).toMatch(/pedido de alternativa vence a objeção/i);
+  });
+});
