@@ -263,6 +263,7 @@ import {
   preferenciaDoCriterio,
   type DecisaoDeOferta,
   type SinaisDeOferta,
+  pedidoExplicitoDeAlternativa,
 } from './pode-oferecer-motos';
 import {
   camposDeBusca,
@@ -3900,7 +3901,17 @@ async function executarTurnoDoAgente(
         )
       : null;
   // A AÇÃO da Jev (ou a fase por regex como fallback).
-  const acaoNegociacao = decisaoNegociacao?.acao ?? null;
+  let acaoNegociacao = decisaoNegociacao?.acao ?? null;
+  // PEDIDO EXPLÍCITO de alternativa mais em conta vence a etapa de PERSUASÃO:
+  // a ação vira `mostrar_opcoes`. Sem isto a JEV mandava persuadir (texto) e o
+  // motor, pela mesma fala, mostrava as mais baratas — texto e fotos em conflito
+  // (medido 2026-10-25). Objeção pura ("achei caro") continua persuadindo.
+  if (
+    (acaoNegociacao === 'persuadir_1' || acaoNegociacao === 'persuadir_2') &&
+    pedidoExplicitoDeAlternativa(mensagemDoJob ?? '') !== null
+  ) {
+    acaoNegociacao = 'mostrar_opcoes';
+  }
   const faseObjecaoTurno: FaseObjecao | null =
     acaoNegociacao !== null
       ? faseDaAcao(acaoNegociacao)
