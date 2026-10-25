@@ -202,6 +202,7 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
+  cortarAcimaDaReferencia,
   filtrarMaisEmConta,
   incluirComparacao,
   pedeMaisEmConta,
@@ -6221,6 +6222,20 @@ async function executarTurnoDoAgente(
                       ? precoDaFila(a) - precoDaFila(b)
                       : notaDaFila(b) - notaDaFila(a),
                   );
+                // OBJEÇÃO DE PREÇO ATIVA: a fila do "ver mais" NÃO sobe de preço.
+                // Sem isto, "ver mais opções" no meio de uma objeção de preço trazia
+                // a CB 650 de R$ 41 mil com o texto "cabem melhor no bolso"
+                // (medido 2026-10-25). Só entram motos ABAIXO da referência.
+                const referenciaDaFila =
+                  catalogoDaConversa.escolhida ?? catalogoDaConversa.referencia;
+                const objecaoDePrecoAtiva =
+                  motivoNegociacao === 'preco' ||
+                  negociacaoAnterior?.motivo === 'preco' ||
+                  catalogoDaConversa.objecao?.motivo === 'preco';
+                const cortarFila = (ms: readonly MotoDoCatalogo[]): MotoDoCatalogo[] =>
+                  cortarAcimaDaReferencia(ms, referenciaDaFila, objecaoDePrecoAtiva);
+                const cabeNaFila = (m: MotoDoCatalogo): boolean =>
+                  cortarFila([m]).length === 1;
                 const perfil = selecao.perfil;
                 const pendentesBrutos = candidatos.filter((m) => !jaEnviadas.has(m.nome));
                 // C-106: as que CASARAM e ainda não foram enviadas vão PRIMEIRO na
@@ -6241,12 +6256,13 @@ async function executarTurnoDoAgente(
                           cfgCatalogo?.tolerancia_preco_pct ?? 30,
                         ).length > 0,
                   );
+                const casadasNaFila = cortarFila(casadasNaoEnviadas);
                 if (modoEstrito) {
                   // C-106 + decisão do dono (2026-10-14 + Escopo 7 2026-10-15): a 1ª oferta
                   // são as que CASAM (até N); o "ver mais" continua por ORDEM DE CASAMENTO.
                   // As PARCIAIS têm de RESPEITAR o filtro RÍGIDO (exigidos/faixas): nunca uma
                   // Bajaj num pedido de Honda, nem 19k num "até 15 mil" (medido ao vivo).
-                  const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
+                  const casadasSet = new Set(casadasNaFila.map((m) => m.nome));
                   // ESCOPO 11: as PARCIAIS (o "ver mais") = faixa exata + MARGEM
                   // numérica (`...faixasDoTurno, ...faixasSimilaresDoTurno`): mantém os
                   // filtros de TEXTO exatos (categoria/marca — o estilo NÃO se perde)
@@ -6280,10 +6296,10 @@ async function executarTurnoDoAgente(
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
-                    pendentes: ordenarFila([...casadasNaoEnviadas, ...parciais]),
+                    pendentes: ordenarFila([...casadasNaFila, ...parciais]),
                   };
                 } else {
-                  const casadasSet = new Set(casadasNaoEnviadas.map((m) => m.nome));
+                  const casadasSet = new Set(casadasNaFila.map((m) => m.nome));
                   const perfilSet = {
                     marcas: new Set(perfil.marcas),
                     categorias: new Set(perfil.categorias),
@@ -6297,11 +6313,11 @@ async function executarTurnoDoAgente(
                   // fica vazia e o turno NÃO convida o "ver mais" genérico.
                   const mesmoPerfil = nomeiaModeloEspecifico
                     ? []
-                    : restantes.filter((m) => casaPerfil(m, perfilSet));
+                    : cortarFila(restantes.filter((m) => casaPerfil(m, perfilSet)));
                   opcoesParaSalvar = {
                     marcas: perfil.marcas,
                     categorias: perfil.categorias,
-                    pendentes: ordenarFila([...casadasNaoEnviadas, ...mesmoPerfil]),
+                    pendentes: ordenarFila([...casadasNaFila, ...mesmoPerfil]),
                   };
                 }
                 // ─── FALLBACK DA FILA: as “parecidas que não batem totalmente” ───
@@ -6324,6 +6340,7 @@ async function executarTurnoDoAgente(
                   const cap = Math.max(1, cfgCatalogo?.similares_qtd ?? 3);
                   const pontuadas = candidatos
                     .filter((m) => !jaEnviadas.has(m.nome))
+                    .filter(cabeNaFila)
                     .map((moto) => ({
                       moto,
                       pontos: pontuarPorCriterios(

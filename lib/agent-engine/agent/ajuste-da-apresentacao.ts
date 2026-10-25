@@ -99,3 +99,25 @@ export function incluirComparacao(
       : [...vistas].reverse().find((m) => m.nome !== alvo.nome);
   return outra !== undefined ? [alvo, outra] : [...motos];
 }
+
+/**
+ * Fila do "ver mais" SOB OBJEÇÃO DE PREÇO: não sobe de preço.
+ *
+ * Medido 2026-10-25: o cliente disse "não cabe no meu orçamento", pediu "ver mais
+ * opções" e a fila trouxe a CB 650 F de R$ 41 mil com o texto "cabem melhor no
+ * bolso". Quando a objeção corrente é de preço, a fila só entrega motos ABAIXO
+ * da referência (moto em foco/escolhida). Sem referência/preço, não corta.
+ */
+export function cortarAcimaDaReferencia(
+  motos: readonly MotoDoCatalogo[],
+  referencia: MotoDoCatalogo | null,
+  objecaoDePrecoAtiva: boolean,
+): MotoDoCatalogo[] {
+  if (!objecaoDePrecoAtiva || referencia === null) return [...motos];
+  const teto = precoDaMoto(referencia);
+  if (teto === null) return [...motos];
+  return motos.filter((m) => {
+    const p = precoDaMoto(m);
+    return p !== null && p < teto;
+  });
+}

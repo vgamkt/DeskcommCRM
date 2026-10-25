@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cortarAcimaDaReferencia,
   filtrarMaisEmConta,
   incluirComparacao,
   pedeComparacao,
@@ -76,5 +77,23 @@ describe('comparação de duas motos', () => {
     expect(pedeComparacao('quero comparar as duas')).toBe(true);
     expect(pedeComparacao('coloca lado a lado')).toBe(true);
     expect(pedeComparacao('me mostra a Biz')).toBe(false);
+  });
+});
+
+describe('fila do ver mais sob objeção de preço', () => {
+  it('corta as motos acima da referência (não sobe de preço)', () => {
+    const CB300 = moto('HONDA CB 300 R FLEX', '14990.00');
+    const r = cortarAcimaDaReferencia([CBX, CG, CB650, VSTROM], CB300, true);
+    expect(r.map((m) => m.nome)).toEqual([CBX.nome]);
+  });
+
+  it('sem objeção de preço, não corta', () => {
+    const r = cortarAcimaDaReferencia([CBX, CB650], CG, false);
+    expect(r.map((m) => m.nome)).toEqual([CBX.nome, CB650.nome]);
+  });
+
+  it('sem referência, não corta', () => {
+    const r = cortarAcimaDaReferencia([CBX, CB650], null, true);
+    expect(r).toHaveLength(2);
   });
 });
