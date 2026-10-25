@@ -77,9 +77,19 @@ export function incluirComparacao(
   motos: readonly MotoDoCatalogo[],
   vistas: readonly MotoDoCatalogo[],
   mensagem: string,
+  /**
+   * A moto de INTERESSE já registrada no contato (`custom_fields.moto_interesse`).
+   * É a "outra" mais provável na comparação — medida 2026-10-25: sem ela, a
+   * varredura pegou uma CBX de uma oferta antiga em vez da CG que o cliente
+   * estava fechando.
+   */
+  preferida?: MotoDoCatalogo | null,
 ): MotoDoCatalogo[] {
   if (!pedeComparacao(mensagem) || motos.length !== 1) return [...motos];
   const alvo = motos[0]!;
-  const outra = [...vistas].reverse().find((m) => m.nome !== alvo.nome);
+  const outra =
+    preferida !== null && preferida !== undefined && preferida.nome !== alvo.nome
+      ? preferida
+      : [...vistas].reverse().find((m) => m.nome !== alvo.nome);
   return outra !== undefined ? [alvo, outra] : [...motos];
 }

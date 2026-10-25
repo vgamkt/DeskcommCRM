@@ -150,6 +150,21 @@ export function pedidoExplicitoDeMaisOpcoes(mensagem: string): DecisaoDeOferta |
   return querMaisOpcoes(mensagem) ? decisao(true, 'cliente_pediu_mais_opcoes') : null;
 }
 
+/**
+ * PEDIDO EXPLÍCITO de uma ALTERNATIVA MAIS EM CONTA ("tem alguma opção parecida
+ * mais em conta?", "tem uma mais barata?"). Mesmo contrato de
+ * `pedidoExplicitoDeMaisOpcoes`: pedido legítimo e inequívoco que a JEV NÃO pode
+ * negar. Medido 2026-10-24/25: a JEV ora liberava (`criterio: preco`), ora negava
+ * a MESMA fala, e o cliente que pediu ficava sem ver as opções. A objeção
+ * sozinha ("achei caro", "tá salgada") NÃO entra aqui — essa persuade primeiro.
+ */
+export function pedidoExplicitoDeAlternativa(mensagem: string): DecisaoDeOferta | null {
+  const n = normalizarNomeDeMoto(mensagem);
+  if (n === '') return null;
+  if (!/\bmais (em conta|barat\w*)\b/.test(n)) return null;
+  return decisao(true, 'cliente_pediu_alternativa_mais_em_conta', 'preco');
+}
+
 /** Validação/opinião sobre uma moto JÁ em foco — NÃO é pedido de catálogo. */
 const RE_VALIDACAO_DE_MOTO =
   /\b(presta|serve|vale a pena|e boa|e bom|recomenda\w*|confiav\w*|manutencao|economica|roda bem|aguenta|da problema|tem problema|defeito|melhor que|pior que|durabilidade|satisfeit\w*)\b/;
@@ -253,6 +268,13 @@ export function decidirOfertaComAutoridadeDaJev(args: {
   sinais: SinaisDeOferta;
 }): DecisaoDeOferta {
   if (args.vereditoJev !== null) {
+    // EXCEÇÃO (mesma de `pedidoExplicitoDeMaisOpcoes`): um pedido EXPLÍCITO de
+    // alternativa mais em conta é legítimo — a JEV não o nega por flutuação.
+    // Vale só quando ela NEGA; quando libera, a decisão dela manda.
+    const alternativa = args.vereditoJev.oferecer
+      ? null
+      : pedidoExplicitoDeAlternativa(args.mensagem);
+    if (alternativa !== null) return alternativa;
     return {
       pode: args.vereditoJev.oferecer,
       motivo: args.vereditoJev.motivo,

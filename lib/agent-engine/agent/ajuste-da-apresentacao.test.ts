@@ -51,6 +51,17 @@ describe('comparação de duas motos', () => {
     expect(r.map((m) => m.nome)).toEqual([NMAX.nome, CG.nome]);
   });
 
+  it('prefere a moto de interesse registrada (custom_fields) à varredura', () => {
+    const CBX_ANTIGA = moto('HONDA CBX 250 Twister', '9990.00');
+    const r = incluirComparacao(
+      [NMAX],
+      [CBX_ANTIGA, NMAX],
+      'quero comparar as duas',
+      CG,
+    );
+    expect(r.map((m) => m.nome)).toEqual([NMAX.nome, CG.nome]);
+  });
+
   it('não mexe quando não é comparação', () => {
     const r = incluirComparacao([NMAX], [CG, NMAX], 'quero ver a NMax');
     expect(r.map((m) => m.nome)).toEqual([NMAX.nome]);

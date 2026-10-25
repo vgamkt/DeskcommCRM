@@ -238,3 +238,35 @@ describe('B1 — decidirOfertaComAutoridadeDaJev (a Jev decide; rede é fallback
     expect(call(null, 'obrigado')).toMatchObject({ pode: false, motivo: 'sem_pedido_do_cliente' });
   });
 });
+
+describe('pedido explícito de alternativa mais em conta (2026-10-25)', () => {
+  it('a JEV negando NÃO impede mostrar quando o cliente pediu mais em conta', () => {
+    const d = decidirOfertaComAutoridadeDaJev({
+      vereditoJev: { oferecer: false, motivo: 'objecao_tentativa_1', criterio: 'nenhum' },
+      mensagem: 'Achei um pouco salgada. Tem alguma opção parecida mais em conta?',
+      nomeMotoEmFoco: 'YAMAHA NMax 160 ABS',
+      sinais: {
+        mensagem: 'Achei um pouco salgada. Tem alguma opção parecida mais em conta?',
+        pediuMaisOpcoes: false,
+        pediuOutraMoto: true,
+        ehObjecao: true,
+        temEscolhaTravada: true,
+        temMotoEmFoco: true,
+        estadoObjecaoAnterior: null,
+        confirmouVerOpcoes: false,
+        consultouCatalogo: false,
+      } as never,
+    });
+    expect(d).toMatchObject({ pode: true, criterio: 'preco', motivo: 'cliente_pediu_alternativa_mais_em_conta' });
+  });
+
+  it('objeção pura continua persuadindo (não força oferta)', () => {
+    const d = decidirOfertaComAutoridadeDaJev({
+      vereditoJev: { oferecer: false, motivo: 'objecao_tentativa_1', criterio: 'nenhum' },
+      mensagem: 'Achei caro',
+      nomeMotoEmFoco: 'YAMAHA NMax 160 ABS',
+      sinais: { mensagem: 'Achei caro', pediuMaisOpcoes: false, pediuOutraMoto: false, ehObjecao: true } as never,
+    });
+    expect(d.pode).toBe(false);
+  });
+});

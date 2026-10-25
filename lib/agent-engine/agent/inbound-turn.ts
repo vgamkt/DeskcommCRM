@@ -6137,10 +6137,21 @@ async function executarTurnoDoAgente(
               );
               if (baratas.length > 0) selecao.motos = baratas;
             }
+            const interesseNome =
+              typeof effectiveContext.contact?.custom_fields?.moto_interesse === 'string'
+                ? effectiveContext.contact.custom_fields.moto_interesse
+                : null;
+            const motoDeInteresse =
+              interesseNome !== null
+                ? (motosDeNomes([interesseNome], catalogoDaConversa.motos)[0] ??
+                  motosDeNomes([interesseNome], catalogoDoTurno)[0] ??
+                  null)
+                : null;
             selecao.motos = incluirComparacao(
               selecao.motos,
               catalogoDaConversa.motos,
               mensagemDoTurnoParaJev,
+              motoDeInteresse,
             );
             // ANTES/DEPOIS (auditoria, P5): a JEV decide (hipóteses/critérios) e o
             // motor EXECUTA (filtra/ordena). Registra os dois lados.
