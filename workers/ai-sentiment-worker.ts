@@ -29,7 +29,7 @@ import { decidir } from "@/lib/ai/jev";
 import { alvosDeJevDe } from "@/lib/ai/jev/config";
 import { alvosDeJevDaOrg } from "@/lib/ai/jev/resolver";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { ehObjecaoValor } from "@/lib/agent-engine/agent/objecao-de-valor";
+import { ehNegociacaoDeCompra } from "@/lib/agent-engine/agent/objecao-de-valor";
 import {
   perguntaDeSentimentoDeJev,
   sentimentoDaRespostaDeJev,
@@ -408,7 +408,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // (2026-10-04): o 1º "achei caro" silenciou a conversa e os turnos seguintes
     // ficaram mudos. Por isso a nota de sentimento é registrada (metadata abaixo),
     // mas o ALERTA de handoff não sai quando a mensagem é objeção de valor.
-    if (result.sentiment_score < threshold && ehObjecaoValor(body)) {
+    if (result.sentiment_score < threshold && ehNegociacaoDeCompra(body)) {
       console.warn("[ai-sentiment-worker] objeção de valor — handoff por sentimento suprimido (negociação cuida)", {
         message_id: messageId,
       });

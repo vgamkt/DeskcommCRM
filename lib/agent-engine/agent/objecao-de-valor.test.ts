@@ -4,6 +4,7 @@ import {
   avancarObjecao,
   clienteConfirmouVer,
   clienteNegouVer,
+  ehNegociacaoDeCompra,
   ehObjecaoValor,
   ehPedidoDesconto,
   ehPedidoDiferente,
@@ -305,5 +306,39 @@ describe('textoDeContingenciaDaNegociacao', () => {
   it('sem ação de negociação → null', () => {
     expect(textoDeContingenciaDaNegociacao(null)).toBeNull();
     expect(textoDeContingenciaDaNegociacao('outra_coisa')).toBeNull();
+  });
+});
+
+describe('ehNegociacaoDeCompra — o supressor do handoff por sentimento', () => {
+  it('cobre a objeção que pede alternativa mais em conta (caso que silenciou a conversa)', () => {
+    // Medido ao vivo 2026-10-24: "Achei um pouco salgada. Tem alguma opção
+    // parecida mais em conta?" casava `ehPedidoDiferente` (tem "opção"), então
+    // `ehObjecaoValor` devolvia false e o alerta de sentimento silenciava o bot
+    // para sempre. A negociação precisa suprimir o handoff nos dois formatos.
+    expect(ehObjecaoValor('Achei um pouco salgada. Tem alguma opção parecida mais em conta?')).toBe(false);
+    expect(ehNegociacaoDeCompra('Achei um pouco salgada. Tem alguma opção parecida mais em conta?')).toBe(true);
+  });
+
+  it('cobre objeção pura, pedido de alternativa e pedido de desconto', () => {
+    for (const frase of [
+      'achei caro',
+      'ta muito rodada',
+      'tem outra moto mais barata?',
+      'quero ver uma opção diferente',
+      'consegue um desconto?',
+    ]) {
+      expect(ehNegociacaoDeCompra(frase), frase).toBe(true);
+    }
+  });
+
+  it('não transforma conversa comum em negociação', () => {
+    for (const frase of [
+      'qual o ano dela?',
+      'vocês abrem sábado?',
+      'meu nome é Letícia',
+      'onde fica a loja?',
+    ]) {
+      expect(ehNegociacaoDeCompra(frase), frase).toBe(false);
+    }
   });
 });

@@ -273,6 +273,21 @@ export function ehPedidoDesconto(mensagem: string): boolean {
 }
 
 /**
+ * A mensagem é NEGOCIAÇÃO de compra — objeção de valor, pedido de alternativa
+ * ou pedido de desconto?
+ *
+ * Existe para o SUPRESSOR do handoff por sentimento (`ai-sentiment-worker`):
+ * negociar preço/alternativa não é sinal de que o cliente quer uma pessoa, e o
+ * handoff automático silencia o bot para sempre. `ehObjecaoValor` sozinho não
+ * cobre a mensagem que mistura as duas coisas ("achei salgada, tem opção mais
+ * em conta?"): nela `ehPedidoDiferente` vence e a objeção some. Foi exatamente
+ * esse caso que silenciou uma conversa real (2026-10-24).
+ */
+export function ehNegociacaoDeCompra(mensagem: string): boolean {
+  return ehObjecaoValor(mensagem) || ehPedidoDiferente(mensagem) || ehPedidoDesconto(mensagem);
+}
+
+/**
  * Texto de CONTINGÊNCIA quando o turno de negociação termina SEM nenhuma mensagem
  * enviada (o modelo escreveu a resposta como texto puro e não chamou
  * `send_message`, ou a régua barrou a oferta e ele não voltou). Garante que o

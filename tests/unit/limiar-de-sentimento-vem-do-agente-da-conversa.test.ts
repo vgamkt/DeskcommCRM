@@ -178,6 +178,8 @@ interface Cenario {
   agenteGrudado?: string | null;
   /** Só o agente legado da clínica, sem versão publicada (instalação nova). */
   somenteLegado?: boolean;
+  /** Corpo da mensagem inbound (default: reclamação de assistência técnica). */
+  corpo?: string;
 }
 
 function montarBanco(c: Cenario): Banco {
@@ -212,7 +214,7 @@ function montarBanco(c: Cenario): Banco {
         id: MSG,
         organization_id: ORG,
         conversation_id: CONV,
-        body: "meu aparelho voltou com o mesmo defeito",
+        body: c.corpo ?? "meu aparelho voltou com o mesmo defeito",
         direction: "inbound",
         metadata: {},
       },
@@ -362,5 +364,33 @@ describe("limiar de sentimento — o agente da conversa é quem manda (#486)", (
       r.agenteDoCusto,
       "atribuiu o custo a um agente que não atende esta conversa",
     ).toBeNull();
+  });
+});
+
+describe("handoff por sentimento NÃO silencia a negociação (caso 2026-10-24)", () => {
+  it("objeção que pede opção mais em conta não vira handoff", async () => {
+    // A conversa real: "Achei um pouco salgada. Tem alguma opção parecida mais
+    // em conta?" — nota 0.29 no limiar 0.3. `ehObjecaoValor` sozinho devolvia
+    // false (a frase é `ehPedidoDiferente` por causa de "opção"), o alerta saía
+    // e o orquestrador silenciava o bot para sempre. Aqui o limiar da clínica
+    // (0.9) é maior que a nota, então SEM a supressão o alerta sairia.
+    const r = await rodar({
+      sessaoDaConversa: SESSAO_CLINICA,
+      corpo: "Achei um pouco salgada. Tem alguma opção parecida mais em conta?",
+    });
+
+    expect(
+      r.alertas,
+      "a negociação silenciou a conversa: o cliente pediu uma opção mais em conta e o bot parou de responder",
+    ).toHaveLength(0);
+  });
+
+  it("reclamação genuína continua escalando (controle positivo)", async () => {
+    const r = await rodar({
+      sessaoDaConversa: SESSAO_CLINICA,
+      corpo: "meu aparelho voltou com o mesmo defeito e ninguém resolve",
+    });
+
+    expect(r.alertas, "a clínica deixou de ser avisada de um cliente insatisfeito").toHaveLength(1);
   });
 });
