@@ -223,10 +223,15 @@ export function corrigirCategoriaDoCorpo(
   );
   let out = corpo;
   for (const termo of ['scooter', 'trail', 'street', 'naked', 'cub']) {
-    const re = new RegExp(`\\b${termo}s?\\b`, 'gi');
-    if (!re.test(out)) continue;
     if (cats.every((c) => c.includes(termo))) continue;
-    out = out.replace(re, 'opções');
+    // SÓ a frase quantificada da chamada ("5 scooters", "duas trail"). Antes
+    // trocava qualquer ocorrência e virava "a Neo é opções compacta" (medido
+    // 2026-10-26).
+    const re = new RegExp(
+      `\\b(\\d{1,2}|uma|duas|dois|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\\s+${termo}s?\\b`,
+      'gi',
+    );
+    out = out.replace(re, (_m, num: string) => `${num} opções`);
   }
   return out;
 }

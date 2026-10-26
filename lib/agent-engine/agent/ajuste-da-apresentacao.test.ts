@@ -154,6 +154,16 @@ describe('categoria no corpo e unidade no orçamento', () => {
     );
   });
 
+  it('não mexe em descrição sem contagem ("a Neo é scooter")', () => {
+    const mistas = [
+      { nome: 'YAMAHA Neo 125', valores: { categoria: 'Scooter' }, fotos: ['x'] },
+      { nome: 'YAMAHA XTZ 150', valores: { categoria: 'Trail' }, fotos: ['x'] },
+    ];
+    expect(corrigirCategoriaDoCorpo('a Neo 125 é scooter compacta', mistas)).toBe(
+      'a Neo 125 é scooter compacta',
+    );
+  });
+
   it('mantém a categoria quando todas são do mesmo tipo', () => {
     const scooters = [
       { nome: 'YAMAHA Neo 125', valores: { categoria: 'Scooter' }, fotos: ['x'] },

@@ -368,11 +368,14 @@ export function ajustarContagemDaApresentacao(
     return i >= 0 ? i : null;
   };
   const palavraDe = (n: number): string => (n >= 0 && n <= 10 ? palavras[n]! : String(n));
+  let ajustouContagem = false;
   const comNumero = texto.replace(
     /\b(mais\s+)?(\d{1,2}|uma|duas|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\s+(opç(?:ão|ões)|opcoes|motos?|motinhas?)\b/gi,
     (trecho, mais: string | undefined, num: string, substantivo: string) => {
+      if (ajustouContagem) return trecho;
       const atual = numeroDe(num);
       if (atual === null) return trecho;
+      ajustouContagem = true;
       // "mais N" na 1a = N ALEM da que o cliente ja ve; no "ver mais" = as N novas.
       const esperado =
         mais !== undefined ? (ehVerMais ? totalDaEtapa : Math.max(totalDaEtapa - 1, 0)) : totalDaEtapa;
