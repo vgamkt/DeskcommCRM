@@ -206,3 +206,52 @@ export function filtrarMenosRodadas(
     .slice(0, Math.max(limite, 1))
     .map((x) => x.m);
 }
+
+/**
+ * CORREÇÃO DE CATEGORIA NO CORPO. O modelo às vezes diz "5 scooters" e envia
+ * uma mistura (scooter + street + trail). Se a categoria citada não é comum a
+ * TODAS as motos enviadas, troca a palavra por "opções". Medido 2026-10-26
+ * ("Biz 125" ausente → "5 scooters" com XTZ/FZ na lista).
+ */
+export function corrigirCategoriaDoCorpo(
+  corpo: string,
+  motos: readonly MotoDoCatalogo[],
+): string {
+  if (motos.length < 2) return corpo;
+  const cats = motos.map((m) =>
+    String(m.valores?.categoria ?? m.valores?.tipo ?? '').toLowerCase(),
+  );
+  let out = corpo;
+  for (const termo of ['scooter', 'trail', 'street', 'naked', 'cub']) {
+    const re = new RegExp(`\\b${termo}s?\\b`, 'gi');
+    if (!re.test(out)) continue;
+    if (cats.every((c) => c.includes(termo))) continue;
+    out = out.replace(re, 'opções');
+  }
+  return out;
+}
+
+/**
+ * UNIDADE DENTRO DO ORÇAMENTO. O cliente escolheu um MODELO (ex.: "prefiro a
+ * NMax") que tem mais de uma unidade; se a unidade escolhida está acima do
+ * orçamento e existe outra do MESMO modelo dentro dele, usa a que cabe no
+ * álbum. Medido 2026-10-26: orçamento 15 mil, álbum da NMax 2023 (18.990) e a
+ * 2019 (14.990) só citada no texto.
+ */
+export function ajustarUnidadeAoOrcamento(
+  escolhida: MotoDoCatalogo,
+  orcamento: number,
+  universo: readonly MotoDoCatalogo[],
+): MotoDoCatalogo {
+  const preco = (m: MotoDoCatalogo): number | null =>
+    parsePreco(String(m.preco ?? m.valores?.preco ?? ''));
+  const p = preco(escolhida);
+  if (p === null || p <= orcamento) return escolhida;
+  const alvo = normalizarNomeDeMoto(escolhida.nome);
+  const cabe = universo.find((m) => {
+    if (normalizarNomeDeMoto(m.nome) !== alvo) return false;
+    const q = preco(m);
+    return q !== null && q <= orcamento;
+  });
+  return cabe ?? escolhida;
+}

@@ -202,7 +202,9 @@ import { renderBlocoDeEstado } from './estado-do-atendimento';
 import { renderBriefDoTurno, renderDiretrizDoTurno } from './brief-do-turno';
 import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
+  ajustarUnidadeAoOrcamento,
   corpoSemNomesForaDoEnvio,
+  corrigirCategoriaDoCorpo,
   cortarAcimaDaReferencia,
   filtrarMenosRodadas,
   filtrarMaisEmConta,
@@ -366,7 +368,7 @@ export function ajustarContagemDaApresentacao(
     return i >= 0 ? i : null;
   };
   const palavraDe = (n: number): string => (n >= 0 && n <= 10 ? palavras[n]! : String(n));
-  return texto.replace(
+  const comNumero = texto.replace(
     /\b(mais\s+)?(\d{1,2}|uma|duas|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\s+(opç(?:ão|ões)|opcoes|motos?|motinhas?)\b/gi,
     (trecho, mais: string | undefined, num: string, substantivo: string) => {
       const atual = numeroDe(num);
@@ -380,6 +382,19 @@ export function ajustarContagemDaApresentacao(
       const singular = opcao ? 'opção' : motinha ? 'motinha' : 'moto';
       const plural = opcao ? 'opções' : motinha ? 'motinhas' : 'motos';
       return `${mais !== undefined ? 'mais ' : ''}${palavraDe(esperado)} ${esperado === 1 ? singular : plural}`;
+    },
+  );
+  // "Olha essas duas:" com 5 fotos — o número pode vir SEM o substantivo.
+  return comNumero.replace(
+    /\b(essas|esses|as|os)\s+(duas|dois|três|tres|quatro|cinco|seis|sete|oito|nove|dez)\b/gi,
+    (trecho, det: string, num: string) => {
+      const atual = numeroDe(num);
+      if (atual === null || atual === totalDaEtapa) return trecho;
+      if (totalDaEtapa === 1) {
+        const sing: Record<string, string> = { essas: 'essa', esses: 'esse', as: 'a', os: 'o' };
+        return sing[det.toLowerCase()] ?? det;
+      }
+      return `${det} ${palavraDe(totalDaEtapa)}`;
     },
   );
 }
@@ -5342,7 +5357,7 @@ async function executarTurnoDoAgente(
                 log: runLog,
               })
             : null;
-        const escolhidaNesteTurno =
+        let escolhidaNesteTurno =
           planoEscolha !== null
             ? await motoEscolhidaPeloClienteComJev(
                 body,
@@ -5362,6 +5377,15 @@ async function executarTurnoDoAgente(
                 },
               )
             : undefined;
+        // Orçamento informado + unidade escolhida acima dele: usa a OUTRA
+        // unidade do MESMO modelo que cabe (ex.: NMax 2023 18.990 → 2019 14.990).
+        if (escolhidaNesteTurno !== undefined && orcamentoTurno !== null) {
+          escolhidaNesteTurno = ajustarUnidadeAoOrcamento(
+            escolhidaNesteTurno,
+            orcamentoTurno,
+            [...catalogoEfetivo, ...catalogoDaConversa.motos, ...catalogoDoTurno],
+          );
+        }
         const criteriosDoArbitro = vereditoArbitro?.porPonto.catalog_criteria;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
         runLog.info('escolha: decisão (antes/depois)', {
@@ -7005,6 +7029,13 @@ async function executarTurnoDoAgente(
                 catalogoDoTurno,
                 motosDistintasApresentacao,
               );
+              if (motosDistintasApresentacao >= 2) {
+                const apresentadasCategoria = motosCitadasNoTexto(
+                  itens.map((i) => i.legenda).join('\n'),
+                  catalogoDoTurno,
+                );
+                introducao = corrigirCategoriaDoCorpo(introducao, apresentadasCategoria);
+              }
             }
             // A contagem citada é a das fotos DESTA etapa (a JEV nao decide numero):
             // 1a = total da 1a; "ver mais" = so as novas.

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ajustarUnidadeAoOrcamento,
   corpoSemNomesForaDoEnvio,
+  corrigirCategoriaDoCorpo,
   cortarAcimaDaReferencia,
   filtrarMaisEmConta,
   filtrarMenosRodadas,
@@ -138,5 +140,37 @@ describe('menos rodadas (objeção de km)', () => {
   it('sem referência, ordena por km crescente', () => {
     const r = filtrarMenosRodadas([], [cg, neo, factor], null, 2);
     expect(r.map((m) => m.nome)).toEqual([neo.nome, factor.nome]);
+  });
+});
+
+describe('categoria no corpo e unidade no orçamento', () => {
+  it('troca "scooters" por "opções" quando a lista é mista', () => {
+    const mistas = [
+      { nome: 'YAMAHA Neo 125', valores: { categoria: 'Scooter' }, fotos: ['x'] },
+      { nome: 'YAMAHA XTZ 150', valores: { categoria: 'Trail, On-Off Road' }, fotos: ['x'] },
+    ];
+    expect(corrigirCategoriaDoCorpo('Separei 5 scooters próximas:', mistas)).toBe(
+      'Separei 5 opções próximas:',
+    );
+  });
+
+  it('mantém a categoria quando todas são do mesmo tipo', () => {
+    const scooters = [
+      { nome: 'YAMAHA Neo 125', valores: { categoria: 'Scooter' }, fotos: ['x'] },
+      { nome: 'YAMAHA NMax 160', valores: { categoria: 'Scooter' }, fotos: ['x'] },
+    ];
+    expect(corrigirCategoriaDoCorpo('Separei 2 scooters:', scooters)).toBe('Separei 2 scooters:');
+  });
+
+  it('escolhe a unidade do mesmo modelo que cabe no orçamento', () => {
+    const nmax2023 = { nome: 'YAMAHA NMax 160 ABS', preco: '18990.00', fotos: ['x'] };
+    const nmax2019 = { nome: 'YAMAHA NMax 160 ABS', preco: '14990.00', fotos: ['x'] };
+    const r = ajustarUnidadeAoOrcamento(nmax2023, 15000, [nmax2023, nmax2019]);
+    expect(r).toBe(nmax2019);
+  });
+
+  it('mantém a unidade quando ela já cabe', () => {
+    const nmax2019 = { nome: 'YAMAHA NMax 160 ABS', preco: '14990.00', fotos: ['x'] };
+    expect(ajustarUnidadeAoOrcamento(nmax2019, 15000, [nmax2019])).toBe(nmax2019);
   });
 });
