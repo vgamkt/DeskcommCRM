@@ -5566,7 +5566,9 @@ async function executarTurnoDoAgente(
                     : (cfg?.similares_qtd ?? 3);
                 // (dono, 2026-10-24) No "ver mais"/"mais em conta", consome a fila
                 // pelo MENOR preço (a ordem tem de valer AQUI, no lote final).
-                const filaParaConsumir = querAlternativa(mensagemDoTurnoParaJev)
+                const consumirPorPreco =
+                  pedidoExplicitoDeAlternativa(mensagemDoTurnoParaJev) !== null;
+                const filaParaConsumir = consumirPorPreco
                   ? [...pendentesNaMedida].sort((a, b) => {
                       const pa =
                         parsePreco(String(a.preco ?? a.valores?.preco ?? '')) ??
@@ -6317,16 +6319,19 @@ async function executarTurnoDoAgente(
                     cfgCatalogo?.tolerancia_preco_pct ?? 30,
                     principalDoTurno,
                   ).pontos;
-                // (dono, 2026-10-24) "Mais em conta"/objeção: MENOR preço primeiro
-                // (preço do estoque). Nos demais (cidade/principais), maior nota.
-                const ehAlternativa =
-                  querAlternativa(mensagemDoTurnoParaJev) || intencaoDoTurno === 'alternativa';
+                // (dono, 2026-10-25) ORDEM DA FILA = ADERÊNCIA (quem mais bate
+                // primeiro; quem bate menos vai para o fim). Preço crescente SÓ
+                // quando o cliente pede explicitamente "mais em conta"/"mais
+                // barata" — "ver mais opções" NÃO é pedido de preço (antes caía
+                // na regex de alternativa e ordenava por preço).
                 const precoDaFila = (m: MotoDoCatalogo): number =>
                   parsePreco(String(m.preco ?? m.valores?.preco ?? '')) ??
                   Number.MAX_SAFE_INTEGER;
+                const filaPorPreco =
+                  pedidoExplicitoDeAlternativa(mensagemDoTurnoParaJev) !== null;
                 const ordenarFila = (ms: readonly MotoDoCatalogo[]): MotoDoCatalogo[] =>
                   [...ms].sort((a, b) =>
-                    ehAlternativa
+                    filaPorPreco
                       ? precoDaFila(a) - precoDaFila(b)
                       : notaDaFila(b) - notaDaFila(a),
                   );
