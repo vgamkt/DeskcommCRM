@@ -5380,11 +5380,46 @@ async function executarTurnoDoAgente(
         // Orçamento informado + unidade escolhida acima dele: usa a OUTRA
         // unidade do MESMO modelo que cabe (ex.: NMax 2023 18.990 → 2019 14.990).
         if (escolhidaNesteTurno !== undefined && orcamentoTurno !== null) {
-          escolhidaNesteTurno = ajustarUnidadeAoOrcamento(
+          const universoUnidades = [
+            ...catalogoEfetivo,
+            ...catalogoDaConversa.motos,
+            ...catalogoDoTurno,
+          ];
+          let ajustada = ajustarUnidadeAoOrcamento(
             escolhidaNesteTurno,
             orcamentoTurno,
-            [...catalogoEfetivo, ...catalogoDaConversa.motos, ...catalogoDoTurno],
+            universoUnidades,
           );
+          // A unidade mais barata do modelo pode não ter sido apresentada/consultada
+          // (ex.: NMax 2019). Se a escolhida está acima do orçamento e não achamos
+          // outra no universo, lê o ESTOQUE inteiro UMA vez e procura a unidade que
+          // cabe (medido 2026-10-26: álbum da 2023 18.990 com orçamento 15 mil).
+          const precoEscolhida = parsePreco(
+            String(escolhidaNesteTurno.preco ?? escolhidaNesteTurno.valores?.preco ?? ''),
+          );
+          if (
+            ajustada === escolhidaNesteTurno &&
+            precoEscolhida !== null &&
+            precoEscolhida > orcamentoTurno &&
+            catalogoMapeamento !== null
+          ) {
+            try {
+              const estoqueInteiro = await carregarCatalogoDoBanco(
+                deps.crmCfg.supabase,
+                tenantId,
+                catalogoMapeamento,
+                colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
+              );
+              ajustada = ajustarUnidadeAoOrcamento(
+                escolhidaNesteTurno,
+                orcamentoTurno,
+                estoqueInteiro,
+              );
+            } catch {
+              // best-effort: sem estoque, mantém a unidade escolhida
+            }
+          }
+          escolhidaNesteTurno = ajustada;
         }
         const criteriosDoArbitro = vereditoArbitro?.porPonto.catalog_criteria;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
