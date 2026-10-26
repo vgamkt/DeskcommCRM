@@ -411,16 +411,26 @@ export function ajustarContagemDaApresentacao(
  * do modelo falava da 2023 e as fotos eram da 2019 (medido 2026-10-26).
  * Uma única pergunta de fecho; os dados vêm do próprio objeto da moto.
  */
-function textoDaUnidadeEscolhida(m: MotoDoCatalogo): string {
+function textoDaUnidadeEscolhida(m: MotoDoCatalogo, nomeCliente?: string | null): string {
+  const primeiroNome =
+    typeof nomeCliente === 'string' && nomeCliente.trim() !== ''
+      ? nomeCliente.trim().split(/\s+/)[0]
+      : null;
+  const saudacao = primeiroNome !== null ? `Boa escolha, ${primeiroNome}!` : 'Boa escolha!';
   const anoCor = [m.ano, m.cor].filter(Boolean).join(' ');
+  const cambioRaw = String(m.valores?.cambio ?? '').trim();
+  const cambio =
+    cambioRaw === ''
+      ? null
+      : /auto/i.test(cambioRaw)
+        ? 'automática'
+        : cambioRaw.toLowerCase();
   const km = m.quilometragem
     ? `${formatarKm(m.quilometragem) ?? m.quilometragem} km`
     : null;
   const preco = m.preco ? (formatarPreco(m.preco) ?? m.preco) : null;
-  const detalhe = [km ? `com ${km}` : null, preco ? `por ${preco}` : null]
-    .filter(Boolean)
-    .join(' e ');
-  return `${m.nome}${anoCor ? ` ${anoCor}` : ''} está disponível${detalhe ? `, ${detalhe}` : ''}. Quer dar uma olhada de perto ou saber mais?`;
+  const detalhe = [cambio, km, preco ? `por ${preco}` : null].filter(Boolean).join(', ');
+  return `${saudacao} A ${m.nome}${anoCor ? ` ${anoCor}` : ''} está disponível${detalhe ? ` — ${detalhe}` : ''}. Quer que eu separe ela pra você ver de perto?`;
 }
 
 export const AGENT_TOOL_DEFS = {
@@ -7328,10 +7338,17 @@ async function executarTurnoDoAgente(
               // pergunta do fluxo fica para o próximo turno. Medido ao vivo: sem isto o
               // modelo troca a venda pela pergunta do roteiro e a conversa não avança.
               let corpoFinal = finalBody;
-              // A unidade enviada foi TROCADA para a que cabe no orçamento: o texto
-              // passa a ser o factual dela (ano/cor/km/preço), alinhado às fotos.
-              if (unidadeTrocadaParaOrcamento && escolhidaNesteTurno !== undefined) {
-                corpoFinal = textoDaUnidadeEscolhida(escolhidaNesteTurno);
+              // ESCOLHA/ÁLBUM: o texto é SEMPRE o da unidade que está sendo enviada
+              // (nome/ano/cor/câmbio/km/preço) — nunca a de outro ano/unidade que o
+              // modelo tenha citado. Garante texto = fotos em qualquer caso (não só
+              // quando troca por orçamento). Medido 2026-10-26 (turno 11).
+              if (escolhidaNesteTurno !== undefined) {
+                corpoFinal = textoDaUnidadeEscolhida(
+                  escolhidaNesteTurno,
+                  typeof effectiveContext.contact?.custom_fields?.nome === 'string'
+                    ? effectiveContext.contact.custom_fields.nome
+                    : (effectiveContext.contact?.name ?? null),
+                );
               }
               const vaiMostrarMotos =
                 (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) ||
