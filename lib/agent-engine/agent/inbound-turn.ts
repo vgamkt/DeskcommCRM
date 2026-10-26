@@ -6207,6 +6207,20 @@ async function executarTurnoDoAgente(
               const cc = ccDaMoto(m);
               return cc === null || cc <= 400;
             };
+            // CÂMBIO AUTOMÁTICO pedido EXPLICITAMENTE ("automática", "automático",
+            // "câmbio auto"): FATO do cliente — o motor entrega só automáticas
+            // (a JEV decide OFERECER; aqui só se cumpre o critério pedido). O
+            // `cambio` vem do catálogo (coluna de exibição). Medido 2026-10-26:
+            // "quero automática" trazia Factor/CB 300 (manuais).
+            const pedeCambioAutomatico = /\bautomatic[oa]s?\b|\bcambio\s+automatico\b|\bcambio\s+auto\b/.test(
+              normalizarNomeDeMoto(mensagemDoTurnoParaJev),
+            );
+            if (pedeCambioAutomatico) {
+              const automaticas = candidatos.filter((m) =>
+                /auto/i.test(String(m.valores?.cambio ?? '')),
+              );
+              if (automaticas.length > 0) candidatos = automaticas;
+            }
             const selecao = selecionarPorIntencao({
               termoBase,
               criterios: criteriosDoTurno,
