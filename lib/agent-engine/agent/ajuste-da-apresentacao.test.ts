@@ -4,6 +4,7 @@ import {
   corpoSemNomesForaDoEnvio,
   cortarAcimaDaReferencia,
   filtrarMaisEmConta,
+  filtrarMenosRodadas,
   incluirComparacao,
   pedeComparacao,
   pedeMaisEmConta,
@@ -122,5 +123,20 @@ describe('corpo sem nomes fora do envio', () => {
   it('não mexe em apresentação de 1 moto', () => {
     const corpo = 'Olha a NMax 160 ABS:';
     expect(corpoSemNomesForaDoEnvio(corpo, [NMAX], 1)).toBe(corpo);
+  });
+});
+
+describe('menos rodadas (objeção de km)', () => {
+  const cg = { nome: 'HONDA CG 160 FAN FLEX ONE', preco: '17500.00', quilometragem: '87000', fotos: ['x'] };
+  const neo = { nome: 'YAMAHA Neo 125 UBS', preco: '13500.00', quilometragem: '11000', fotos: ['x'] };
+  const factor = { nome: 'YAMAHA Factor 150 ED', preco: '12990.00', quilometragem: '30000', fotos: ['x'] };
+  const nova = { nome: 'HONDA CG 160', preco: '16000.00', quilometragem: '5000', fotos: ['x'] };
+  it('mostra as menos rodadas que a referência, em ordem crescente', () => {
+    const r = filtrarMenosRodadas([cg], [factor, neo], cg, 5, [nova]);
+    expect(r.map((m) => m.nome)).toEqual([nova.nome, neo.nome, factor.nome]);
+  });
+  it('sem referência, ordena por km crescente', () => {
+    const r = filtrarMenosRodadas([], [cg, neo, factor], null, 2);
+    expect(r.map((m) => m.nome)).toEqual([neo.nome, factor.nome]);
   });
 });

@@ -167,3 +167,42 @@ export function corpoSemNomesForaDoEnvio(
   if (!pareceLista) return corpo;
   return `Separei ${totalApresentado} opções pra você dar uma olhada:`;
 }
+
+/** Quilometragem numérica da moto ("87.000" → 87000). */
+function kmDaMoto(m: MotoDoCatalogo): number | null {
+  const raw = String(m.quilometragem ?? m.valores?.quilometragem ?? '').trim();
+  if (raw === '') return null;
+  const n = Number(raw.replace(/[^0-9]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * OBJEÇÃO DE QUILOMETRAGEM ("tá muito rodada, tem com menos km?"): o motor
+ * EXECUTA o critério `km` da JEV — mostra as MENOS rodadas que a referência, em
+ * ordem crescente. Medido 2026-10-26: a JEV disse `criterio: km`, o texto
+ * prometeu "duas opções menos rodadas" e as fotos eram a própria CG de 87.000 km.
+ */
+export function filtrarMenosRodadas(
+  motos: readonly MotoDoCatalogo[],
+  casadas: readonly MotoDoCatalogo[],
+  referencia: MotoDoCatalogo | null,
+  limite: number,
+  extras: readonly MotoDoCatalogo[] = [],
+): MotoDoCatalogo[] {
+  const refKm = referencia !== null ? kmDaMoto(referencia) : null;
+  const vistos = new Set<string>();
+  return [...motos, ...casadas, ...extras]
+    .filter((m) => {
+      if (vistos.has(m.nome)) return false;
+      vistos.add(m.nome);
+      return true;
+    })
+    .map((m) => ({ m, km: kmDaMoto(m) }))
+    .filter(
+      (x): x is { m: MotoDoCatalogo; km: number } =>
+        x.km !== null && (refKm === null || x.km < refKm),
+    )
+    .sort((a, b) => a.km - b.km)
+    .slice(0, Math.max(limite, 1))
+    .map((x) => x.m);
+}

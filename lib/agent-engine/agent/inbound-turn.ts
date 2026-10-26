@@ -204,6 +204,7 @@ import { renderCandidatasDoTurno } from './candidatas-do-turno';
 import {
   corpoSemNomesForaDoEnvio,
   cortarAcimaDaReferencia,
+  filtrarMenosRodadas,
   filtrarMaisEmConta,
   incluirComparacao,
   pedeMaisEmConta,
@@ -1882,12 +1883,19 @@ export function ritualBlocks(
               : interesseEmMoto
                 ? `PENDENTES: ${pendentes.join(', ')}. O cliente JÁ demonstrou interesse em moto — a coleta está LIBERADA. Responda o que ele pediu e TERMINE o turno pedindo UM destes dados (na ordem nome → cidade → CNH), de forma natural, encaixada na conversa. Se ele já foi perguntado e não respondeu, pergunte de novo (até 2 tentativas por dado); se respondeu, o dado some daqui e você passa ao próximo.`
                 : `PENDENTES: ${pendentes.join(', ')} (a coletar). Ainda NÃO pergunte CNH/CPF antes de o cliente demonstrar interesse em moto.`;
+          // Só os dados CONHECIDOS. "não informado" no prompt vazava para a
+          // resposta ao cliente (medido 2026-10-26: fecho começou com "não
+          // informado,"). O que falta está em PENDENTES.
+          const linhasDados = [
+            nome !== null ? `Nome: ${nome}` : null,
+            cidade !== null ? `Cidade: ${cidade}` : null,
+            cnh !== null ? `CNH: ${cnh}` : null,
+          ].filter((l): l is string => l !== null);
           return [
             '## Dados essenciais do cliente',
-            `Nome: ${nome ?? 'não informado'}`,
-            `Cidade: ${cidade ?? 'não informado'}`,
-            `CNH: ${cnh ?? 'não informado'}`,
+            ...linhasDados,
             linhaPendentes,
+            'NUNCA escreva "não informado" ao cliente.',
             '',
           ];
         })()),
@@ -6095,6 +6103,13 @@ async function executarTurnoDoAgente(
               );
             const cabeNoPerfilUrbano = (m: MotoDoCatalogo): boolean => {
               if (!perfilUrbano) return true;
+              // Cidade/dia a dia = rua/street/naked/scooter. Trail/adventure/
+              // crossover/sport tourer NÃO é resposta urbana (medido 2026-10-26:
+              // XRE/XTZ/Dominar entraram numa lista de "cidade, trabalho").
+              const cat = String(m.valores?.categoria ?? m.valores?.tipo ?? '').toLowerCase();
+              if (cat !== '' && !/street|city|naked|scooter|urbano|urbana/.test(cat)) {
+                return false;
+              }
               const cc = ccDaMoto(m);
               return cc === null || cc <= 400;
             };
@@ -6249,6 +6264,43 @@ async function executarTurnoDoAgente(
                 );
               }
             }
+            // PEDIDO POR ESTILO/CATEGORIA ("moto pra trilha", "quero uma scooter"):
+            // a 1ª oferta não fica presa às hipóteses da JEV — completa até 5 com
+            // as CASADAS (categoria/faixa já filtradas), por força. Medido
+            // 2026-10-26: "moto pra trilha" trazia só 3.
+            const pedidoTemCategoria =
+              exigidosDoTurno.includes('categoria') ||
+              Object.keys(faixasDoTurno).includes('categoria');
+            if (
+              !nomeiaModeloEspecifico &&
+              pedidoTemCategoria &&
+              selecao.casadas.length > selecao.motos.length
+            ) {
+              const limite = cfgCatalogo?.similares_qtd ?? 5;
+              const forcaCat = (m: MotoDoCatalogo): number =>
+                pontuarPorCriterios(
+                  m,
+                  hipotesesDoTurno,
+                  faixasDoTurno,
+                  cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                  principalDoTurno,
+                ).pontos;
+              const vistos = new Set<string>();
+              const completas = [...selecao.motos, ...selecao.casadas]
+                .filter(cabeNoPerfilUrbano)
+                .filter((m) => {
+                  if (vistos.has(m.nome)) return false;
+                  vistos.add(m.nome);
+                  return true;
+                })
+                .sort((a, b) => forcaCat(b) - forcaCat(a));
+              if (completas.length > 0) {
+                selecao.motos = completas.slice(
+                  0,
+                  Math.max(Math.min(limite, completas.length), selecao.motos.length),
+                );
+              }
+            }
             // ORDEM DA 1ª OFERTA = FORÇA DE ADERÊNCIA (mais forte → mais fraca).
             // A seleção não garantia ordem por nota (variava com a linha/hipótese).
             // "Mais em conta" mantém a ordem por preço (aplicada logo abaixo).
@@ -6262,6 +6314,31 @@ async function executarTurnoDoAgente(
                   principalDoTurno,
                 ).pontos;
               selecao.motos = [...selecao.motos].sort((a, b) => forca(b) - forca(a));
+            }
+            // OBJEÇÃO DE KM: executa o critério da JEV — mostra as MENOS RODADAS
+            // que a referência, em ordem crescente. Sem isto o texto prometia
+            // "opções menos rodadas" e as fotos eram a própria CG de 87.000 km
+            // (medido 2026-10-26).
+            if (vereditoOfertaJev?.criterio === 'km') {
+              const limite = cfgCatalogo?.similares_qtd ?? 5;
+              const interesseKm =
+                typeof effectiveContext.contact?.custom_fields?.moto_interesse === 'string'
+                  ? effectiveContext.contact.custom_fields.moto_interesse
+                  : null;
+              const referenciaKm =
+                catalogoDaConversa.escolhida ??
+                catalogoDaConversa.referencia ??
+                (interesseKm !== null
+                  ? (motosDeNomes([interesseKm], catalogoDaConversa.motos)[0] ?? null)
+                  : null);
+              const menosRodadas = filtrarMenosRodadas(
+                selecao.motos,
+                selecao.casadas,
+                referenciaKm,
+                limite,
+                candidatos,
+              );
+              if (menosRodadas.length > 0) selecao.motos = menosRodadas;
             }
             // ── O MOTOR EXECUTA O CRITÉRIO DE PREÇO / COMPARAÇÃO ────────────
             if (pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
