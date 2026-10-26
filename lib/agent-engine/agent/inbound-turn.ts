@@ -187,6 +187,8 @@ import {
   separarTextoApresentacao,
   type FotoComLegenda,
   type MotoDoCatalogo,
+  formatarKm,
+  formatarPreco,
 } from './fotos-do-catalogo';
 import {
   carregarCatalogoDaConversa,
@@ -400,6 +402,25 @@ export function ajustarContagemDaApresentacao(
       return `${det} ${palavraDe(totalDaEtapa)}`;
     },
   );
+}
+
+/**
+ * Texto FACTUAL da unidade escolhida — usado quando o motor troca a unidade para
+ * a que cabe no orçamento (ex.: cliente diz "prefiro a NMax", escolhe a 2023 de
+ * 18.990, mas o orçamento é 15 mil e existe a 2019 de 14.990). Sem isto, o texto
+ * do modelo falava da 2023 e as fotos eram da 2019 (medido 2026-10-26).
+ * Uma única pergunta de fecho; os dados vêm do próprio objeto da moto.
+ */
+function textoDaUnidadeEscolhida(m: MotoDoCatalogo): string {
+  const anoCor = [m.ano, m.cor].filter(Boolean).join(' ');
+  const km = m.quilometragem
+    ? `${formatarKm(m.quilometragem) ?? m.quilometragem} km`
+    : null;
+  const preco = m.preco ? (formatarPreco(m.preco) ?? m.preco) : null;
+  const detalhe = [km ? `com ${km}` : null, preco ? `por ${preco}` : null]
+    .filter(Boolean)
+    .join(' e ');
+  return `${m.nome}${anoCor ? ` ${anoCor}` : ''} está disponível${detalhe ? `, ${detalhe}` : ''}. Quer dar uma olhada de perto ou saber mais?`;
 }
 
 export const AGENT_TOOL_DEFS = {
@@ -5381,7 +5402,9 @@ async function executarTurnoDoAgente(
             : undefined;
         // Orçamento informado + unidade escolhida acima dele: usa a OUTRA
         // unidade do MESMO modelo que cabe (ex.: NMax 2023 18.990 → 2019 14.990).
+        let unidadeTrocadaParaOrcamento = false;
         if (escolhidaNesteTurno !== undefined && orcamentoTurno !== null) {
+          const escolhidaAntesDoOrcamento = escolhidaNesteTurno;
           const universoUnidades = [
             ...catalogoEfetivo,
             ...catalogoDaConversa.motos,
@@ -5422,6 +5445,7 @@ async function executarTurnoDoAgente(
             }
           }
           escolhidaNesteTurno = ajustada;
+          unidadeTrocadaParaOrcamento = escolhidaNesteTurno !== escolhidaAntesDoOrcamento;
         }
         const criteriosDoArbitro = vereditoArbitro?.porPonto.catalog_criteria;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
@@ -7304,6 +7328,11 @@ async function executarTurnoDoAgente(
               // pergunta do fluxo fica para o próximo turno. Medido ao vivo: sem isto o
               // modelo troca a venda pela pergunta do roteiro e a conversa não avança.
               let corpoFinal = finalBody;
+              // A unidade enviada foi TROCADA para a que cabe no orçamento: o texto
+              // passa a ser o factual dela (ano/cor/km/preço), alinhado às fotos.
+              if (unidadeTrocadaParaOrcamento && escolhidaNesteTurno !== undefined) {
+                corpoFinal = textoDaUnidadeEscolhida(escolhidaNesteTurno);
+              }
               const vaiMostrarMotos =
                 (planoAutomatico.length > 0 && cfg?.enviar_foto_automatica !== false) ||
                 fotos.length > 0;
