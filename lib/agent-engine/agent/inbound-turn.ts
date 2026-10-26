@@ -6249,6 +6249,20 @@ async function executarTurnoDoAgente(
                 );
               }
             }
+            // ORDEM DA 1ª OFERTA = FORÇA DE ADERÊNCIA (mais forte → mais fraca).
+            // A seleção não garantia ordem por nota (variava com a linha/hipótese).
+            // "Mais em conta" mantém a ordem por preço (aplicada logo abaixo).
+            if (selecao.motos.length > 1 && !pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
+              const forca = (m: MotoDoCatalogo): number =>
+                pontuarPorCriterios(
+                  m,
+                  hipotesesDoTurno,
+                  faixasDoTurno,
+                  cfgCatalogo?.tolerancia_preco_pct ?? 30,
+                  principalDoTurno,
+                ).pontos;
+              selecao.motos = [...selecao.motos].sort((a, b) => forca(b) - forca(a));
+            }
             // ── O MOTOR EXECUTA O CRITÉRIO DE PREÇO / COMPARAÇÃO ────────────
             if (pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
               const baratas = filtrarMaisEmConta(
