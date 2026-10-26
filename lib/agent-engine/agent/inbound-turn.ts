@@ -3983,12 +3983,11 @@ async function executarTurnoDoAgente(
       )
       .catch(() => {});
   }
-  // TETO DE VALOR (skill §6): nunca oferecer acima do orçamento +30%. Fonte ÚNICA,
-  // aplicada em TODOS os caminhos de oferta (seleção automática, fallbacks por
-  // citação do cliente e motos declaradas). Antes, o fallback por
-  // `motosCitadasNoTexto` e o caso "nada cabe no valor" ficavam SEM filtro e
-  // vazavam motos acima do teto (medido ao vivo).
-  const limiteTetoDoTurno = orcamentoTurno !== null ? Math.round(orcamentoTurno * 1.3) : null;
+  // TETO DE VALOR (decisão do dono 2026-10-26): o orçamento é FIXO — o teto é
+  // EXATAMENTE o valor informado ("até 15 mil" = R$ 15.000, sem +30%). Fonte
+  // ÚNICA, aplicada em TODOS os caminhos de oferta (seleção automática,
+  // fallbacks por citação do cliente e motos declaradas).
+  const limiteTetoDoTurno = orcamentoTurno !== null ? Math.round(orcamentoTurno) : null;
   // Predicado do teto (usado nos fallbacks por citação do cliente). Preço nulo
   // passa (não dá para checar); com preço, só abaixo do teto.
   const dentroDoTetoDoTurno = (m: MotoDoCatalogo): boolean => {
@@ -6089,9 +6088,8 @@ async function executarTurnoDoAgente(
             // próximos do orçamento) — "não atendeu nenhuma" é o sinal. MAS um
             // valor dito AGORA é FIRME: a tolerância só vale quando o orçamento
             // vem da memória, não de uma fala nova do cliente.
-            // D1 (decisão do dono, 2026-10-09): a margem é +30% acima do valor informado
-            // ("até 20 mil" → teto R$ 26.000). Vale sempre que houver orçamento.
-            const tolerancia = orcamentoTurno !== null ? 1.3 : 1;
+            // (dono, 2026-10-26) O orçamento é FIXO: teto = valor informado, sem +30%.
+            const tolerancia = 1;
             const valorLimite =
               orcamentoTurno !== null ? Math.round(orcamentoTurno * tolerancia) : null;
             if (valorLimite !== null) {
@@ -6707,8 +6705,8 @@ async function executarTurnoDoAgente(
           }
           // Respeita o teto de valor também nas motos que o MODELO declarou por
           // nome (senão ele furaria o filtro do motor — ex.: 41 mil p/ quem deu 27).
-          const toleranciaDeclaradas =
-            valorPropostaTurno === null && pedidosDeOpcoesTurno >= 2 ? 1.3 : 1;
+          // Orçamento FIXO (dono, 2026-10-26): sem margem de +30% nem após 2 pedidos.
+          const toleranciaDeclaradas = 1;
           const limiteDeclaradas =
             orcamentoTurno !== null ? Math.round(orcamentoTurno * toleranciaDeclaradas) : null;
           const motosDeclaradas = motos ?? [];
