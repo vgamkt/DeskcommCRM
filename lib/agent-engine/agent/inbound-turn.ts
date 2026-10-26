@@ -4000,6 +4000,11 @@ async function executarTurnoDoAgente(
   // ORÇAMENTO da conversa: o citado AGORA ou o guardado antes — "até 20 mil"
   // continua valendo no "quero ver mais opções" seguinte. Persistido por conversa.
   const orcamentoTurno = valorPropostaTurno ?? catalogoDaConversa.orcamento ?? null;
+  // CÂMBIO AUTOMÁTICO pedido EXPLICITAMENTE — fato do cliente, usado no motor
+  // (filtro da oferta e da fila). Declarado aqui para valer também no "ver mais".
+  const pedeCambioAutomatico = /\bautomatic[oa]s?\b|\bcambio\s+automatico\b|\bcambio\s+auto\b/.test(
+    normalizarNomeDeMoto(mensagemDoTurnoParaJev),
+  );
   // D1 (decisão do dono, 2026-10-09): o cliente disse um valor ("até 20 mil") — grava
   // JÁ o orçamento no metadata (merge jsonb, sem tocar no resto). Sem isto, o valor
   // ficava `null` e a margem de 30% não se aplicava nos turnos seguintes.
@@ -5669,11 +5674,23 @@ async function executarTurnoDoAgente(
                 motivoNegociacao === 'preco' ||
                 negociacaoAnterior?.motivo === 'preco' ||
                 catalogoDaConversa.objecao?.motivo === 'preco';
+              const precoDaMoto = (m: MotoDoCatalogo): number | null =>
+                parsePreco(String(m.preco ?? m.valores?.preco ?? ''));
               const pendentesNaMedida = cortarAcimaDaReferencia(
                 pendentesFiltrados,
                 referenciaConsumo,
                 objecaoDePrecoConsumo,
-              );
+              )
+                // ORÇAMENTO FIXO: a fila do "tem outra/ver mais" também respeita.
+                .filter(
+                  (m) =>
+                    orcamentoTurno === null ||
+                    (precoDaMoto(m) !== null && precoDaMoto(m)! <= orcamentoTurno),
+                )
+                // CÂMBIO AUTOMÁTICO pedido: só automáticas.
+                .filter(
+                  (m) => !pedeCambioAutomatico || /auto/i.test(String(m.valores?.cambio ?? '')),
+                );
               if (pendentesNaMedida.length > 0) {
                 const cfg = agentConfig?.catalogConfig;
                 const tetoQtd =
@@ -6220,14 +6237,7 @@ async function executarTurnoDoAgente(
               const cc = ccDaMoto(m);
               return cc === null || cc <= 400;
             };
-            // CÂMBIO AUTOMÁTICO pedido EXPLICITAMENTE ("automática", "automático",
-            // "câmbio auto"): FATO do cliente — o motor entrega só automáticas
-            // (a JEV decide OFERECER; aqui só se cumpre o critério pedido). O
-            // `cambio` vem do catálogo (coluna de exibição). Medido 2026-10-26:
-            // "quero automática" trazia Factor/CB 300 (manuais).
-            const pedeCambioAutomatico = /\bautomatic[oa]s?\b|\bcambio\s+automatico\b|\bcambio\s+auto\b/.test(
-              normalizarNomeDeMoto(mensagemDoTurnoParaJev),
-            );
+            // CÂMBIO AUTOMÁTICO (definido acima): entrega só automáticas.
             if (pedeCambioAutomatico) {
               const automaticas = candidatos.filter((m) =>
                 /auto/i.test(String(m.valores?.cambio ?? '')),
@@ -7365,6 +7375,10 @@ async function executarTurnoDoAgente(
               // pergunta do fluxo fica para o próximo turno. Medido ao vivo: sem isto o
               // modelo troca a venda pela pergunta do roteiro e a conversa não avança.
               let corpoFinal = finalBody;
+              if (semMaisOpcoesNesteTurno) {
+                corpoFinal =
+                  'Não tenho outras opções além dessas que te mostrei dentro do seu orçamento. Quer que eu veja algo diferente?';
+              }
               // ESCOLHA/ÁLBUM: o texto é SEMPRE o da unidade que está sendo enviada
               // (nome/ano/cor/câmbio/km/preço) — nunca a de outro ano/unidade que o
               // modelo tenha citado. Garante texto = fotos em qualquer caso (não só
