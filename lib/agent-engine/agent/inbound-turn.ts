@@ -6226,6 +6226,27 @@ async function executarTurnoDoAgente(
                 );
               }
             }
+            // MODELO CITADO AUSENTE (ex.: "Lander 250"): a 1ª oferta não fica
+            // presa às hipóteses da JEV (que só trouxe a XTZ). Completa até 5 com
+            // as CASADAS do mesmo estilo/porte — o filtro rígido de categoria +
+            // faixa de cc (0,5x–2x) já está aplicado, então NÃO entra 650/1000.
+            // Medido 2026-10-25: "Lander 250" trazia só 2 XTZ; as outras trail
+            // (XRE 190/G 310 GS/Himalayan 450/CB 500 X) ficavam na fila.
+            if (citouModeloForaDoEstoque) {
+              const limite = cfgCatalogo?.similares_qtd ?? 5;
+              const vistos = new Set<string>();
+              const completas = [...selecao.motos, ...selecao.casadas].filter((m) => {
+                if (vistos.has(m.nome)) return false;
+                vistos.add(m.nome);
+                return true;
+              });
+              if (completas.length > selecao.motos.length) {
+                selecao.motos = completas.slice(
+                  0,
+                  Math.max(Math.min(limite, completas.length), selecao.motos.length),
+                );
+              }
+            }
             // ── O MOTOR EXECUTA O CRITÉRIO DE PREÇO / COMPARAÇÃO ────────────
             if (pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
               const baratas = filtrarMaisEmConta(
