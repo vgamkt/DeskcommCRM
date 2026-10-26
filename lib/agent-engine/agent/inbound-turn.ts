@@ -7347,7 +7347,7 @@ async function executarTurnoDoAgente(
                   escolhidaNesteTurno,
                   typeof effectiveContext.contact?.custom_fields?.nome === 'string'
                     ? effectiveContext.contact.custom_fields.nome
-                    : (effectiveContext.contact?.name ?? null),
+                    : null,
                 );
               }
               const vaiMostrarMotos =
