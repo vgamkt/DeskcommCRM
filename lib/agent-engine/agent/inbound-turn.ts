@@ -5536,6 +5536,7 @@ async function executarTurnoDoAgente(
           confirmouVerOpcoes: confirmouOpcoes,
           valorProposta: valorPropostaTurno,
         });
+        let semMaisOpcoesNesteTurno = false;
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
           // alternativas (usado para gravar a moto de referência).
@@ -5614,16 +5615,28 @@ async function executarTurnoDoAgente(
             // são FALLBACK, usados SÓ quando a Jev não respondeu (`null`). Antes, um OR
             // deixava o regex vencer o veredito NEGATIVO (`continuacao:false`) e a fila
             // era consumida mesmo com a Jev dizendo "novo_pedido".
+            // A CONTINUAÇÃO é DECISÃO da JEV (`continuacao`): ela entende "tem
+            // outra?", "quero ver mais", "sim" etc. O motor consome a fila quando
+            // a JEV diz continuar — só reconstrói se o cliente citar um MODELO
+            // novo/explícito. Fallback por regex só quando a JEV não respondeu.
             const continuarFila =
-              // (dono, 2026-10-24) Se o cliente CITA UM MODELO/novo uso ou faz
-              // OBJEÇÃO/escolhe outra, a fila antiga não vale: reconstrói neste
-              // turno. Só o "quero ver mais opções" (querMaisOpcoes) consome a fila
-              // do perfil atual.
               !pedeMotoExplicito(msgCliente) &&
-              (!querAlternativa(msgCliente) || querMaisOpcoes(msgCliente)) &&
               (vereditoOfertaJev !== null
                 ? vereditoOfertaJev.continuacao === true
-                : querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente));
+                : (!querAlternativa(msgCliente) || querMaisOpcoes(msgCliente)) &&
+                  (querMaisOpcoes(msgCliente) || clienteConfirmouVer(msgCliente)));
+            if (
+              continuarFila &&
+              catalogoDaConversa.opcoes !== null &&
+              catalogoDaConversa.opcoes.pendentes.length === 0
+            ) {
+              // "Tem outra/mais?" e a fila ACABOU: NÃO reenvia as mesmas fotos.
+              // O modelo responde em texto ("só essas 2 que te mandei") e o turno
+              // não monta apresentação. Medido 2026-10-27: "tem outra automática?"
+              // reenviava NMax+Neo.
+              semMaisOpcoesNesteTurno = true;
+              return [];
+            }
             if (
               continuarFila &&
               catalogoDaConversa.opcoes !== null &&
