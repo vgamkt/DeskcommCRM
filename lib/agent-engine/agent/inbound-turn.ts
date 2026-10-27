@@ -342,8 +342,14 @@ import { escolherFluxoIniciado, escolherFluxosPorIA } from './flow-intent';
 import { parsePreco } from './similaridade';
 import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
-import { decidirPlanoDoTurno } from './plano-de-turno';
-import { idDaMoto, type PlanoDoTurno } from '@/lib/ai/jev/pontos/plano-de-turno';
+import { carregarUltimasMensagens, montarContextoDoPlano } from './plano-de-turno';
+import {
+  idDaMoto,
+  perguntaDoPlanoDeTurno,
+  planoDoTurnoDaJev,
+  type PlanoDoTurno,
+} from '@/lib/ai/jev/pontos/plano-de-turno';
+import type { PerguntasDeJev } from '@/lib/ai/jev/tipos';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -3905,6 +3911,73 @@ async function executarTurnoDoAgente(
     respondendoPerguntaDoFluxo: respondeuCampoDoFluxo,
     perguntaPendenteDoFluxo: campoPendenteDoFluxo,
   };
+  // F3 — PLANO DA JEV (flag POR AGENTE `catalog.plano_jev`; produção desligada).
+  // Entra na MESMA chamada do árbitro (não é 2ª chamada): a JEV decide tudo de
+  // uma vez e devolve os IDs. `null` = segue o caminho de hoje, sem quebrar.
+  const valorPropostaTurno = valorCitado(mensagemDoJob);
+  const orcamentoTurno = valorPropostaTurno ?? catalogoDaConversa.orcamento ?? null;
+  const pedeCambioAutomatico = /\bautomatic[oa]s?\b|\bcambio\s+automatico\b|\bcambio\s+auto\b/.test(
+    normalizarNomeDeMoto(mensagemDoTurnoParaJev),
+  );
+  let planoDoTurno: PlanoDoTurno | null = null;
+  let estoqueDoPlano: MotoDoCatalogo[] = [];
+  const planoJevAtivo = agentConfig?.catalogConfig?.plano_jev === true;
+  let planoPedido: {
+    ponto: string;
+    contexto: Record<string, unknown>;
+    perguntas: PerguntasDeJev;
+    obrigatorias: string[];
+  } | null = null;
+  if (
+    planoJevAtivo &&
+    !preview &&
+    catalogoMapeamento !== null &&
+    mensagemDoTurnoParaJev !== ''
+  ) {
+    try {
+      estoqueDoPlano = await carregarCatalogoDoBanco(
+        deps.crmCfg.supabase,
+        tenantId,
+        catalogoMapeamento,
+        colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
+      );
+      const mensagens30 = await carregarUltimasMensagens(
+        pool,
+        tenantId,
+        input.conversationId,
+        30,
+      );
+      const ctxPlano = montarContextoDoPlano({
+        mensagens: mensagens30,
+        catalogoDaConversa,
+        orcamento: orcamentoTurno,
+        cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
+        catalogo: estoqueDoPlano,
+        janela: 30,
+      });
+      const vistos = new Set<string>();
+      const escolhidaOpcoes = [
+        catalogoDaConversa.escolhida,
+        catalogoDaConversa.referencia,
+        ...catalogoDaConversa.motos,
+      ].filter(
+        (m): m is MotoDoCatalogo =>
+          m !== null &&
+          m !== undefined &&
+          (vistos.has(idDaMoto(m)) ? false : (vistos.add(idDaMoto(m)), true)),
+      );
+      planoPedido = {
+        ponto: 'plano_de_turno',
+        contexto: ctxPlano as unknown as Record<string, unknown>,
+        perguntas: perguntaDoPlanoDeTurno(ctxPlano, estoqueDoPlano, escolhidaOpcoes),
+        obrigatorias: ['acao'],
+      };
+    } catch (err) {
+      runLog.warn('plano do turno: preparo falhou — segue o caminho atual', {
+        erro: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+      });
+    }
+  }
   const decidirTrio = !preview && mensagemDoTurnoParaJev !== '';
   const vereditoTrio = decidirTrio
     ? await arbitrar({
@@ -3920,10 +3993,26 @@ async function executarTurnoDoAgente(
             obrigatorias: ['acao'],
           },
           { ponto: 'offer_motos', contexto: ofertaCtx, perguntas: perguntaDeOfertaJev(ofertaCtx) },
+          ...(planoPedido !== null ? [planoPedido] : []),
         ],
         log: runLog,
       })
     : null;
+  if (planoJevAtivo && planoPedido !== null && vereditoTrio !== null) {
+    const respostasPlano = vereditoTrio.porPonto.plano_de_turno;
+    if (respostasPlano !== undefined) {
+      planoDoTurno = planoDoTurnoDaJev(respostasPlano, estoqueDoPlano, {
+        limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
+      });
+      runLog.info('plano do turno (JEV)', {
+        acao: planoDoTurno.acao,
+        criterio: planoDoTurno.criterio,
+        selecionadas: planoDoTurno.selecao?.ids.length ?? 0,
+        escolhida: planoDoTurno.escolhida,
+        handoff: planoDoTurno.handoff.probabilidade,
+      });
+    }
+  }
   // OBJEÇÃO — a JEV É A AUTORIDADE (existência + tipo). Só quando ela está
   // desligada/indisponível (veredito nulo) a régua determinística decide.
   const vereditoObjecaoJev = decidirTrio
@@ -4000,58 +4089,9 @@ async function executarTurnoDoAgente(
   const negouOpcoes =
     acaoNegociacao === 'encaminhar_e_encerrar' ||
     (acaoNegociacao === null && aguardavaConfirmacao && !confirmouOpcoes);
-  // Valor (R$) que o cliente citou NESTE turno — vira limite máximo da oferta
-  // (evita mandar moto acima da proposta/orçamento, ex.: 41 mil para quem deu 27
-  // mil). Independe de ser objeção: um pedido "até 20 mil" também limita.
-  const valorPropostaTurno = valorCitado(mensagemDoJob);
   // Pedido EXPLÍCITO de moto (verbo + termo) — VENCE a escolha travada e destrava
   // a moto salva (decisão do dono, 2026-09-30).
   const pedidoExplicito = pedeMotoExplicito(mensagemDoJob);
-  // ORÇAMENTO da conversa: o citado AGORA ou o guardado antes — "até 20 mil"
-  // continua valendo no "quero ver mais opções" seguinte. Persistido por conversa.
-  const orcamentoTurno = valorPropostaTurno ?? catalogoDaConversa.orcamento ?? null;
-  // CÂMBIO AUTOMÁTICO pedido EXPLICITAMENTE — fato do cliente, usado no motor
-  // (filtro da oferta e da fila). Declarado aqui para valer também no "ver mais".
-  const pedeCambioAutomatico = /\bautomatic[oa]s?\b|\bcambio\s+automatico\b|\bcambio\s+auto\b/.test(
-    normalizarNomeDeMoto(mensagemDoTurnoParaJev),
-  );
-  // F3 — PLANO DA JEV (flag POR AGENTE `catalog.plano_jev`; produção desligada).
-  // Roda ANTES do modelo: a JEV vê 30 msgs + estado + estoque e devolve os IDs.
-  // `null` (JEV off/transiente) = segue o caminho de hoje, sem quebrar.
-  let planoDoTurno: PlanoDoTurno | null = null;
-  let estoqueDoPlano: MotoDoCatalogo[] = [];
-  const planoJevAtivo = agentConfig?.catalogConfig?.plano_jev === true;
-  if (planoJevAtivo && !preview && catalogoMapeamento !== null) {
-    try {
-      estoqueDoPlano = await carregarCatalogoDoBanco(
-        deps.crmCfg.supabase,
-        tenantId,
-        catalogoMapeamento,
-        colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
-      );
-      planoDoTurno = await decidirPlanoDoTurno({
-        pool,
-        tenantId,
-        conversationId: input.conversationId,
-        catalogoDaConversa,
-        catalogo: estoqueDoPlano,
-        orcamento: orcamentoTurno,
-        cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
-        limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
-      });
-      runLog.info('plano do turno (JEV)', {
-        acao: planoDoTurno?.acao ?? null,
-        criterio: planoDoTurno?.criterio ?? null,
-        selecionadas: planoDoTurno?.selecao?.ids.length ?? 0,
-        escolhida: planoDoTurno?.escolhida ?? null,
-        handoff: planoDoTurno?.handoff.probabilidade ?? null,
-      });
-    } catch (err) {
-      runLog.warn('plano do turno: falhou — segue o caminho atual', {
-        erro: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
-      });
-    }
-  }
   // D1 (decisão do dono, 2026-10-09): o cliente disse um valor ("até 20 mil") — grava
   // JÁ o orçamento no metadata (merge jsonb, sem tocar no resto). Sem isto, o valor
   // ficava `null` e a margem de 30% não se aplicava nos turnos seguintes.

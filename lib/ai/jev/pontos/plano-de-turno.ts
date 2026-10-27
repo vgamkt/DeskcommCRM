@@ -81,7 +81,7 @@ export function perguntaDoPlanoDeTurno(
     acao: {
       type: 'choice',
       instructions:
-        'O que o turno deve fazer AGORA? Leia `state.mensagens` como uma CONVERSA: ' +
+        'O que o turno deve fazer AGORA? Leia `mensagens` como uma CONVERSA: ' +
         '`respondida:true` = a loja já respondeu; `respondida:false` = a rajada final ' +
         'AINDA pede resposta. NÃO trate mensagem antiga como pedido novo.',
       criteria: {
@@ -95,7 +95,7 @@ export function perguntaDoPlanoDeTurno(
     },
     criterio: {
       type: 'choice',
-      instructions: 'Se for mostrar/oferecer, qual aspecto atacar? (orçamento FIXO em state.estado.orcamento)',
+      instructions: 'Se for mostrar/oferecer, qual aspecto atacar? (orçamento FIXO em `estado.orcamento`)',
       criteria: {
         nenhum: 'não se aplica',
         preco: 'preço/mais em conta',
@@ -136,7 +136,7 @@ export function perguntaDoPlanoDeTurno(
       instructions:
         `Esta moto combina com o que o cliente quer AGORA? ${textoDaMoto(m)}. ` +
         'Nota alta (>= 0.7) só para o que atende ao pedido/critérios; respeite o orçamento FIXO ' +
-        '(state.estado.orcamento) e o que já foi mostrado (state.estado.motosMostradas).',
+        '(`estado.orcamento`) e o que já foi mostrado (`estado.motosMostradas`).',
     };
   });
   return perguntas;
