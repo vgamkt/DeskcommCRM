@@ -6645,7 +6645,18 @@ async function executarTurnoDoAgente(
                 const doPlano = planoDoTurno.selecao.ids
                   .map((id) => porId.get(id))
                   .filter((m): m is MotoDoCatalogo => m !== undefined);
-                if (doPlano.length > 0) selecao.motos = doPlano;
+                if (doPlano.length > 0) {
+                  selecao.motos = doPlano;
+                  // Persiste as motos do PLANO no catálogo da conversa (o save do
+                  // turno usa `motosApresentadasParaSalvar`). Sem isto, o "ver mais"
+                  // do turno seguinte não tem o perfil e o plano recebe o estoque
+                  // inteiro (`schema`). Medido 2026-10-27.
+                  for (const moto of doPlano) {
+                    if (!motosApresentadasParaSalvar.some((x) => x.nome === moto.nome)) {
+                      motosApresentadasParaSalvar.push(moto);
+                    }
+                  }
+                }
               } else if (planoDoTurno.acao === 'perguntar' || planoDoTurno.acao === 'nenhuma') {
                 selecao.motos = [];
               }
