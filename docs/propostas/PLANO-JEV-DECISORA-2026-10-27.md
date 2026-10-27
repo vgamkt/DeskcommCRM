@@ -7,6 +7,23 @@
 > Antes de implantar: **testar a JEV num modo que funcione** — ela responde exatamente
 > a pergunta (a decisão) num **formato que o motor consiga dar prosseguimento**.
 
+
+## 0. Status de execução (2026-10-27)
+
+- **F0 — VALIDADO (formato).** Probe real (`typesafe/jev-1.14.0`) sobre conversas
+  reais de 30 msgs: a JEV respondeu `choice`/`noul` de forma parseável e o motor
+  extraiu ação + **IDs** + notas por moto (ex.: CB 500 X 0.82, Himalayan 0.73).
+  Achado: `respondida` correto é **"existe outbound depois"** (a última mensagem
+  já pode estar respondida, ex. handoff) — corrigido no builder.
+  Arquivo: `scripts/qa/jev-formato-probe.test.ts` (roda com `JEV_PROBE=1`, fora da suíte).
+- **F1 — FEITO/VALIDADO.** `lib/agent-engine/agent/contexto-da-conversa.ts` +
+  `contexto-da-conversa.test.ts` (5 testes): 30 msgs, `respondida`, rajada, estado, catálogo.
+- **F2 — FEITO/VALIDADO.** `lib/ai/jev/pontos/plano-de-turno.ts` +
+  `plano-de-turno.test.ts` (6 testes): perguntas do plano (ação/critério/escolhida/
+  fecho/handoff + nota por moto) e o **mapper** `PlanoDoTurno` (IDs).
+- **F3–F6 — PENDENTE:** ligar o plano no turno (atrás da flag), modelo só redigindo,
+  item 6 (catálogo no modelo), replay dos 8 casos e pesado 38, rollout.
+
 ---
 
 ## 1. Problema (levantamento de hoje)
