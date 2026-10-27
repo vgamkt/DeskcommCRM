@@ -34,9 +34,13 @@
   **Problema medido (2026-10-27):** no turno o plano voltou `null` — a chamada do plano
   é a **segunda** da JEV (depois do trio `objecao/negociacao/offer`) e cai no
   rate-limit/breaker; o turno seguiu no caminho atual (sem quebrar).
-  **Conserto certo:** o plano entra na **MESMA** chamada do árbitro (um `pedido` a mais
-  em `arbitrar(...)`), não como segunda chamada. Aí o JEV decide tudo de uma vez.
-  (Ajustar as instruções do plano para o estado aninhado `state.pontos.plano_de_turno`.)
+  **CONSERTADO (2026-10-27):** o plano agora entra na **MESMA** chamada do árbitro
+  (`pedido` `plano_de_turno`), orçamento/câmbio movidos para antes do trio, 30 msgs +
+  estoque carregados; o `PlanoDoTurno` sai do `porPonto.plano_de_turno`.
+  **Validado no QA:** "automática até 15 mil" → a JEV decidiu a **Neo 125** (texto e
+  álbum factuais dela); "tem outra automática?" → **"não tenho outras"**, sem repetir.
+  A seleção de UMA moto foi **decisão da JEV** (não do motor). Produção segue com a
+  flag desligada (`plano_jev` ausente) até o replay/pesado.
 - **F4–F6 — PENDENTE:** modelo só redigindo; item 6 (catálogo no modelo); replay 8 casos +
   pesado 38; rollout flag+A/B.
 
