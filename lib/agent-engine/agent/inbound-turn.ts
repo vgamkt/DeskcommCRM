@@ -3961,6 +3961,20 @@ async function executarTurnoDoAgente(
       } else if (/\b(estrada|asfalto|viagem|rodovia)\b/.test(usoPlano)) {
         usoAceita = (m) =>
           /street|naked|sport|touring|crossover|adventure|trail/.test(catDa(m));
+      } else {
+        // "ver mais"/continuação SEM uso novo: mantém o PERFIL das motos já
+        // mostradas (não manda o estoque inteiro — é o que dava `schema`).
+        const tokensMostrados = new Set(
+          catalogoDaConversa.motos
+            .flatMap((m) => catDa(m).split(',').map((t) => t.trim().split(/\s+/)[0]!))
+            .filter((t) => t !== ''),
+        );
+        if (tokensMostrados.size > 0) {
+          usoAceita = (m) => {
+            const c = catDa(m);
+            return c === '' || [...tokensMostrados].some((t) => c.includes(t));
+          };
+        }
       }
       const poolDoPlano = estoqueDoPlano.filter((m) => {
         const p = parsePreco(String(m.preco ?? m.valores?.preco ?? ''));
@@ -4155,7 +4169,14 @@ async function executarTurnoDoAgente(
   // "deixa a Biz de lado, quero trilha" / "não quero mais a Biz"), o motor LIMPA a
   // âncora + a fila AQUI. O regex acima é só fallback e não pega a recusa que cita o
   // nome; aqui a decisão é da JEV. O turno reconstrói tudo pelo NOVO pedido.
-  if (vereditoOfertaJev?.trocaDeInteresse === true && !interesseAnteriorApagado) {
+  // "Quero ver mais opções" é CONTINUAÇÃO, não troca de interesse: a JEV às vezes
+  // devolve trocaDeInteresse e a fila/âncora eram limpas — o "ver mais" morria e o
+  // turno travava (medido 2026-10-27, T03 do probe de cidade). Não limpa aqui.
+  if (
+    vereditoOfertaJev?.trocaDeInteresse === true &&
+    !interesseAnteriorApagado &&
+    !querMaisOpcoes(mensagemDoTurnoParaJev)
+  ) {
     catalogoDaConversa.escolhida = null;
     catalogoDaConversa.referencia = null;
     interesseAnteriorApagado = true;
