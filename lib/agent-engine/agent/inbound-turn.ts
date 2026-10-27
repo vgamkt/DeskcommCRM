@@ -3935,13 +3935,40 @@ async function executarTurnoDoAgente(
       const pedeCambioManual = /\bmanual\b/.test(
         normalizarNomeDeMoto(mensagemDoTurnoParaJev),
       );
+      // USO/CATEGORIA explícito do cliente (fato) — reduz o pool e evita o
+      // `schema` da JEV com o estoque inteiro (medido 2026-10-27).
+      const usoPlano = normalizarNomeDeMoto(mensagemDoTurnoParaJev);
+      const catDa = (m: MotoDoCatalogo): string =>
+        String(m.valores?.categoria ?? m.valores?.tipo ?? '').toLowerCase();
+      const ccDa = (m: MotoDoCatalogo): number | null => {
+        const n = Number(
+          String(m.valores?.cilindrada ?? '')
+            .replace(/[^0-9.,]/g, '')
+            .replace(',', '.'),
+        );
+        return Number.isFinite(n) ? n : null;
+      };
+      let usoAceita = (m: MotoDoCatalogo): boolean => true;
+      if (/\b(cidade|urbano|dia a dia|trabalho|transito|rua)\b/.test(usoPlano)) {
+        usoAceita = (m) => {
+          const c = catDa(m);
+          if (c !== '' && !/street|city|naked|scooter|urbano/.test(c)) return false;
+          const v = ccDa(m);
+          return v === null || v <= 400;
+        };
+      } else if (/\b(trilha|trail|off|terra|on-off)\b/.test(usoPlano)) {
+        usoAceita = (m) => /trail|trilha|off|adventure/.test(catDa(m));
+      } else if (/\b(estrada|asfalto|viagem|rodovia)\b/.test(usoPlano)) {
+        usoAceita = (m) =>
+          /street|naked|sport|touring|crossover|adventure|trail/.test(catDa(m));
+      }
       const poolDoPlano = estoqueDoPlano.filter((m) => {
         const p = parsePreco(String(m.preco ?? m.valores?.preco ?? ''));
         if (orcamentoTurno !== null && (p === null || p > orcamentoTurno)) return false;
         const cambio = String(m.valores?.cambio ?? '');
         if (pedeCambioAutomatico && !/auto/i.test(cambio)) return false;
         if (pedeCambioManual && !/manual/i.test(cambio)) return false;
-        return true;
+        return usoAceita(m);
       });
       const catalogoDoPlano = poolDoPlano.length > 0 ? poolDoPlano : estoqueDoPlano;
       planoDoTurno = await decidirPlanoDoTurno({
