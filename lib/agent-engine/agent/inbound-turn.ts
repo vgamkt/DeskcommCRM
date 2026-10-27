@@ -3929,15 +3929,31 @@ async function executarTurnoDoAgente(
         catalogoMapeamento,
         colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
       );
+      // A JEV decide DENTRO do pool dos critérios EXPLÍCITOS do cliente (orçamento
+      // FIXO + câmbio pedido). O estoque inteiro + 30 msgs estourava o request
+      // (plano null). Sem filtro explícito, o pool é o estoque (o JEV decide).
+      const pedeCambioManual = /\bmanual\b/.test(
+        normalizarNomeDeMoto(mensagemDoTurnoParaJev),
+      );
+      const poolDoPlano = estoqueDoPlano.filter((m) => {
+        const p = parsePreco(String(m.preco ?? m.valores?.preco ?? ''));
+        if (orcamentoTurno !== null && (p === null || p > orcamentoTurno)) return false;
+        const cambio = String(m.valores?.cambio ?? '');
+        if (pedeCambioAutomatico && !/auto/i.test(cambio)) return false;
+        if (pedeCambioManual && !/manual/i.test(cambio)) return false;
+        return true;
+      });
+      const catalogoDoPlano = poolDoPlano.length > 0 ? poolDoPlano : estoqueDoPlano;
       planoDoTurno = await decidirPlanoDoTurno({
         pool,
         tenantId,
         conversationId: input.conversationId,
         catalogoDaConversa,
-        catalogo: estoqueDoPlano,
+        catalogo: catalogoDoPlano,
         orcamento: orcamentoTurno,
         cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
         limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
+        log: runLog,
       });
       runLog.info('plano do turno (JEV)', {
         acao: planoDoTurno?.acao ?? null,

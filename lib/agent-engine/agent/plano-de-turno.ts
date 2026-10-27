@@ -105,6 +105,10 @@ export async function decidirPlanoDoTurno(args: {
   cambioPedido: 'automatico' | 'manual' | null;
   limite?: number;
   janela?: number;
+  log?: {
+    info: (msg: string, meta?: Record<string, unknown>) => void;
+    warn: (msg: string, meta?: Record<string, unknown>) => void;
+  };
 }): Promise<PlanoDoTurno | null> {
   const alvos = await alvosDeJevDaOrg(args.pool, args.tenantId, 'plano_de_turno');
   if (alvos.length === 0) return null;
@@ -141,7 +145,18 @@ export async function decidirPlanoDoTurno(args: {
     // exigir todas fazia a JEV devolver `null` quando omitia uma nota. O mapper
     // trata ausência (nota 0 / escolhida null).
     perguntasObrigatorias: ['acao'],
-    opcoes: { timeoutPorTentativaMs: 30000, capTotalMs: 120000 },
+    opcoes: {
+      timeoutPorTentativaMs: 30000,
+      capTotalMs: 120000,
+      aoTentar: (info: unknown) => args.log?.warn('plano: tentativa da JEV', { info }),
+    },
+    aoEsgotar: (info: unknown) =>
+      args.log?.warn('plano: JEV esgotou (infra) — fallback ao caminho atual', { info }),
+  });
+  args.log?.info('plano: decidido', {
+    respostas: decisao === null ? null : Object.keys(decisao.respostas).length,
+    catalogo: args.catalogo.length,
+    mensagens: ctx.mensagens.length,
   });
   if (decisao === null) return null;
   return planoDoTurnoDaJev(decisao.respostas, args.catalogo, {
