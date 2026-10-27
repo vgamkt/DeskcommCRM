@@ -411,12 +411,20 @@ export function ajustarContagemDaApresentacao(
  * do modelo falava da 2023 e as fotos eram da 2019 (medido 2026-10-26).
  * Uma única pergunta de fecho; os dados vêm do próprio objeto da moto.
  */
-function textoDaUnidadeEscolhida(m: MotoDoCatalogo, nomeCliente?: string | null): string {
+function textoDaUnidadeEscolhida(
+  m: MotoDoCatalogo,
+  nomeCliente?: string | null,
+  ehEscolha = true,
+): string {
   const primeiroNome =
     typeof nomeCliente === 'string' && nomeCliente.trim() !== ''
       ? nomeCliente.trim().split(/\s+/)[0]
       : null;
-  const saudacao = primeiroNome !== null ? `Boa escolha, ${primeiroNome}!` : 'Boa escolha!';
+  const saudacao = ehEscolha
+    ? primeiroNome !== null
+      ? `Boa escolha, ${primeiroNome}! `
+      : 'Boa escolha! '
+    : '';
   const anoCor = [m.ano, m.cor].filter(Boolean).join(' ');
   const cambioRaw = String(m.valores?.cambio ?? '').trim();
   const cambio =
@@ -430,7 +438,7 @@ function textoDaUnidadeEscolhida(m: MotoDoCatalogo, nomeCliente?: string | null)
     : null;
   const preco = m.preco ? (formatarPreco(m.preco) ?? m.preco) : null;
   const detalhe = [cambio, km, preco ? `por ${preco}` : null].filter(Boolean).join(', ');
-  return `${saudacao} A ${m.nome}${anoCor ? ` ${anoCor}` : ''} está disponível${detalhe ? ` — ${detalhe}` : ''}. Quer que eu separe ela pra você ver de perto?`;
+  return `${saudacao}A ${m.nome}${anoCor ? ` ${anoCor}` : ''} está disponível${detalhe ? ` — ${detalhe}` : ''}. Quer que eu separe ela pra você ver de perto?`;
 }
 
 export const AGENT_TOOL_DEFS = {
@@ -7383,12 +7391,23 @@ async function executarTurnoDoAgente(
               // (nome/ano/cor/câmbio/km/preço) — nunca a de outro ano/unidade que o
               // modelo tenha citado. Garante texto = fotos em qualquer caso (não só
               // quando troca por orçamento). Medido 2026-10-26 (turno 11).
+              const nomeDoCliente =
+                typeof effectiveContext.contact?.custom_fields?.nome === 'string'
+                  ? effectiveContext.contact.custom_fields.nome
+                  : null;
               if (escolhidaNesteTurno !== undefined) {
                 corpoFinal = textoDaUnidadeEscolhida(
                   escolhidaNesteTurno,
-                  typeof effectiveContext.contact?.custom_fields?.nome === 'string'
-                    ? effectiveContext.contact.custom_fields.nome
-                    : null,
+                  nomeDoCliente,
+                  true,
+                );
+              } else if (motosOferecidasNesteTurno.length === 1) {
+                // APRESENTAÇÃO de UMA moto (específica/"tem outra"): o texto também
+                // é o factual dela — nunca a de outro ano/unidade que o modelo citou.
+                corpoFinal = textoDaUnidadeEscolhida(
+                  motosOferecidasNesteTurno[0]!,
+                  nomeDoCliente,
+                  false,
                 );
               }
               const vaiMostrarMotos =
