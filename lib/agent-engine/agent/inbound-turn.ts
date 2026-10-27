@@ -342,14 +342,8 @@ import { escolherFluxoIniciado, escolherFluxosPorIA } from './flow-intent';
 import { parsePreco } from './similaridade';
 import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
-import { carregarUltimasMensagens, montarContextoDoPlano } from './plano-de-turno';
-import {
-  idDaMoto,
-  perguntaDoPlanoDeTurno,
-  planoDoTurnoDaJev,
-  type PlanoDoTurno,
-} from '@/lib/ai/jev/pontos/plano-de-turno';
-import type { PerguntasDeJev } from '@/lib/ai/jev/tipos';
+import { decidirPlanoDoTurno } from './plano-de-turno';
+import { idDaMoto, type PlanoDoTurno } from '@/lib/ai/jev/pontos/plano-de-turno';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -3922,12 +3916,6 @@ async function executarTurnoDoAgente(
   let planoDoTurno: PlanoDoTurno | null = null;
   let estoqueDoPlano: MotoDoCatalogo[] = [];
   const planoJevAtivo = agentConfig?.catalogConfig?.plano_jev === true;
-  let planoPedido: {
-    ponto: string;
-    contexto: Record<string, unknown>;
-    perguntas: PerguntasDeJev;
-    obrigatorias: string[];
-  } | null = null;
   if (
     planoJevAtivo &&
     !preview &&
@@ -3941,39 +3929,25 @@ async function executarTurnoDoAgente(
         catalogoMapeamento,
         colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
       );
-      const mensagens30 = await carregarUltimasMensagens(
+      planoDoTurno = await decidirPlanoDoTurno({
         pool,
         tenantId,
-        input.conversationId,
-        30,
-      );
-      const ctxPlano = montarContextoDoPlano({
-        mensagens: mensagens30,
+        conversationId: input.conversationId,
         catalogoDaConversa,
+        catalogo: estoqueDoPlano,
         orcamento: orcamentoTurno,
         cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
-        catalogo: estoqueDoPlano,
-        janela: 30,
+        limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
       });
-      const vistos = new Set<string>();
-      const escolhidaOpcoes = [
-        catalogoDaConversa.escolhida,
-        catalogoDaConversa.referencia,
-        ...catalogoDaConversa.motos,
-      ].filter(
-        (m): m is MotoDoCatalogo =>
-          m !== null &&
-          m !== undefined &&
-          (vistos.has(idDaMoto(m)) ? false : (vistos.add(idDaMoto(m)), true)),
-      );
-      planoPedido = {
-        ponto: 'plano_de_turno',
-        contexto: ctxPlano as unknown as Record<string, unknown>,
-        perguntas: perguntaDoPlanoDeTurno(ctxPlano, estoqueDoPlano, escolhidaOpcoes),
-        obrigatorias: ['acao'],
-      };
+      runLog.info('plano do turno (JEV)', {
+        acao: planoDoTurno?.acao ?? null,
+        criterio: planoDoTurno?.criterio ?? null,
+        selecionadas: planoDoTurno?.selecao?.ids.length ?? 0,
+        escolhida: planoDoTurno?.escolhida ?? null,
+        handoff: planoDoTurno?.handoff.probabilidade ?? null,
+      });
     } catch (err) {
-      runLog.warn('plano do turno: preparo falhou — segue o caminho atual', {
+      runLog.warn('plano do turno: falhou — segue o caminho atual', {
         erro: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
       });
     }
@@ -3993,26 +3967,10 @@ async function executarTurnoDoAgente(
             obrigatorias: ['acao'],
           },
           { ponto: 'offer_motos', contexto: ofertaCtx, perguntas: perguntaDeOfertaJev(ofertaCtx) },
-          ...(planoPedido !== null ? [planoPedido] : []),
         ],
         log: runLog,
       })
     : null;
-  if (planoJevAtivo && planoPedido !== null && vereditoTrio !== null) {
-    const respostasPlano = vereditoTrio.porPonto.plano_de_turno;
-    if (respostasPlano !== undefined) {
-      planoDoTurno = planoDoTurnoDaJev(respostasPlano, estoqueDoPlano, {
-        limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
-      });
-      runLog.info('plano do turno (JEV)', {
-        acao: planoDoTurno.acao,
-        criterio: planoDoTurno.criterio,
-        selecionadas: planoDoTurno.selecao?.ids.length ?? 0,
-        escolhida: planoDoTurno.escolhida,
-        handoff: planoDoTurno.handoff.probabilidade,
-      });
-    }
-  }
   // OBJEÇÃO — a JEV É A AUTORIDADE (existência + tipo). Só quando ela está
   // desligada/indisponível (veredito nulo) a régua determinística decide.
   const vereditoObjecaoJev = decidirTrio
