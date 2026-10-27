@@ -27,9 +27,16 @@
   `PlanoDoTurno` (ação/handoff/IDs). Binding `plano_de_turno__jev` criado (typesafe/jev-latest).
   Observado: 1 conversa devolveu plano; outra `null` (chamada transiente — o `null` cai no
   caminho de hoje, sem quebrar).
-- **F3 (ligar no turno) — PENDENTE:** atrás da flag **por agente** (`catalog.plano_jev`;
-  QA liga, produção desligada): bloco de decisão no prompt + seleção/álbum pelos **IDs** do
-  plano + `acao=perguntar` sem fotos. É a parte que toca o `inbound-turn` (sensível).
+- **F3 (ligar no turno) — FEITO atrás da flag, MAS INATIVO no QA.** Código no
+  `inbound-turn`: antes do modelo, `decidirPlanoDoTurno` (30 msgs/estado/estoque);
+  a seleção e o álbum usam os **IDs**; `acao=perguntar/nenhuma` = sem fotos; `null`
+  = caminho atual. Flag **por agente** `catalog.plano_jev` (QA `true`, produção `null`).
+  **Problema medido (2026-10-27):** no turno o plano voltou `null` — a chamada do plano
+  é a **segunda** da JEV (depois do trio `objecao/negociacao/offer`) e cai no
+  rate-limit/breaker; o turno seguiu no caminho atual (sem quebrar).
+  **Conserto certo:** o plano entra na **MESMA** chamada do árbitro (um `pedido` a mais
+  em `arbitrar(...)`), não como segunda chamada. Aí o JEV decide tudo de uma vez.
+  (Ajustar as instruções do plano para o estado aninhado `state.pontos.plano_de_turno`.)
 - **F4–F6 — PENDENTE:** modelo só redigindo; item 6 (catálogo no modelo); replay 8 casos +
   pesado 38; rollout flag+A/B.
 
