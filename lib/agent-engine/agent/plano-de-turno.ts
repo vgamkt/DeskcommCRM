@@ -137,9 +137,31 @@ export async function decidirPlanoDoTurno(args: {
     ...args.catalogoDaConversa.motos,
   ].filter((m): m is MotoDoCatalogo => m !== null && m !== undefined && (vistos.has(idDaMoto(m)) ? false : (vistos.add(idDaMoto(m)), true)));
   const perguntas = perguntaDoPlanoDeTurno(ctx, args.catalogo, escolhidaOpcoes);
+  // STATE ENXUTO: o catálogo vai só com os FATOS (sem `fotos`/`valores` completos)
+  // — com o objeto cheio + 30 mensagens o request estourava o `schema` da JEV
+  // (medido 2026-10-27 no pesado). As instruções (`perguntas`) seguem com o
+  // catálogo completo; o STATE é o que a JEV lê.
+  const catalogoEnxuto = args.catalogo.map((m) => {
+    const v = (m.valores ?? {}) as Record<string, unknown>;
+    return {
+      id: idDaMoto(m),
+      nome: m.nome,
+      ano: m.ano ?? null,
+      cor: m.cor ?? null,
+      quilometragem: m.quilometragem ?? null,
+      preco: m.preco ?? null,
+      categoria: typeof v.categoria === 'string' ? v.categoria : null,
+      cambio: typeof v.cambio === 'string' ? v.cambio : null,
+    };
+  });
   const decisao = await decidir({
     alvos,
-    state: ctx,
+    state: {
+      mensagens: ctx.mensagens,
+      rajada: ctx.rajada,
+      estado: ctx.estado,
+      catalogo: catalogoEnxuto,
+    },
     questions: perguntas,
     // Essenciais: as notas por moto (`parecida_i`) e a `escolhida` são OPCIONAIS —
     // exigir todas fazia a JEV devolver `null` quando omitia uma nota. O mapper
