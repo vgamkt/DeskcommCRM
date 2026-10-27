@@ -6531,6 +6531,22 @@ async function executarTurnoDoAgente(
                 if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
               }
               motosOferecidasNesteTurno = [...selecao.motos];
+              // GUARD: o cliente pediu OUTRA/MAIS opções e TODAS as selecionadas
+              // já foram mostradas nesta conversa → não reenvia as mesmas fotos;
+              // responde em texto ("não tenho outra"). Medido 2026-10-27: "tem
+              // outra automática?" reenviava a Neo já mostrada.
+              const pediuOutraOpcao = /\b(outr[ao]s?|mais opc\w*|mais motos?|ver mais)\b/.test(
+                normalizarNomeDeMoto(mensagemDoTurnoParaJev),
+              );
+              const todasJaMostradas = selecao.motos.every((m) =>
+                catalogoDaConversa.motos.some(
+                  (x) => normalizarNomeDeMoto(x.nome) === normalizarNomeDeMoto(m.nome),
+                ),
+              );
+              if (pediuOutraOpcao && todasJaMostradas) {
+                semMaisOpcoesNesteTurno = true;
+                return [];
+              }
               // O convite "quer ver mais?" é definido DEPOIS de montar a fila (abaixo):
               // só convida quando a fila tem o que mostrar.
               // C-089: guarda a FILA das que casaram mas ficaram fora do teto N,
