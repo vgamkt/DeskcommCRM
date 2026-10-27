@@ -21,8 +21,17 @@
 - **F2 — FEITO/VALIDADO.** `lib/ai/jev/pontos/plano-de-turno.ts` +
   `plano-de-turno.test.ts` (6 testes): perguntas do plano (ação/critério/escolhida/
   fecho/handoff + nota por moto) e o **mapper** `PlanoDoTurno` (IDs).
-- **F3–F6 — PENDENTE:** ligar o plano no turno (atrás da flag), modelo só redigindo,
-  item 6 (catálogo no modelo), replay dos 8 casos e pesado 38, rollout.
+- **F3 (PEÇA) — FEITO/VALIDADO.** `lib/agent-engine/agent/plano-de-turno.ts` +
+  `plano-de-turno.test.ts` (2 testes) + probe real `scripts/qa/plano-de-turno-probe.test.ts`:
+  carrega 30 msgs + estado + catálogo, chama a JEV (`plano_de_turno__jev`), devolve o
+  `PlanoDoTurno` (ação/handoff/IDs). Binding `plano_de_turno__jev` criado (typesafe/jev-latest).
+  Observado: 1 conversa devolveu plano; outra `null` (chamada transiente — o `null` cai no
+  caminho de hoje, sem quebrar).
+- **F3 (ligar no turno) — PENDENTE:** atrás da flag **por agente** (`catalog.plano_jev`;
+  QA liga, produção desligada): bloco de decisão no prompt + seleção/álbum pelos **IDs** do
+  plano + `acao=perguntar` sem fotos. É a parte que toca o `inbound-turn` (sensível).
+- **F4–F6 — PENDENTE:** modelo só redigindo; item 6 (catálogo no modelo); replay 8 casos +
+  pesado 38; rollout flag+A/B.
 
 ---
 
