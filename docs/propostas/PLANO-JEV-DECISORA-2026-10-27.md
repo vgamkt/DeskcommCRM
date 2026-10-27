@@ -3,6 +3,7 @@
 > **Status:** proposta. NADA implementado ainda.
 > **Data:** 2026-10-27
 > **Objetivo do dono:** a JEV decide SEMPRE; o motor executa; o modelo só redige.
+> **Decisões do dono (2026-10-27):** janela **30 mensagens**; **JEV decide**; seleção por **IDs**; `respondida` como proposto; rollout **flag+A/B**; item 6 (tirar o catálogo do modelo) **testar no spike**.
 > Antes de implantar: **testar a JEV num modo que funcione** — ela responde exatamente
 > a pergunta (a decisão) num **formato que o motor consiga dar prosseguimento**.
 
@@ -94,7 +95,7 @@ type EstadoDaConversa = {
 };
 
 type ContextoDaConversa = {
-  mensagens: MensagemDoContexto[];     // >= 20, cronológico
+  mensagens: MensagemDoContexto[];     // >= 30, cronológico
   rajada: string[];                    // inbounds ainda não respondidos
   estado: EstadoDaConversa;
   catalogo?: MotoDoCatalogo[];         // só para pontos que decidem seleção/critério
@@ -108,8 +109,8 @@ type ContextoDaConversa = {
 - Objetivo: a JEV vê que é uma **conversa** e que **só a última/rajada** pede resposta —
   não trata mensagens antigas como pedidos novos.
 
-**Janela:** ≥ 20 mensagens (parametrizável; default 20, mínimo 20). Corrigir a janela
-efetiva (hoje chega com 3).
+**Janela:** **30 mensagens** (decisão do dono; mínimo 30). Corrigir a janela efetiva
+(hoje chega com 3).
 
 ---
 
@@ -158,7 +159,7 @@ compara a decisão com o esperado.
 ### Casos do spike (os 7 erros + critérios)
 | # | Contexto | Esperado no plano |
 |---|---|---|
-| 1 | cidade+trabalho (20 msgs, última pendente) | `acao=oferecer`, 5 motos urbanas (≤400cc, sem trail) |
+| 1 | cidade+trabalho (30 msgs, última pendente) | `acao=oferecer`, 5 motos urbanas (≤400cc, sem trail) |
 | 2 | objeção km sobre NMax (15 mil, automática) | seleção com menos km que a NMax (Neo 11k) |
 | 3 | "achei caro, mais em conta" (trilha) | seleção **trail** mais barata (não street) |
 | 4 | "moto pra estrada" | 5 motos de estrada (não 2) |
@@ -180,7 +181,7 @@ Só depois disso implementar.
 ## 7. Fases de implementação
 
 - **F0 — Spike** (seção 6): provar contexto + schema + decisão. **Nada em produção.**
-- **F1 — `ContextoDaConversa`**: builder único (20+ msgs, `respondida`, estado, catálogo);
+- **F1 — `ContextoDaConversa`**: builder único (30 msgs, `respondida`, estado, catálogo);
   corrigir a janela efetiva (hoje 3). Arquivo novo `lib/agent-engine/agent/contexto-da-conversa.ts` + teste.
 - **F2 — `PlanoDoTurno` na JEV**: novo ponto `lib/ai/jev/pontos/plano-de-turno.ts`
   (ou o árbitro devolvendo o plano), com as instruções/schema acima; testes puros.
@@ -229,5 +230,5 @@ contagem real, anti-ban, gates, handoff-duro, idempotência.
 3. **Seleção:** a JEV devolve **IDs** (recomendado) ou nomes?
 4. **`respondida`:** última mensagem = `false`, todas as anteriores `true` (como acima)?
 5. **Rollout:** flag + A/B antes de default, ok?
-6. **Modelo sem catálogo:** ok remover `crm_query_external_data` do caminho de oferta
-   (o modelo deixa de consultar/decidir)?
+6. **Modelo sem catálogo:** **TESTAR no spike (F0)** — comparar o texto do modelo com e sem
+   `crm_query_external_data`, recebendo só o `PlanoDoTurno`. Decidir pelo resultado.
