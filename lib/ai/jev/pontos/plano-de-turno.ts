@@ -106,15 +106,7 @@ export function perguntaDoPlanoDeTurno(
         cambio: 'câmbio específico (automático/manual)',
       },
     },
-    escolhida: {
-      type: 'choice',
-      instructions:
-        'O cliente ESCOLHEU uma moto do catálogo? Responda o ID exato; se nenhuma, "nenhuma".',
-      criteria: {
-        nenhuma: 'nenhuma escolha',
-        ...Object.fromEntries(opcoesEscolhida.map((m) => [idDaMoto(m), textoDaMoto(m)])),
-      },
-    },
+
     fecho: {
       type: 'choice',
       instructions: 'Se mostrar, qual o fecho?',
@@ -140,6 +132,19 @@ export function perguntaDoPlanoDeTurno(
         '(`estado.orcamento`) e o que já foi mostrado (`estado.motosMostradas`).',
     };
   });
+  // `choice` exige >= 2 opções no provedor (`schema`). Sem moto em foco, o
+  // `escolhida` é OMITIDO (o mapper devolve null); com foco, entra com "nenhuma"+IDs.
+  if (opcoesEscolhida.length > 0) {
+    perguntas.escolhida = {
+      type: 'choice',
+      instructions:
+        'O cliente ESCOLHEU uma moto do catálogo? Responda o ID exato; se nenhuma, "nenhuma".',
+      criteria: {
+        nenhuma: 'nenhuma escolha',
+        ...Object.fromEntries(opcoesEscolhida.map((m) => [idDaMoto(m), textoDaMoto(m)])),
+      },
+    };
+  }
   return perguntas;
 }
 

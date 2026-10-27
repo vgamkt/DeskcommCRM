@@ -61,13 +61,9 @@ describe('perguntaDoPlanoDeTurno', () => {
 });
 
 describe('perguntaDoPlanoDeTurno — escolhida', () => {
-  it('sem motos em foco (lista vazia) → só "nenhuma" (não cai no catálogo inteiro)', () => {
+  it('sem motos em foco (lista vazia) → escolhida OMITIDO (choice exige >=2); notas ficam', () => {
     const p = perguntaDoPlanoDeTurno(ctx, catalogo, []);
-    expect(p.escolhida?.type).toBe('choice');
-    if (p.escolhida?.type === 'choice') {
-      expect(Object.keys(p.escolhida.criteria)).toEqual(['nenhuma']);
-    }
-    // As notas por moto continuam sobre o estoque.
+    expect(p.escolhida).toBeUndefined();
     expect(p).toHaveProperty('parecida_5');
   });
 });
