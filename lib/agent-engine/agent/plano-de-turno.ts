@@ -24,6 +24,7 @@ import {
 } from './contexto-da-conversa';
 import type { CatalogoDaConversa } from './catalogo-da-conversa';
 import type { MotoDoCatalogo } from './fotos-do-catalogo';
+import { idDaMoto } from '@/lib/ai/jev/pontos/plano-de-turno';
 
 /** Mensagem mínima para o contexto (vinda do CRM). */
 export interface MensagemCrua {
@@ -122,7 +123,16 @@ export async function decidirPlanoDoTurno(args: {
     catalogo: args.catalogo,
     janela: args.janela ?? JANELA_DA_CONVERSA,
   });
-  const perguntas = perguntaDoPlanoDeTurno(ctx, args.catalogo);
+  // Escolha só entre as motos EM FOCO/MOSTRADAS (as 25 do estoque no `choice`
+  // deixavam a JEV lenta/sem preencher no turno — medido 2026-10-27). As notas
+  // por moto continuam sobre o estoque inteiro.
+  const vistos = new Set<string>();
+  const escolhidaOpcoes = [
+    args.catalogoDaConversa.escolhida,
+    args.catalogoDaConversa.referencia,
+    ...args.catalogoDaConversa.motos,
+  ].filter((m): m is MotoDoCatalogo => m !== null && m !== undefined && (vistos.has(idDaMoto(m)) ? false : (vistos.add(idDaMoto(m)), true)));
+  const perguntas = perguntaDoPlanoDeTurno(ctx, args.catalogo, escolhidaOpcoes);
   const decisao = await decidir({
     alvos,
     state: ctx,
@@ -130,7 +140,7 @@ export async function decidirPlanoDoTurno(args: {
     // Essenciais: as notas por moto (`parecida_i`) e a `escolhida` são OPCIONAIS —
     // exigir todas fazia a JEV devolver `null` quando omitia uma nota. O mapper
     // trata ausência (nota 0 / escolhida null).
-    perguntasObrigatorias: ['acao', 'criterio', 'fecho', 'handoff'],
+    perguntasObrigatorias: ['acao'],
     opcoes: { timeoutPorTentativaMs: 30000, capTotalMs: 120000 },
   });
   if (decisao === null) return null;

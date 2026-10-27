@@ -72,7 +72,11 @@ function textoDaMoto(m: MotoDoCatalogo): string {
 export function perguntaDoPlanoDeTurno(
   ctx: ContextoDaConversa,
   catalogo: readonly MotoDoCatalogo[],
+  escolhidaOpcoes?: readonly MotoDoCatalogo[],
 ): PerguntasDeJev {
+  const opcoesEscolhida = escolhidaOpcoes !== undefined && escolhidaOpcoes.length > 0
+    ? escolhidaOpcoes
+    : catalogo;
   const perguntas: PerguntasDeJev = {
     acao: {
       type: 'choice',
@@ -107,7 +111,7 @@ export function perguntaDoPlanoDeTurno(
         'O cliente ESCOLHEU uma moto do catálogo? Responda o ID exato; se nenhuma, "nenhuma".',
       criteria: {
         nenhuma: 'nenhuma escolha',
-        ...Object.fromEntries(catalogo.map((m) => [idDaMoto(m), textoDaMoto(m)])),
+        ...Object.fromEntries(opcoesEscolhida.map((m) => [idDaMoto(m), textoDaMoto(m)])),
       },
     },
     fecho: {

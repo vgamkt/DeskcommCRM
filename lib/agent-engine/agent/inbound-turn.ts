@@ -5597,7 +5597,11 @@ async function executarTurnoDoAgente(
         });
         let semMaisOpcoesNesteTurno = false;
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
-          if (planoJevAtivo && planoDoTurno !== null && planoDoTurno.selecao === null) {
+          if (
+            planoJevAtivo &&
+            planoDoTurno !== null &&
+            (planoDoTurno.acao === 'perguntar' || planoDoTurno.acao === 'nenhuma')
+          ) {
             return [];
           }
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
