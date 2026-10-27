@@ -342,6 +342,8 @@ import { escolherFluxoIniciado, escolherFluxosPorIA } from './flow-intent';
 import { parsePreco } from './similaridade';
 import { renderAgora, saudacaoDoHorario } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
+import { decidirPlanoDoTurno } from './plano-de-turno';
+import { idDaMoto, type PlanoDoTurno } from '@/lib/ai/jev/pontos/plano-de-turno';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -4013,6 +4015,43 @@ async function executarTurnoDoAgente(
   const pedeCambioAutomatico = /\bautomatic[oa]s?\b|\bcambio\s+automatico\b|\bcambio\s+auto\b/.test(
     normalizarNomeDeMoto(mensagemDoTurnoParaJev),
   );
+  // F3 — PLANO DA JEV (flag POR AGENTE `catalog.plano_jev`; produção desligada).
+  // Roda ANTES do modelo: a JEV vê 30 msgs + estado + estoque e devolve os IDs.
+  // `null` (JEV off/transiente) = segue o caminho de hoje, sem quebrar.
+  let planoDoTurno: PlanoDoTurno | null = null;
+  let estoqueDoPlano: MotoDoCatalogo[] = [];
+  const planoJevAtivo = agentConfig?.catalogConfig?.plano_jev === true;
+  if (planoJevAtivo && !preview && catalogoMapeamento !== null) {
+    try {
+      estoqueDoPlano = await carregarCatalogoDoBanco(
+        deps.crmCfg.supabase,
+        tenantId,
+        catalogoMapeamento,
+        colunasCatalogo ?? colunasDoCatalogo(catalogoMapeamento),
+      );
+      planoDoTurno = await decidirPlanoDoTurno({
+        pool,
+        tenantId,
+        conversationId: input.conversationId,
+        catalogoDaConversa,
+        catalogo: estoqueDoPlano,
+        orcamento: orcamentoTurno,
+        cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
+        limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
+      });
+      runLog.info('plano do turno (JEV)', {
+        acao: planoDoTurno?.acao ?? null,
+        criterio: planoDoTurno?.criterio ?? null,
+        selecionadas: planoDoTurno?.selecao?.ids.length ?? 0,
+        escolhida: planoDoTurno?.escolhida ?? null,
+        handoff: planoDoTurno?.handoff.probabilidade ?? null,
+      });
+    } catch (err) {
+      runLog.warn('plano do turno: falhou — segue o caminho atual', {
+        erro: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+      });
+    }
+  }
   // D1 (decisão do dono, 2026-10-09): o cliente disse um valor ("até 20 mil") — grava
   // JÁ o orçamento no metadata (merge jsonb, sem tocar no resto). Sem isto, o valor
   // ficava `null` e a margem de 30% não se aplicava nos turnos seguintes.
@@ -5470,6 +5509,13 @@ async function executarTurnoDoAgente(
           escolhidaNesteTurno = ajustada;
           unidadeTrocadaParaOrcamento = escolhidaNesteTurno !== escolhidaAntesDoOrcamento;
         }
+        // F3: a unidade ESCOLHIDA é a do plano (ID), se houver.
+        if (planoJevAtivo && planoDoTurno?.escolhida) {
+          const doPlanoEscolhida = estoqueDoPlano.find(
+            (m) => idDaMoto(m) === planoDoTurno!.escolhida,
+          );
+          if (doPlanoEscolhida !== undefined) escolhidaNesteTurno = doPlanoEscolhida;
+        }
         const criteriosDoArbitro = vereditoArbitro?.porPonto.catalog_criteria;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.
         runLog.info('escolha: decisão (antes/depois)', {
@@ -5551,6 +5597,9 @@ async function executarTurnoDoAgente(
         });
         let semMaisOpcoesNesteTurno = false;
         const planoAutomatico: FotoComLegenda[] = await (async (): Promise<FotoComLegenda[]> => {
+          if (planoJevAtivo && planoDoTurno !== null && planoDoTurno.selecao === null) {
+            return [];
+          }
           // Fotografa o que o MODELO trouxe ANTES de o motor acrescentar
           // alternativas (usado para gravar a moto de referência).
           motosConsultadasPeloModelo = [...catalogoDoTurno];
@@ -6523,6 +6572,18 @@ async function executarTurnoDoAgente(
               },
               depois: { motos: selecao.motos.map((m) => m.nome), filtrados: selecao.filtrados },
             });
+            // F3: o plano da JEV MANDA na seleção (IDs). Nada de filtro do motor por cima.
+            if (planoJevAtivo && planoDoTurno !== null) {
+              if (planoDoTurno.selecao !== null) {
+                const porId = new Map(estoqueDoPlano.map((m) => [idDaMoto(m), m] as const));
+                const doPlano = planoDoTurno.selecao.ids
+                  .map((id) => porId.get(id))
+                  .filter((m): m is MotoDoCatalogo => m !== undefined);
+                if (doPlano.length > 0) selecao.motos = doPlano;
+              } else if (planoDoTurno.acao === 'perguntar' || planoDoTurno.acao === 'nenhuma') {
+                selecao.motos = [];
+              }
+            }
             if (selecao.motos.length > 0) {
               // Persiste as motos oferecidas (inclusive as buscadas no banco) no
               // catálogo da conversa: sem isso a ESCOLHA do cliente no turno

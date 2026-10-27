@@ -48,6 +48,12 @@ export const catalogConfigSchema = z
     tolerancia_preco_pct: z.number().int().min(0).max(100).default(30),
     /** Ligar a escolha determinística (motor decide) em vez do julgamento do modelo. */
     similaridade_deterministica: z.boolean().default(false),
+    /**
+     * F3 (PLANO-JEV-DECISORA, 2026-10-27): a JEV decide o turno (30 msgs +
+     * estado + estoque) e o motor executa os IDs do plano; o modelo só redige.
+     * Default `false` (produção); o QA liga para validar.
+     */
+    plano_jev: z.boolean().default(false),
     /** Enviar uma foto por moto, com a legenda da própria moto. */
     foto_por_moto: z.boolean().default(true),
     /**
