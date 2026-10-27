@@ -7399,19 +7399,16 @@ async function executarTurnoDoAgente(
               // pergunta do fluxo fica para o próximo turno. Medido ao vivo: sem isto o
               // modelo troca a venda pela pergunta do roteiro e a conversa não avança.
               let corpoFinal = finalBody;
-              if (semMaisOpcoesNesteTurno) {
-                corpoFinal =
-                  'Não tenho outras opções além dessas que te mostrei dentro do seu orçamento. Quer que eu veja algo diferente?';
-              }
-              // ESCOLHA/ÁLBUM: o texto é SEMPRE o da unidade que está sendo enviada
-              // (nome/ano/cor/câmbio/km/preço) — nunca a de outro ano/unidade que o
-              // modelo tenha citado. Garante texto = fotos em qualquer caso (não só
-              // quando troca por orçamento). Medido 2026-10-26 (turno 11).
               const nomeDoCliente =
                 typeof effectiveContext.contact?.custom_fields?.nome === 'string'
                   ? effectiveContext.contact.custom_fields.nome
                   : null;
-              if (escolhidaNesteTurno !== undefined) {
+              // PRIORIDADE: "acabou a fila" > texto da unidade > texto do modelo.
+              if (semMaisOpcoesNesteTurno) {
+                corpoFinal =
+                  'Não tenho outras opções além dessas que te mostrei dentro do seu orçamento. Quer que eu veja algo diferente?';
+              } else if (escolhidaNesteTurno !== undefined) {
+                // ESCOLHA/ÁLBUM: texto SEMPRE da unidade que está sendo enviada.
                 corpoFinal = textoDaUnidadeEscolhida(
                   escolhidaNesteTurno,
                   nomeDoCliente,
