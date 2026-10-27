@@ -5526,6 +5526,13 @@ async function executarTurnoDoAgente(
             : undefined;
         // Orçamento informado + unidade escolhida acima dele: usa a OUTRA
         // unidade do MESMO modelo que cabe (ex.: NMax 2023 18.990 → 2019 14.990).
+        // F3: a unidade ESCOLHIDA é a do plano (ID), se houver.
+        if (planoJevAtivo && planoDoTurno?.escolhida) {
+          const doPlanoEscolhida = estoqueDoPlano.find(
+            (m) => idDaMoto(m) === planoDoTurno!.escolhida,
+          );
+          if (doPlanoEscolhida !== undefined) escolhidaNesteTurno = doPlanoEscolhida;
+        }
         let unidadeTrocadaParaOrcamento = false;
         if (escolhidaNesteTurno !== undefined && orcamentoTurno !== null) {
           const escolhidaAntesDoOrcamento = escolhidaNesteTurno;
@@ -5570,13 +5577,6 @@ async function executarTurnoDoAgente(
           }
           escolhidaNesteTurno = ajustada;
           unidadeTrocadaParaOrcamento = escolhidaNesteTurno !== escolhidaAntesDoOrcamento;
-        }
-        // F3: a unidade ESCOLHIDA é a do plano (ID), se houver.
-        if (planoJevAtivo && planoDoTurno?.escolhida) {
-          const doPlanoEscolhida = estoqueDoPlano.find(
-            (m) => idDaMoto(m) === planoDoTurno!.escolhida,
-          );
-          if (doPlanoEscolhida !== undefined) escolhidaNesteTurno = doPlanoEscolhida;
         }
         const criteriosDoArbitro = vereditoArbitro?.porPonto.catalog_criteria;
         // ANTES/DEPOIS da decisão de escolha (auditoria, P5): quem decidiu e o quê.

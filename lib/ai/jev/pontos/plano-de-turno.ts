@@ -87,7 +87,9 @@ export function perguntaDoPlanoDeTurno(
         'AINDA pede resposta. NÃO trate mensagem antiga como pedido novo. ' +
         'USO/TERRENO (cidade, urbano, dia a dia, trabalho, trânsito, trilha, estrada, ' +
         'asfalto) É critério suficiente: responda "oferecer" — NÃO pergunte. ' +
-        'Só "perguntar" quando o pedido for vago (sem uso nem outro critério).',
+        'ORÇAMENTO informado ("até 30 mil") TAMBÉM é critério: responda "oferecer" ' +
+        'com as opções dentro dele; NUNCA peça nome/faixa antes de mostrar. ' +
+        'Só "perguntar" quando o pedido for vago (sem uso/orçamento nem outro critério).',
       criteria: {
         oferecer: 'mostrar motos do catálogo agora',
         perguntar: 'não mostrar ainda; perguntar o que falta (sem critério suficiente)',
@@ -132,7 +134,10 @@ export function perguntaDoPlanoDeTurno(
       instructions:
         `Esta moto combina com o que o cliente quer AGORA? ${textoDaMoto(m)}. ` +
         'Nota alta (>= 0.7) só para o que atende ao pedido/critérios; respeite o orçamento FIXO ' +
-        '(`estado.orcamento`) e o que já foi mostrado (`estado.motosMostradas`).',
+        '(`estado.orcamento`) e o que já foi mostrado (`estado.motosMostradas`). ' +
+        'OBJEÇÃO DE KM ("tá muito rodada, tem com menos km?"): nota alta SÓ para motos com ' +
+        'MENOS km que a moto em foco (`estado.escolhida`/a referência); a própria moto em foco ' +
+        'NÃO entra.',
     };
   });
   // `choice` exige >= 2 opções no provedor (`schema`). Sem moto em foco, o
@@ -141,7 +146,9 @@ export function perguntaDoPlanoDeTurno(
     perguntas.escolhida = {
       type: 'choice',
       instructions:
-        'O cliente ESCOLHEU uma moto do catálogo? Responda o ID exato; se nenhuma, "nenhuma".',
+        'O cliente DISSE que ESCOLHEU/PREFERE uma moto ("gostei dessa", "quero essa", ' +
+        '"prefiro a X")? Responda o ID exato. Se ele apenas PERGUNTA ou RECLAMA sobre a ' +
+        'moto em foco ("essa tá rodada?", "quanto custa?", "achei caro"), responda "nenhuma".',
       criteria: {
         nenhuma: 'nenhuma escolha',
         ...Object.fromEntries(opcoesEscolhida.map((m) => [idDaMoto(m), textoDaMoto(m)])),
