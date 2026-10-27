@@ -84,7 +84,10 @@ export function perguntaDoPlanoDeTurno(
       instructions:
         'O que o turno deve fazer AGORA? Leia `mensagens` como uma CONVERSA: ' +
         '`respondida:true` = a loja já respondeu; `respondida:false` = a rajada final ' +
-        'AINDA pede resposta. NÃO trate mensagem antiga como pedido novo.',
+        'AINDA pede resposta. NÃO trate mensagem antiga como pedido novo. ' +
+        'USO/TERRENO (cidade, urbano, dia a dia, trabalho, trânsito, trilha, estrada, ' +
+        'asfalto) É critério suficiente: responda "oferecer" — NÃO pergunte. ' +
+        'Só "perguntar" quando o pedido for vago (sem uso nem outro critério).',
       criteria: {
         oferecer: 'mostrar motos do catálogo agora',
         perguntar: 'não mostrar ainda; perguntar o que falta (sem critério suficiente)',
