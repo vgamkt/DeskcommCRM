@@ -37,10 +37,13 @@
   **CONSERTADO (2026-10-27):** o plano agora entra na **MESMA** chamada do árbitro
   (`pedido` `plano_de_turno`), orçamento/câmbio movidos para antes do trio, 30 msgs +
   estoque carregados; o `PlanoDoTurno` sai do `porPonto.plano_de_turno`.
-  **Validado no QA:** "automática até 15 mil" → a JEV decidiu a **Neo 125** (texto e
-  álbum factuais dela); "tem outra automática?" → **"não tenho outras"**, sem repetir.
-  A seleção de UMA moto foi **decisão da JEV** (não do motor). Produção segue com a
-  flag desligada (`plano_jev` ausente) até o replay/pesado.
+  **ESTADO REAL (2026-10-27, pesado 38 no QA):** o pesado passou 38/38, mas o log
+  `plano do turno (JEV)` veio **`acao:null`** — o `decidirPlanoDoTurno` devolveu
+  **null**: a JEV com o **estoque inteiro (25) + 30 msgs** no request demora ~37s e
+  volta vazia (o motor retenta e esgota). O turno seguiu no **caminho atual** (o que o
+  pesado validou). **Próximo passo:** limitar o catálogo do plano ao **pool de
+  candidatas** (orçamento/câmbio/categoria/uso) ou logar o motivo do `null` e ajustar
+  o request; sem isso o plano não liga. Produção segue com a flag desligada.
 - **F4–F6 — PENDENTE:** modelo só redigindo; item 6 (catálogo no modelo); replay 8 casos +
   pesado 38; rollout flag+A/B.
 
