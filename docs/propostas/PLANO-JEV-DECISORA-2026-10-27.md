@@ -145,16 +145,27 @@ Regras:
 
 ---
 
-## 6. Spike — testar a JEV ANTES de implantar
+## 6. Spike — DESCOBRIR o formato de resposta da JEV (exploratório)
 
-Modo de teste isolado (sem WhatsApp, sem motor): alimenta o `ContextoDaConversa`
-(fixtures) e chama a JEV **real** (provider `typesafe`/`jev-latest`), valida o schema e
-compara a decisão com o esperado.
+> ⚠️ **Não é alimentação fixa/cravada e não é um "teste de fixture".** O objetivo é
+> **descobrir empiricamente a FORMA** em que a JEV deve responder para o motor
+> conseguir executar. O `ContextoDaConversa`/`PlanoDoTurno` abaixo são **hipóteses de
+> trabalho** — o spike refina/derruba/substitui.
 
-- **Script:** `scripts/qa/jev-plano-probe.sh` (ou `.ts`) — lê fixtures
-  `scripts/qa/fixtures/jev-plano/*.json` (conversa 20+ com `respondida`, estado,
-  catálogo recortado), chama a JEV e imprime o `PlanoDoTurno` + PASS/FAIL.
-- **Sem escrever no CRM.** Reaproveita `lib/ai/jev/decidir`/`arbitro`.
+- **Entrada:** contextos **reais e VARIADOS** (histórico real do banco — 30 msgs, com
+  `respondida`; catálogo real da org; casos diferentes: cidade/trilha/estrada, objeção
+  preço/km, modelo/ausente, automática, orçamento). Nada de cenário cravado: o mesmo
+  experimento roda sobre conversas e estoques diferentes.
+- **O que se descobre:** qual conjunto de **perguntas/tipos** (choice/noul/score) e qual
+  **forma de resposta** a JEV devolve de maneira **consistente e parseável**, com os IDs
+  certos, que o motor consiga **executar sem reinterpretar**. Inclui testar alternativas
+  (ex.: seleção por IDs × score por moto; ação × ação+fase; fecho separado × junto).
+- **Sem escrever no CRM.** Reaproveita `lib/ai/jev/decidir`/`arbitro` (JEV real,
+  provider da org) e um script de exploração `scripts/qa/jev-formato-probe.ts`
+  que imprime **a resposta crua da JEV** + o que o motor conseguiu extrair.
+- **Item 6 (catálogo no modelo)** entra aqui: comparar o texto do modelo **com × sem**
+  `crm_query_external_data`, recebendo só o que a JEV decidiu — e ver qual formato de
+  plano basta para o modelo redigir certo.
 
 ### Casos do spike (os 7 erros + critérios)
 | # | Contexto | Esperado no plano |
@@ -168,11 +179,13 @@ compara a decisão com o esperado.
 | 7 | "Lander 250?" (ausente) | `acao=oferecer`, trail equivalentes; aviso "não temos" |
 | 8 | "automática, até 15 mil" | seleção só automáticas ≤15k |
 
-### Critérios de aceite do spike
-- **Schema válido** em 100% dos casos.
-- **Decisão correta** (motos certas) em 100% dos 8 casos.
-- **Determinismo mínimo**: 5 execuções de cada caso → mesma seleção (ou mesma faixa).
-- O motor conseguiria executar o plano **sem** filtro/fill adicional.
+### Critérios de aceite do spike (descoberta de formato)
+- O formato que a JEV devolve é **consistente e parseável** em contextos **variados**
+  (não só num cenário).
+- O motor extrai **os IDs das motos** e a ação **sem heurística/reinterpretação**.
+- **Decisão correta** nos comportamentos-alvo (os 8 casos) com o formato descoberto.
+- **Determinismo mínimo**: repetir o mesmo contexto → mesma decisão/faixa.
+- Só então o formato vira contrato (`PlanoDoTurno`) para implementar.
 
 Só depois disso implementar.
 
