@@ -6655,7 +6655,22 @@ async function executarTurnoDoAgente(
                     if (!motosApresentadasParaSalvar.some((x) => x.nome === moto.nome)) {
                       motosApresentadasParaSalvar.push(moto);
                     }
+                    if (!catalogoDaConversa.motos.some((x) => x.nome === moto.nome)) {
+                      catalogoDaConversa.motos.unshift(moto);
+                    }
                   }
+                  // GRAVA JÁ no catálogo da conversa (não espera o save do turno):
+                  // o "ver mais" seguinte lê `agent_catalogo.motos` e usa o MESMO
+                  // perfil no pool do plano (sem isto, recebia o estoque inteiro e
+                  // dava `schema`). Medido 2026-10-27.
+                  await salvarCatalogoDaConversa(
+                    pool,
+                    tenantId,
+                    input.conversationId,
+                    catalogoDaConversa,
+                    doPlano,
+                    null,
+                  );
                 }
               } else if (planoDoTurno.acao === 'perguntar' || planoDoTurno.acao === 'nenhuma') {
                 selecao.motos = [];
