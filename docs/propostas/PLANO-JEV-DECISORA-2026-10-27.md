@@ -285,3 +285,17 @@ contagem real, anti-ban, gates, handoff-duro, idempotência.
 5. **Rollout:** flag + A/B antes de default, ok?
 6. **Modelo sem catálogo:** **TESTAR no spike (F0)** — comparar o texto do modelo com e sem
    `crm_query_external_data`, recebendo só o `PlanoDoTurno`. Decidir pelo resultado.
+
+---
+
+## FECHAMENTO (2026-10-27)
+
+- **Plano ATIVO e validado no QA e na PRODUÇÃO** (flag por agente `catalog.plano_jev`).
+- Oferta: a JEV decide `acao`/critérios/IDs dentro do pool dos critérios **explícitos**
+  (orçamento FIXO, câmbio, uso/categoria). "cidade" → 4 urbanas; "automática ≤15 mil" → 2.
+- "ver mais": as motos do plano são **gravadas no catálogo da conversa**; o turno seguinte
+  usa o mesmo perfil (pool 12) e **não trava** (responde 5 novas).
+- Logs de tentativa/decisão (`respostaOk`, `motivo`, `acao`, `selecionadas`).
+- **Rollback:** `update ai_agents set config = jsonb_set(config,'{catalog,plano_jev}','false') where id=...` — volta ao caminho anterior sem deploy.
+- Pendente opcional: item 6 (modelo sem `crm_query_external_data`) e o pesado 38 com a flag
+  na produção para o A/B. O caminho atual continua como fallback (`plano null`).
