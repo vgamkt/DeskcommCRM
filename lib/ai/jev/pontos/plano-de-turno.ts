@@ -74,9 +74,10 @@ export function perguntaDoPlanoDeTurno(
   catalogo: readonly MotoDoCatalogo[],
   escolhidaOpcoes?: readonly MotoDoCatalogo[],
 ): PerguntasDeJev {
-  const opcoesEscolhida = escolhidaOpcoes !== undefined && escolhidaOpcoes.length > 0
-    ? escolhidaOpcoes
-    : catalogo;
+  // Sem motos em foco, o `escolhida` fica SÓ "nenhuma": cair no catálogo inteiro
+  // somava 25 opções às 25 notas e estourava o request da JEV (plano null no
+  // genérico — medido 2026-10-27). O estoque continua nas notas `parecida_i`.
+  const opcoesEscolhida = escolhidaOpcoes !== undefined ? escolhidaOpcoes : catalogo;
   const perguntas: PerguntasDeJev = {
     acao: {
       type: 'choice',

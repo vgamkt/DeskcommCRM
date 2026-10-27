@@ -60,6 +60,18 @@ describe('perguntaDoPlanoDeTurno', () => {
   });
 });
 
+describe('perguntaDoPlanoDeTurno — escolhida', () => {
+  it('sem motos em foco (lista vazia) → só "nenhuma" (não cai no catálogo inteiro)', () => {
+    const p = perguntaDoPlanoDeTurno(ctx, catalogo, []);
+    expect(p.escolhida?.type).toBe('choice');
+    if (p.escolhida?.type === 'choice') {
+      expect(Object.keys(p.escolhida.criteria)).toEqual(['nenhuma']);
+    }
+    // As notas por moto continuam sobre o estoque.
+    expect(p).toHaveProperty('parecida_5');
+  });
+});
+
 describe('planoDoTurnoDaJev — motor executa sem reinterpretar', () => {
   const respostas = (extra: Partial<RespostasDeJev> = {}): RespostasDeJev => ({
     acao: { type: 'choice', choice: 'oferecer', confidence: 0.9, probabilities: {} },
