@@ -3993,6 +3993,13 @@ async function executarTurnoDoAgente(
         catalogo: catalogoDoPlano,
         orcamento: orcamentoTurno,
         cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
+        usoCategoria: /\b(cidade|urbano|dia a dia|trabalho|transito|rua)\b/.test(usoPlano)
+          ? 'cidade'
+          : /\b(trilha|trail|off|terra|on-off)\b/.test(usoPlano)
+            ? 'trilha'
+            : /\b(estrada|asfalto|viagem|rodovia)\b/.test(usoPlano)
+              ? 'estrada'
+              : null,
         limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
         log: runLog,
       });
@@ -5440,7 +5447,9 @@ async function executarTurnoDoAgente(
         // Doutrina `jev-decide-sempre`: `pediuOutraMoto` (regex `ehPedidoDiferente`) NÃO
         // barra mais a consulta — vira SINAL para a Jev, que decide ("quero outra" →
         // "nenhuma"). Antes, `!pediuOutraMoto` impedia a Jev de ser chamada.
-        const planoEscolha = jaApresentou
+        // OBJEÇÃO (ex.: "essa NMax tá rodada?") NÃO é escolha: não deixa a
+        // `moto_escolhida` capturar a moto em foco e virar álbum/factual (T08).
+        const planoEscolha = jaApresentou && !ehObjecaoTurno
           ? montarPedidoDeEscolha({
               textoDoModelo: body,
               textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),

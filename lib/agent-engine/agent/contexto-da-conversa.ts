@@ -26,6 +26,9 @@ export interface MensagemDoContexto {
   respondida: boolean;
 }
 
+/** Uso/estilo explícito citado pelo cliente. */
+export type UsoDaConversa = 'cidade' | 'trilha' | 'estrada' | null;
+
 export interface EstadoDaConversa {
   /** Orçamento FIXO informado (sem margem), em reais. */
   orcamento: number | null;

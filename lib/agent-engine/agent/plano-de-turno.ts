@@ -58,6 +58,7 @@ export function estadoDaConversaDe(
   catalogo: CatalogoDaConversa,
   orcamento: number | null,
   cambioPedido: 'automatico' | 'manual' | null,
+  usoCategoria: 'cidade' | 'trilha' | 'estrada' | null = null,
 ): EstadoDaConversa {
   return {
     orcamento,
@@ -69,7 +70,7 @@ export function estadoDaConversaDe(
       ? { motivo: catalogo.objecao.motivo, tentativas: catalogo.objecao.tentativas }
       : null,
     formaDePagamentoPerguntada: catalogo.formaDePagamentoPerguntada === true,
-    usoCategoria: null,
+    usoCategoria,
     cambioPedido,
   };
 }
@@ -80,12 +81,18 @@ export function montarContextoDoPlano(args: {
   catalogoDaConversa: CatalogoDaConversa;
   orcamento: number | null;
   cambioPedido: 'automatico' | 'manual' | null;
+  usoCategoria?: 'cidade' | 'trilha' | 'estrada' | null;
   catalogo: readonly MotoDoCatalogo[];
   janela?: number;
 }): ContextoDaConversa {
   return montarContextoDaConversa({
     mensagens: args.mensagens,
-    estado: estadoDaConversaDe(args.catalogoDaConversa, args.orcamento, args.cambioPedido),
+    estado: estadoDaConversaDe(
+      args.catalogoDaConversa,
+      args.orcamento,
+      args.cambioPedido,
+      args.usoCategoria ?? null,
+    ),
     catalogo: args.catalogo,
     janela: args.janela ?? JANELA_DA_CONVERSA,
   });
@@ -103,6 +110,7 @@ export async function decidirPlanoDoTurno(args: {
   catalogo: readonly MotoDoCatalogo[];
   orcamento: number | null;
   cambioPedido: 'automatico' | 'manual' | null;
+  usoCategoria?: 'cidade' | 'trilha' | 'estrada' | null;
   limite?: number;
   janela?: number;
   log?: {
@@ -124,6 +132,7 @@ export async function decidirPlanoDoTurno(args: {
     catalogoDaConversa: args.catalogoDaConversa,
     orcamento: args.orcamento,
     cambioPedido: args.cambioPedido,
+    usoCategoria: args.usoCategoria ?? null,
     catalogo: args.catalogo,
     janela: args.janela ?? JANELA_DA_CONVERSA,
   });

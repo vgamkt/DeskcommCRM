@@ -137,7 +137,9 @@ export function perguntaDoPlanoDeTurno(
         '(`estado.orcamento`) e o que já foi mostrado (`estado.motosMostradas`). ' +
         'OBJEÇÃO DE KM ("tá muito rodada, tem com menos km?"): nota alta SÓ para motos com ' +
         'MENOS km que a moto em foco (`estado.escolhida`/a referência); a própria moto em foco ' +
-        'NÃO entra.',
+        'NÃO entra. ' +
+        'REGRA DAS CINCO: se houver 5 ou mais motos que cabem no pedido, dê nota alta (>=0.7) a ' +
+        'ATÉ 5 — nunca menos. As demais que também cabem ficam para o "ver mais".',
     };
   });
   // `choice` exige >= 2 opções no provedor (`schema`). Sem moto em foco, o
