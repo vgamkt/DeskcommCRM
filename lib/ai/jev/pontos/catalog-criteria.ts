@@ -180,6 +180,9 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
     const categorias: string[] = [];
     for (const m of e.estoque) {
       const v = (m.valores?.[catCol] ?? '').trim();
+      // "Motos Seminovas"/"Usadas" é CONDIÇÃO do veículo, não estilo — nunca
+      // pode virar filtro de categoria (T32: "estrada" virou "Motos Seminovas").
+      if (/seminov|semi.?nov|usad/i.test(v)) continue;
       if (v !== '' && !categorias.includes(v)) categorias.push(v);
     }
     const criteriaCat: Record<string, string> = {
@@ -190,7 +193,7 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
       type: 'choice',
       instructions:
         'O cliente pediu um ESTILO/CATEGORIA por si, como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha" (escolha a categoria REAL do estoque que corresponde). ' +
-        'Quando o cliente descrever USO/TERRENO ("cidade", "urbano", "dia a dia", "trânsito"), escolha a categoria REAL de uso urbano (ex.: "Street", "Street, City", "Scooter", "Naked") e NÃO escolha Adventure/Trilha/Off-road/Esportiva/Touring — uma 1000cc de aventura não é resposta para "cidade" (medido no teste de 2026-10-20: V-Strom 1000 entrou numa lista urbana). Para uso URBANO/DIA A DIA a cilindrada também é BAIXA (até ~300cc): Naked/Street de alta cilindrada (>400cc) NÃO é resposta urbana diária (CB 650 649cc entrou numa lista de "cidade, dia a dia" em 2026-10-25). Se a mensagem pedir "cidade e trilha", escolha a categoria que cubra uso misto; se só houver Adventure/Trilha, responda "nenhuma". ' +
+        'Quando o cliente descrever USO/TERRENO ("cidade", "urbano", "dia a dia", "trânsito"), escolha a categoria REAL de uso urbano (ex.: "Street", "Street, City", "Scooter", "Naked") e NÃO escolha Adventure/Trilha/Off-road/Esportiva/Touring — uma 1000cc de aventura não é resposta para "cidade" (medido no teste de 2026-10-20: V-Strom 1000 entrou numa lista urbana). EST­RADA/VIAGEM/RODOVIA: escolha "Crossover, Adventure, Trail", "Adventure", "Adventure / Trilha, On-Off Road" ou "Sport Tourer" — NUNCA "Street" nem "Motos Seminovas" (T32: "estrada" virou XMax/CB300F seminovas). Para uso URBANO/DIA A DIA a cilindrada também é BAIXA (até ~300cc): Naked/Street de alta cilindrada (>400cc) NÃO é resposta urbana diária (CB 650 649cc entrou numa lista de "cidade, dia a dia" em 2026-10-25). Se a mensagem pedir "cidade e trilha", escolha a categoria que cubra uso misto; se só houver Adventure/Trilha, responda "nenhuma". ' +
         'Se ele citou o estilo apenas DENTRO do nome de um modelo, ou não citou estilo, responda "nenhuma".',
       criteria: criteriaCat,
     };
@@ -214,7 +217,7 @@ export function perguntaDeCriteriosDeJev(e: EntradaDeCriterios): PerguntasDeJev 
         : detectarPapelColuna(col) === 'cilindrada'
           ? 'O cliente pediu CILINDRADA por si (ex.: "quero uma 250", "250cc", "motos de 300", "entre 150 e 300")? Se o número apareceu apenas DENTRO do nome do MODELO (ex.: "CB 250", "Fazer 250"), responda NÃO — o número faz parte do nome, não é filtro.'
           : detectarPapelColuna(col) === 'tipo'
-            ? 'O cliente mencionou um ESTILO/CATEGORIA por si como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha". Quando ele descreve o USO/TERRENO, marque SIM — o motor vai MANTER esse estilo (não completar com outros): "cidade/dia a dia" = rua/street/naked E TAMBÉM scooter (scooter automática é forte no dia a dia); "trilha/terra/off-road" = trail/on-off; "estrada/asfalto" = street. Para "cidade/dia a dia", dê nota ALTA à scooter (ex.: XMax/NMax/PCX) — ela é uso urbano, não é "outro estilo". Para "cidade/dia a dia", dê nota BAIXA a motos de ALTA cilindrada (>400cc), mesmo que sejam Naked/Street — uma 650cc não é resposta para uso urbano diário; o foco é até ~300cc. Se ele citou o estilo apenas DENTRO de um modelo, responda NÃO.'
+            ? 'O cliente mencionou um ESTILO/CATEGORIA por si como FILTRO? Ex.: "quero uma trail", "algo pra trilha/on-off", "uma naked", "scooter", "esportiva", "custom", "uso misto cidade e trilha". Quando ele descreve o USO/TERRENO, marque SIM — o motor vai MANTER esse estilo (não completar com outros): "cidade/dia a dia" = rua/street/naked E TAMBÉM scooter (scooter automática é forte no dia a dia); "trilha/terra/off-road" = trail/on-off; "estrada/viagem/rodovia/asfalto" = Crossover/Adventure/Sport Tourer (NUNCA "Street" nem "Motos Seminovas"). Para "cidade/dia a dia", dê nota ALTA à scooter (ex.: XMax/NMax/PCX) — ela é uso urbano, não é "outro estilo". Para "cidade/dia a dia", dê nota BAIXA a motos de ALTA cilindrada (>400cc), mesmo que sejam Naked/Street — uma 650cc não é resposta para uso urbano diário; o foco é até ~300cc. Se ele citou o estilo apenas DENTRO de um modelo, responda NÃO.'
             : detectarPapelColuna(col) === 'km'
               ? 'O cliente FALOU de QUILOMETRAGEM/rodagem/km por si (ex.: "com pouca km", "menos rodada", "até 30 mil km")? Na DÚVIDA, responda NÃO — marcar km sem o cliente pedir EXCLUI motos boas (medido ao vivo).'
               : ehColunaDePotencia(col)

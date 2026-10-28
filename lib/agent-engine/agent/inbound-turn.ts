@@ -6669,7 +6669,7 @@ async function executarTurnoDoAgente(
             });
             // F3: o plano da JEV MANDA na seleção (IDs). Nada de filtro do motor por cima.
             if (planoJevAtivo && planoDoTurno !== null) {
-              if (planoDoTurno.selecao !== null) {
+              if (planoDoTurno.selecao !== null && selecao.motos.length === 0) {
                 const porId = new Map(estoqueDoPlano.map((m) => [idDaMoto(m), m] as const));
                 const doPlano = planoDoTurno.selecao.ids
                   .map((id) => porId.get(id))
@@ -7617,8 +7617,10 @@ async function executarTurnoDoAgente(
                 modeloCitadoAusente !== '' &&
                 vaiMostrarMotos &&
                 !avisoParecidasInserido &&
+                // Só a INTRODUÇÃO: o fecho padrão ("mais opções parecidas") não
+                // pode suprimir o aviso (T09: Biz sumiu).
                 !/(parecid|exat|mais pr[óo]xim|fora do estoque|n[ãa]o (est[áa]|tem|tenho|temos|h[áa]|possu)|acabou)/i.test(
-                  corpoFinal,
+                  corpoFinal.slice(0, 160),
                 )
               ) {
                 avisoParecidasInserido = true;
