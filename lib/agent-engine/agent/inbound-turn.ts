@@ -5464,9 +5464,12 @@ async function executarTurnoDoAgente(
         // Doutrina `jev-decide-sempre`: `pediuOutraMoto` (regex `ehPedidoDiferente`) NÃO
         // barra mais a consulta — vira SINAL para a Jev, que decide ("quero outra" →
         // "nenhuma"). Antes, `!pediuOutraMoto` impedia a Jev de ser chamada.
-        // Objeção NÃO é escolha (T08: "essa NMax tá rodada?" virava álbum/factual
-        // da moto em foco). Sem escolha aqui, a seleção do plano é que apresenta.
-        const planoEscolha = jaApresentou && !ehObjecaoTurno
+        // Objeção de KM NÃO é escolha (T08: "essa NMax tá rodada?" virava
+        // álbum/factual da moto em foco). Só o km: "qual a diferença?" (T10) NÃO
+        // pode cair aqui, senão perde a comparação. Sem escolha, a seleção do
+        // plano é que apresenta.
+        const planoSemEscolha = ehObjecaoTurno && motivoObjecaoTurno === 'km';
+        const planoEscolha = jaApresentou && !planoSemEscolha
           ? montarPedidoDeEscolha({
               textoDoModelo: body,
               textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),
@@ -5553,7 +5556,7 @@ async function executarTurnoDoAgente(
         // Orçamento informado + unidade escolhida acima dele: usa a OUTRA
         // unidade do MESMO modelo que cabe (ex.: NMax 2023 18.990 → 2019 14.990).
         // F3: a unidade ESCOLHIDA é a do plano (ID), se houver.
-        if (planoJevAtivo && planoDoTurno?.escolhida && !ehObjecaoTurno) {
+        if (planoJevAtivo && planoDoTurno?.escolhida && !planoSemEscolha) {
           const doPlanoEscolhida = estoqueDoPlano.find(
             (m) => idDaMoto(m) === planoDoTurno!.escolhida,
           );
