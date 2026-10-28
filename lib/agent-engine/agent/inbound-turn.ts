@@ -6136,7 +6136,16 @@ async function executarTurnoDoAgente(
                 mensagemDoJob ?? currentInboundText ?? '',
                 candidatos,
               );
-              if (termosCitados.length > 0 && citadosPorToken.length === 0) {
+              // TROCA ("quero dar MINHA Biz 125 na troca"): a moto citada é a do
+              // cliente, NÃO um pedido de catálogo — sem aviso "não temos" nem
+              // parecidas (T15). Fato do turno, não decisão da JEV.
+              const msgTrocaNorm = normalizarNomeDeMoto(
+                mensagemDoJob ?? currentInboundText ?? '',
+              );
+              const ehTrocaMensagem =
+                /\b(troca|trocar)\b/.test(msgTrocaNorm) &&
+                /\b(minha|meu|dar|dou|entrego|levo)\b/.test(msgTrocaNorm);
+              if (termosCitados.length > 0 && citadosPorToken.length === 0 && !ehTrocaMensagem) {
                 citouModeloForaDoEstoque = true;
                 // Nome do modelo citado para o AVISO de "parecidas" (formatação leve:
                 // siglas/anos em maiúsculas, resto com a 1ª letra maiúscula).
@@ -6526,6 +6535,20 @@ async function executarTurnoDoAgente(
                 );
               }
             }
+            // CÂMBIO EXPLÍCITO ("só automática até 15 mil"): a 1ª oferta não fica
+            // presa às hipóteses da JEV (1) quando há MAIS casadas no mesmo filtro
+            // (T03: Neo ficou de fora). Fato do turno: câmbio é filtro duro.
+            if (
+              (pedeCambioAutomatico || pedeCambioManual) &&
+              escolhidaNesteTurno === undefined &&
+              selecao.casadas.length > selecao.motos.length
+            ) {
+              const limiteCambio = cfgCatalogo?.similares_qtd ?? 5;
+              selecao.motos = selecao.casadas.slice(
+                0,
+                Math.min(limiteCambio, selecao.casadas.length),
+              );
+            }
             // MODELO CITADO AUSENTE (ex.: "Lander 250"): a 1ª oferta não fica
             // presa às hipóteses da JEV (que só trouxe a XTZ). Completa até 5 com
             // as CASADAS do mesmo estilo/porte — o filtro rígido de categoria +
@@ -6602,7 +6625,7 @@ async function executarTurnoDoAgente(
             // que a referência, em ordem crescente. Sem isto o texto prometia
             // "opções menos rodadas" e as fotos eram a própria CG de 87.000 km
             // (medido 2026-10-26).
-            if (vereditoOfertaJev?.criterio === 'km') {
+            if (vereditoOfertaJev?.criterio === 'km' || motivoObjecaoTurno === 'km') {
               const limite = cfgCatalogo?.similares_qtd ?? 5;
               const interesseKm =
                 typeof effectiveContext.contact?.custom_fields?.moto_interesse === 'string'
@@ -6622,6 +6645,28 @@ async function executarTurnoDoAgente(
                 candidatos,
               );
               if (menosRodadas.length > 0) selecao.motos = menosRodadas;
+            }
+            // COMPARAÇÃO ("diferença entre X e Y") e TROCA são FATOS do turno:
+            // seleção determinística (a JEV variava e errava — T28 só a XRE; T15
+            // oferecia 5 parecidas na troca).
+            const msgTurnoNorm = normalizarNomeDeMoto(mensagemDoTurnoParaJev);
+            if (/\b(diferenca|comparar|comparacao|qual (e )?melhor|versus|vs)\b/.test(msgTurnoNorm)) {
+              const citadasComp = motosCitadasPorTokens(mensagemDoTurnoParaJev, candidatos);
+              if (citadasComp.length >= 2) selecao.motos = citadasComp;
+            } else if (
+              /\b(troca|trocar)\b/.test(msgTurnoNorm) &&
+              /\b(minha|meu|dar|dou|entrego|levo)\b/.test(msgTurnoNorm)
+            ) {
+              selecao.motos = [];
+            } else if (
+              // Dúvida de SERVIÇO (financiamento/garantia/horário): não despeja
+              // 5 fotos junto da resposta (T19/T37). Mantém a moto única em foco.
+              /\b(financiamento|parcela|garantia|documentacao|horario|abre|fecha|reservar|agendar)\b/.test(
+                msgTurnoNorm,
+              ) &&
+              selecao.motos.length > 1
+            ) {
+              selecao.motos = [];
             }
             // ── O MOTOR EXECUTA O CRITÉRIO DE PREÇO / COMPARAÇÃO ────────────
             if (pedeMaisEmConta(mensagemDoTurnoParaJev, vereditoOfertaJev?.criterio)) {
@@ -7637,6 +7682,10 @@ async function executarTurnoDoAgente(
               // ESCOLHA de moto cujo álbum JÁ saiu: NENHUMA foto vai neste turno. Tira a
               // promessa de foto do texto ("aqui vão mais fotos dela") — o cliente não
               // pode ler que vem foto e não vir nada (medido ao vivo).
+              // Moto não é bicicleta: o modelo às vezes escorrega (T12).
+              corpoFinal = corpoFinal.replace(/\bbicicletas?\b/gi, (m) =>
+                /s$/i.test(m) ? 'motos' : 'moto',
+              );
               if (escolhaAlbumJaMostrado) {
                 corpoFinal = corpoFinal
                   .split(/\s*\n\s*\n/)
