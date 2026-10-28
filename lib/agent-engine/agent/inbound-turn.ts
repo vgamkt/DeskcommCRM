@@ -4255,6 +4255,15 @@ async function executarTurnoDoAgente(
     // abrir a oferta a QUALQUER menção de moto.
     // B1: a JEV decide (inclusive negativa); a rede determinística só quando o
     // veredito é `null`. Extraído para função pura (testável).
+    // PLANO DA JEV: `oferecer`/`mostrar_opcoes` é decisão dela — a oferta acontece
+    // mesmo que o ponto `offer_motos` tenha dito não (T02: uso explícito virava
+    // "pede faixa"). O plano é a autoridade do turno.
+    if (
+      planoDoTurno !== null &&
+      (planoDoTurno.acao === 'oferecer' || planoDoTurno.acao === 'mostrar_opcoes')
+    ) {
+      return { pode: true, motivo: 'plano_jev_oferecer', criterio: null };
+    }
     return decidirOfertaComAutoridadeDaJev({
       vereditoJev: vereditoOfertaJev,
       mensagem,
@@ -5455,7 +5464,9 @@ async function executarTurnoDoAgente(
         // Doutrina `jev-decide-sempre`: `pediuOutraMoto` (regex `ehPedidoDiferente`) NÃO
         // barra mais a consulta — vira SINAL para a Jev, que decide ("quero outra" →
         // "nenhuma"). Antes, `!pediuOutraMoto` impedia a Jev de ser chamada.
-        const planoEscolha = jaApresentou
+        // Objeção NÃO é escolha (T08: "essa NMax tá rodada?" virava álbum/factual
+        // da moto em foco). Sem escolha aqui, a seleção do plano é que apresenta.
+        const planoEscolha = jaApresentou && !ehObjecaoTurno
           ? montarPedidoDeEscolha({
               textoDoModelo: body,
               textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),
@@ -5542,7 +5553,7 @@ async function executarTurnoDoAgente(
         // Orçamento informado + unidade escolhida acima dele: usa a OUTRA
         // unidade do MESMO modelo que cabe (ex.: NMax 2023 18.990 → 2019 14.990).
         // F3: a unidade ESCOLHIDA é a do plano (ID), se houver.
-        if (planoJevAtivo && planoDoTurno?.escolhida) {
+        if (planoJevAtivo && planoDoTurno?.escolhida && !ehObjecaoTurno) {
           const doPlanoEscolhida = estoqueDoPlano.find(
             (m) => idDaMoto(m) === planoDoTurno!.escolhida,
           );
