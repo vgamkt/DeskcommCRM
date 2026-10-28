@@ -5447,9 +5447,7 @@ async function executarTurnoDoAgente(
         // Doutrina `jev-decide-sempre`: `pediuOutraMoto` (regex `ehPedidoDiferente`) NÃO
         // barra mais a consulta — vira SINAL para a Jev, que decide ("quero outra" →
         // "nenhuma"). Antes, `!pediuOutraMoto` impedia a Jev de ser chamada.
-        // OBJEÇÃO (ex.: "essa NMax tá rodada?") NÃO é escolha: não deixa a
-        // `moto_escolhida` capturar a moto em foco e virar álbum/factual (T08).
-        const planoEscolha = jaApresentou && !ehObjecaoTurno
+        const planoEscolha = jaApresentou
           ? montarPedidoDeEscolha({
               textoDoModelo: body,
               textoDoCliente: textoDoClienteDoTurno || (mensagemDoJob ?? ''),
