@@ -3985,6 +3985,14 @@ async function executarTurnoDoAgente(
         return usoAceita(m);
       });
       const catalogoDoPlano = poolDoPlano.length > 0 ? poolDoPlano : estoqueDoPlano;
+      const usoCategoriaPlano: 'cidade' | 'trilha' | 'estrada' | null =
+        /\b(cidade|urbano|dia a dia|trabalho|transito|rua)\b/.test(usoPlano)
+          ? 'cidade'
+          : /\b(trilha|trail|off|terra|on-off)\b/.test(usoPlano)
+            ? 'trilha'
+            : /\b(estrada|asfalto|viagem|rodovia)\b/.test(usoPlano)
+              ? 'estrada'
+              : null;
       planoDoTurno = await decidirPlanoDoTurno({
         pool,
         tenantId,
@@ -3993,16 +4001,16 @@ async function executarTurnoDoAgente(
         catalogo: catalogoDoPlano,
         orcamento: orcamentoTurno,
         cambioPedido: pedeCambioAutomatico ? 'automatico' : null,
-        usoCategoria: /\b(cidade|urbano|dia a dia|trabalho|transito|rua)\b/.test(usoPlano)
-          ? 'cidade'
-          : /\b(trilha|trail|off|terra|on-off)\b/.test(usoPlano)
-            ? 'trilha'
-            : /\b(estrada|asfalto|viagem|rodovia)\b/.test(usoPlano)
-              ? 'estrada'
-              : null,
+        usoCategoria: usoCategoriaPlano,
         limite: agentConfig?.catalogConfig?.similares_qtd ?? 5,
         log: runLog,
       });
+      // USO EXPLÍCITO É PEDIDO (dono): se a JEV devolveu "perguntar" só para
+      // pedir faixa, a oferta acontece mesmo assim — o uso já basta para oferecer.
+      if (planoDoTurno && planoDoTurno.acao === 'perguntar' && usoCategoriaPlano !== null) {
+        planoDoTurno = { ...planoDoTurno, acao: 'oferecer' };
+        runLog.info('plano do turno: uso explícito → oferta (não pede faixa)');
+      }
       runLog.info('plano do turno (JEV)', {
         acao: planoDoTurno?.acao ?? null,
         criterio: planoDoTurno?.criterio ?? null,
