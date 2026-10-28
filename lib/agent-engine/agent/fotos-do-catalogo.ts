@@ -317,8 +317,13 @@ export function motosCitadasPorTokens(
   let melhor = 0;
   const pontuadas: Array<{ moto: MotoDoCatalogo; n: number }> = [];
   for (const moto of catalogo) {
+    // O nome EXIBIDO é composto sem o ANO/COR (ex.: "YAMAHA NMax 160 ABS") —
+    // "NMax 2019" casaria só 1 token e o modelo era dado como AUSENTE (falso
+    // "não temos"). Os valores da própria unidade entram no casamento.
     const tokensDoNome = new Set(
-      normalizarNomeDeMoto(moto.nome)
+      `${normalizarNomeDeMoto(moto.nome)} ${moto.ano ?? ''} ${moto.cor ?? ''} ${
+        moto.valores?.ano ?? ''
+      } ${moto.valores?.cor ?? ''}`
         .split(/[^a-z0-9]+/)
         .filter(Boolean),
     );

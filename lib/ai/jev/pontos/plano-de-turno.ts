@@ -139,7 +139,12 @@ export function perguntaDoPlanoDeTurno(
         'MENOS km que a moto em foco (`estado.escolhida`/a referência); a própria moto em foco ' +
         'NÃO entra. ' +
         'REGRA DAS CINCO: se houver 5 ou mais motos que cabem no pedido, dê nota alta (>=0.7) a ' +
-        'ATÉ 5 — nunca menos. As demais que também cabem ficam para o "ver mais".',
+        'ATÉ 5 — nunca menos. As demais que também cabem ficam para o "ver mais". ' +
+        'COMPARAÇÃO/DIFERENÇA ("qual a diferença entre X e Y", "X ou Y?"): NÃO é pedido de preço. ' +
+        'Use criterio=null, acao=oferecer e nota alta às UNIDADES EXATAS dos modelos citados ' +
+        '(as duas), sem ordenar por preço nem escolher a mais barata. ' +
+        'ANO CITADO É FILTRO EXATO: se o cliente disser um ano ("NMax 2019"), a unidade daquele ' +
+        'ANO recebe nota alta e unidades de OUTRO ano do mesmo modelo recebem nota BAIXA.',
     };
   });
   // `choice` exige >= 2 opções no provedor (`schema`). Sem moto em foco, o
