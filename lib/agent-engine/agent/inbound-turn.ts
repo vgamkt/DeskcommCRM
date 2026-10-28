@@ -6669,7 +6669,12 @@ async function executarTurnoDoAgente(
             });
             // F3: o plano da JEV MANDA na seleção (IDs). Nada de filtro do motor por cima.
             if (planoJevAtivo && planoDoTurno !== null) {
-              if (planoDoTurno.selecao !== null && selecao.motos.length === 0) {
+              if (
+                planoDoTurno.selecao !== null &&
+                (selecao.motos.length === 0 || planoDoTurno.acao === 'mostrar_opcoes')
+              ) {
+                // `mostrar_opcoes` = a JEV escolheu as ALTERNATIVAS (ex.: as menos
+                // rodadas no km) — a seleção dela vence a apresentação (T27/T08).
                 const porId = new Map(estoqueDoPlano.map((m) => [idDaMoto(m), m] as const));
                 const doPlano = planoDoTurno.selecao.ids
                   .map((id) => porId.get(id))
@@ -6701,7 +6706,13 @@ async function executarTurnoDoAgente(
                     null,
                   );
                 }
-              } else if (planoDoTurno.acao === 'perguntar' || planoDoTurno.acao === 'nenhuma') {
+              } else if (
+                planoDoTurno.acao === 'perguntar' ||
+                planoDoTurno.acao === 'nenhuma' ||
+                planoDoTurno.acao === 'encaminhar'
+              ) {
+                // A JEV decidiu NÃO oferecer catálogo neste turno (dúvida de
+                // serviço/handoff) — o motor executa: nenhuma moto/foto (T19).
                 selecao.motos = [];
               }
             }
