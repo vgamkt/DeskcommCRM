@@ -7,6 +7,23 @@
 > Antes de implantar: **testar a JEV num modo que funcione** — ela responde exatamente
 > a pergunta (a decisão) num **formato que o motor consiga dar prosseguimento**.
 
+---
+
+## REGRA DURA — REGEX É ÚLTIMO RECURSO (dono, 2026-10-28)
+
+**Parar de resolver comportamento com regex. Regex não decide.**
+
+- **Proibido** `if (/.../.test(...))` decidindo: **troca** do cliente, **comparação** entre
+  motos, **objeção de km**, enviar/não enviar **foto**, oferecer/não oferecer, tom, contagem.
+- **Quem decide é a JEV** (`lib/ai/jev/pontos/*` + os pontos do turno/plano). Se o ponto não
+  existe, **criar o ponto/pergunta na JEV**.
+- Regex permitido só: (a) **fallback** com a JEV desligada/indisponível; (b) **executar um fato**
+  já decidido (parse de número/preço/ano, formatação, sanitização de typo).
+- Correções de 2026-10-28 feitas por regex (troca, comparação, km, fotos em Q&A, "bicicleta")
+  foram **revertidas** — devem ser refeitas como **pontos da JEV**, não como regex.
+
+---
+
 
 ## 0. Status de execução (2026-10-27)
 

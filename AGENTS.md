@@ -117,6 +117,11 @@ verify, build-and-size, invariants, e2e, imagens-ok
 - **Decisão do agente — a Jev decide SEMPRE; regex/plano B é só fallback.** Nunca um `if (regex(...))`
   antes do veredito da Jev; conserto é no prompt/contexto dela. Regra completa:
   [`docs/doctrine/jev-decide-sempre.md`](docs/doctrine/jev-decide-sempre.md).
+- **REGEX SÓ ÚLTIMO RECURSO (dono, 2026-10-28 — taxativo).** Não criar regex para **DECIDIR**
+  (troca do cliente, comparação entre motos, objeção de km, enviar/não enviar foto, oferecer/
+  não oferecer, tom). Decisão = **JEV**; se faltar ponto, **CRIE o ponto na JEV**. Regex só:
+  *fallback* (JEV desligada/indisponível) ou execução de um **fato** já decidido (número/formato/typo).
+  Violações recentes revertidas: troca, comparação, km, fotos em financiamento/garantia, "bicicleta".
 - **Route handler:** valida input com Zod → guard (`requireRole` / `requirePlatformAdmin` /
   secret) → query com `organization_id` explícito → `audit()` se mutação → `ok()` / `fail()`.
 - Erro: `fail(code, message, status)` com código de `lib/api/errors.ts`. Nunca `throw` cru na borda.
